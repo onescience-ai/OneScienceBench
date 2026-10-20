@@ -1,0 +1,802 @@
+{
+  "id": "mario_airfrans_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "cfd",
+  "task": "复现论文MARIO中的 AirfRANS Task scarce 实验",
+  "prompt": "复现论文《Towards scalable surrogate models based on Neural Fields for large scale aerodynamic simulations》中 MARIO（Modulated Aerodynamic Resolution Invariant Operator）的 AirfRANS Task scarce 实验 (https://arxiv.org/abs/2505.14704)。以论文为准，仅在论文未说明时参考官方仓库，禁止下载或复制官方仓库代码。数据路径为 /public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset。模型脚本命名为 mario.py，核心类为 ModulatedFourierFeatures 和 MultiScaleModulatedFourierFeatures；训练脚本为 train_sdf.py、train.py，评测脚本为 evaluate.py，配置文件为 config_sdf.yaml、config_out.yaml。checkpoint、latent、曲线和评测结果统一保存到 trainings/，通过 print 或 tqdm 输出训练 loss 与评测指标。",
+  "evaluation_script": "evaluate_mario_airfrans_paper_repro.py",
+  "stardard_dir_name": "mario_airfrans_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "b4e3a1c700000001",
+      "check_type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "mario.py",
+          "train_sdf.py",
+          "train.py",
+          "evaluate.py",
+          "config_sdf.yaml",
+          "config_out.yaml"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000002",
+      "check_type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "b4e3a1c700000001"
+      ],
+      "params": {
+        "config_name": "config_sdf.yaml",
+        "required_config_keys": [
+          {
+            "key": "dataset_root",
+            "type": "str"
+          },
+          {
+            "key": "manifest",
+            "type": "str"
+          },
+          {
+            "key": "split",
+            "type": "str"
+          },
+          {
+            "key": "training_dir",
+            "type": "str"
+          },
+          {
+            "key": "batch_size",
+            "type": "int"
+          },
+          {
+            "key": "epochs",
+            "type": "int"
+          },
+          {
+            "key": "inner_steps",
+            "type": "int"
+          },
+          {
+            "key": "latent_dim",
+            "type": "int"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000003",
+      "check_type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "b4e3a1c700000001"
+      ],
+      "params": {
+        "config_name": "config_out.yaml",
+        "required_config_keys": [
+          {
+            "key": "dataset_root",
+            "type": "str"
+          },
+          {
+            "key": "manifest",
+            "type": "str"
+          },
+          {
+            "key": "train_split",
+            "type": "str"
+          },
+          {
+            "key": "test_split",
+            "type": "str"
+          },
+          {
+            "key": "training_dir",
+            "type": "str"
+          },
+          {
+            "key": "sdf_checkpoint",
+            "type": "str"
+          },
+          {
+            "key": "train_latents",
+            "type": "str"
+          },
+          {
+            "key": "batch_size",
+            "type": "int"
+          },
+          {
+            "key": "epochs",
+            "type": "int"
+          },
+          {
+            "key": "latent_dim",
+            "type": "int"
+          },
+          {
+            "key": "evaluation_file",
+            "type": "str"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000004",
+      "check_type": "data_availability",
+      "method": "check_data_availability",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "data_root": "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset",
+        "manifest_name": "manifest.json",
+        "train_split": "scarce_train",
+        "test_split": "full_test",
+        "expected_train_cases": 200,
+        "expected_test_cases": 200
+      }
+    },
+    {
+      "id": "b4e3a1c700000005",
+      "check_type": "data_mario_airfrans_contract_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "b4e3a1c700000002",
+        "b4e3a1c700000003"
+      ],
+      "params": {
+        "contract": "mario_airfrans_data",
+        "config_names": [
+          "config_sdf.yaml",
+          "config_out.yaml"
+        ],
+        "files": [
+          "mario.py",
+          "train_sdf.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "data_root": "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset"
+      }
+    },
+    {
+      "id": "b4e3a1c700000006",
+      "check_type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "b4e3a1c700000001"
+      ],
+      "params": {
+        "files": [
+          "mario.py"
+        ],
+        "required_interfaces": [
+          "ModulatedFourierFeatures",
+          "MultiScaleModulatedFourierFeatures"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000007",
+      "check_type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "b4e3a1c700000006"
+      ],
+      "params": {
+        "model_file": "mario.py",
+        "model_class": "ModulatedFourierFeatures",
+        "config_name": "config_sdf.yaml",
+        "model_args": {
+          "input_dim": 2,
+          "output_dim": 1,
+          "num_frequencies": 6,
+          "latent_dim": 8,
+          "width": 16,
+          "depth": 3,
+          "hypernetwork_depth": 1,
+          "fourier_scale": 1.0,
+          "include_input": false,
+          "frequency_embedding": "gaussian",
+          "modulate_scale": false,
+          "modulate_shift": true
+        },
+        "rules": [
+          {
+            "id": "sdf_root_model_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "expected": "ModulatedFourierFeatures"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000008",
+      "check_type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "b4e3a1c700000006"
+      ],
+      "params": {
+        "model_file": "mario.py",
+        "model_class": "MultiScaleModulatedFourierFeatures",
+        "config_name": "config_out.yaml",
+        "model_args": {
+          "input_dim": 6,
+          "output_dim": 4,
+          "num_frequencies": 6,
+          "latent_dim": 10,
+          "width": 16,
+          "depth": 3,
+          "hypernetwork_depth": 2,
+          "fourier_scales": [
+            0.5,
+            1.0
+          ],
+          "include_input": false,
+          "conditioning_type": "shift_modulation",
+          "scalar_output_dim": 0
+        },
+        "rules": [
+          {
+            "id": "flow_root_model_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "expected": "MultiScaleModulatedFourierFeatures"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000009",
+      "check_type": "model_mario_architecture_contract_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "b4e3a1c700000007",
+        "b4e3a1c700000008"
+      ],
+      "params": {
+        "contract": "mario_architecture",
+        "model_file": "mario.py",
+        "model_classes": [
+          "ModulatedFourierFeatures",
+          "MultiScaleModulatedFourierFeatures"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c70000000a",
+      "check_type": "model_mario_latent_adaptation_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "b4e3a1c700000007"
+      ],
+      "params": {
+        "contract": "mario_latent_adaptation",
+        "model_file": "mario.py",
+        "model_class": "ModulatedFourierFeatures",
+        "config_name": "config_sdf.yaml",
+        "model_args": {
+          "input_dim": 2,
+          "output_dim": 1,
+          "num_frequencies": 6,
+          "latent_dim": 8,
+          "width": 16,
+          "depth": 3,
+          "hypernetwork_depth": 1,
+          "fourier_scale": 1.0,
+          "include_input": false,
+          "frequency_embedding": "gaussian",
+          "modulate_scale": false,
+          "modulate_shift": true
+        },
+        "inner_learning_rate": 0.01,
+        "seed": 20260810
+      }
+    },
+    {
+      "id": "b4e3a1c70000000b",
+      "check_type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": [
+        "b4e3a1c700000007",
+        "b4e3a1c700000008"
+      ],
+      "params": {
+        "models": [
+          {
+            "name": "sdf",
+            "model_file": "mario.py",
+            "model_class": "ModulatedFourierFeatures",
+            "config_name": "config_sdf.yaml",
+            "model_args": {
+              "input_dim": 2,
+              "output_dim": 1,
+              "num_frequencies": 6,
+              "latent_dim": 8,
+              "width": 16,
+              "depth": 3,
+              "hypernetwork_depth": 1,
+              "fourier_scale": 1.0,
+              "include_input": false,
+              "frequency_embedding": "gaussian",
+              "modulate_scale": false,
+              "modulate_shift": true
+            },
+            "input_shape": [
+              2,
+              11,
+              2
+            ],
+            "latent_shape": [
+              2,
+              8
+            ],
+            "output_shape": [
+              2,
+              11,
+              1
+            ]
+          },
+          {
+            "name": "flow",
+            "model_file": "mario.py",
+            "model_class": "MultiScaleModulatedFourierFeatures",
+            "config_name": "config_out.yaml",
+            "model_args": {
+              "input_dim": 6,
+              "output_dim": 4,
+              "num_frequencies": 6,
+              "latent_dim": 10,
+              "width": 16,
+              "depth": 3,
+              "hypernetwork_depth": 2,
+              "fourier_scales": [
+                0.5,
+                1.0
+              ],
+              "include_input": false,
+              "conditioning_type": "shift_modulation",
+              "scalar_output_dim": 0
+            },
+            "input_shape": [
+              2,
+              13,
+              6
+            ],
+            "latent_shape": [
+              2,
+              10
+            ],
+            "output_shape": [
+              2,
+              13,
+              4
+            ]
+          }
+        ],
+        "check_backward": true,
+        "seed": 20260810
+      }
+    },
+    {
+      "id": "b4e3a1c70000000c",
+      "check_type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c700000001"
+      ],
+      "params": {
+        "files": [
+          "train_sdf.py",
+          "train.py"
+        ],
+        "required_interfaces": [
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c70000000d",
+      "check_type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c70000000c"
+      ],
+      "params": {
+        "files": [
+          "train_sdf.py",
+          "train.py"
+        ],
+        "check_config": {
+          "entry_names": [
+            "main",
+            "train"
+          ],
+          "model_names": [
+            "modulatedfourierfeatures",
+            "multiscalemodulatedfourierfeatures",
+            "create_inr_instance",
+            "load_inr"
+          ],
+          "model_attributes": [
+            "train",
+            "forward",
+            "modulated_forward"
+          ],
+          "dataloader_names": [
+            "DataLoader"
+          ],
+          "optimizer_names": [
+            "Adam",
+            "AdamW"
+          ],
+          "loss_names": [
+            "MSELoss",
+            "mse_loss"
+          ]
+        }
+      }
+    },
+    {
+      "id": "b4e3a1c70000000e",
+      "check_type": "train_mario_two_stage_protocol_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c700000005",
+        "b4e3a1c70000000c"
+      ],
+      "params": {
+        "contract": "mario_training",
+        "model_file": "mario.py",
+        "train_sdf_file": "train_sdf.py",
+        "train_file": "train.py",
+        "config_names": [
+          "config_sdf.yaml",
+          "config_out.yaml"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c70000000f",
+      "check_type": "train_loss",
+      "method": "check_train_loss",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c70000000c"
+      ],
+      "params": {
+        "train_sdf_file": "train_sdf.py",
+        "train_file": "train.py"
+      }
+    },
+    {
+      "id": "b4e3a1c700000010",
+      "check_type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c70000000c"
+      ],
+      "params": {
+        "files": [
+          "train_sdf.py",
+          "train.py"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000011",
+      "check_type": "infer_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c700000001"
+      ],
+      "params": {
+        "files": [
+          "evaluate.py"
+        ],
+        "required_interfaces": [
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000012",
+      "check_type": "infer_mario_evaluation_protocol_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "b4e3a1c700000011"
+      ],
+      "params": {
+        "contract": "mario_inference",
+        "evaluate_file": "evaluate.py",
+        "model_file": "mario.py",
+        "config_name": "config_out.yaml"
+      }
+    },
+    {
+      "id": "b4e3a1c700000013",
+      "check_type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": [
+        "b4e3a1c70000000a",
+        "b4e3a1c70000000b",
+        "b4e3a1c70000000f",
+        "b4e3a1c700000010"
+      ],
+      "params": {
+        "models": [
+          {
+            "name": "sdf",
+            "model_file": "mario.py",
+            "model_class": "ModulatedFourierFeatures",
+            "config_name": "config_sdf.yaml",
+            "model_args": {
+              "input_dim": 2,
+              "output_dim": 1,
+              "num_frequencies": 6,
+              "latent_dim": 8,
+              "width": 16,
+              "depth": 3,
+              "hypernetwork_depth": 1,
+              "fourier_scale": 1.0,
+              "include_input": false,
+              "frequency_embedding": "gaussian",
+              "modulate_scale": false,
+              "modulate_shift": true
+            },
+            "input_shape": [
+              2,
+              9,
+              2
+            ],
+            "latent_shape": [
+              2,
+              8
+            ],
+            "output_shape": [
+              2,
+              9,
+              1
+            ]
+          },
+          {
+            "name": "flow",
+            "model_file": "mario.py",
+            "model_class": "MultiScaleModulatedFourierFeatures",
+            "config_name": "config_out.yaml",
+            "model_args": {
+              "input_dim": 6,
+              "output_dim": 4,
+              "num_frequencies": 6,
+              "latent_dim": 10,
+              "width": 16,
+              "depth": 3,
+              "hypernetwork_depth": 2,
+              "fourier_scales": [
+                0.5,
+                1.0
+              ],
+              "include_input": false,
+              "conditioning_type": "shift_modulation",
+              "scalar_output_dim": 0
+            },
+            "input_shape": [
+              2,
+              9,
+              6
+            ],
+            "latent_shape": [
+              2,
+              10
+            ],
+            "output_shape": [
+              2,
+              9,
+              4
+            ]
+          }
+        ],
+        "learning_rate": 0.001,
+        "seed": 20260810
+      }
+    },
+    {
+      "id": "b4e3a1c700000014",
+      "check_type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "b4e3a1c700000011"
+      ],
+      "params": {
+        "files": [
+          "evaluate.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main",
+            "evaluate",
+            "predict_graph"
+          ],
+          "model_load_functions": [
+            "load_model",
+            "load_inr",
+            "create_inr_instance",
+            "MultiScaleModulatedFourierFeatures"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "config",
+            "data",
+            "graph",
+            "loader",
+            "batch"
+          ],
+          "input_load_functions": [
+            "build_datasets",
+            "DataLoader",
+            "load_data",
+            "AirfransFlowDataset"
+          ],
+          "input_load_attributes": [
+            "load",
+            "read"
+          ],
+          "infer_call_functions": [
+            "predict_graph",
+            "evaluate",
+            "predict"
+          ],
+          "infer_call_attributes": [
+            "forward",
+            "modulated_forward"
+          ],
+          "output_attributes": [
+            "save",
+            "savez",
+            "dump",
+            "write",
+            "write_text",
+            "to_csv"
+          ]
+        }
+      }
+    },
+    {
+      "id": "b4e3a1c700000015",
+      "check_type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "b4e3a1c70000000b",
+        "b4e3a1c700000014"
+      ],
+      "params": {
+        "run_file": "evaluate.py",
+        "model_file": "mario.py",
+        "model_class": "MultiScaleModulatedFourierFeatures",
+        "config_name": "config_out.yaml",
+        "model_args": {
+          "input_dim": 6,
+          "output_dim": 4,
+          "num_frequencies": 6,
+          "latent_dim": 10,
+          "width": 16,
+          "depth": 3,
+          "hypernetwork_depth": 2,
+          "fourier_scales": [
+            0.5,
+            1.0
+          ],
+          "include_input": false,
+          "conditioning_type": "shift_modulation",
+          "scalar_output_dim": 0
+        },
+        "input_shape": [
+          2,
+          13,
+          6
+        ],
+        "latent_shape": [
+          2,
+          10
+        ],
+        "output_shape": [
+          2,
+          13,
+          4
+        ],
+        "output_path": "eval_outputs/mario_smoke.json",
+        "seed": 20260810
+      }
+    },
+    {
+      "id": "b4e3a1c700000016",
+      "check_type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "b4e3a1c700000015"
+      ],
+      "params": {
+        "output_path": "eval_outputs/mario_smoke.json",
+        "output_shape": [
+          2,
+          13,
+          4
+        ],
+        "expected_dtype": "float32",
+        "check_nan_inf": true
+      }
+    },
+    {
+      "id": "b4e3a1c700000017",
+      "check_type": "infer_output_validity",
+      "method": "check_infer_output_validity",
+      "phase": "infer_execution",
+      "depends": [
+        "b4e3a1c700000016"
+      ],
+      "params": {
+        "output_path": "eval_outputs/mario_smoke.json",
+        "expected_shape": [
+          2,
+          13,
+          4
+        ],
+        "metric_names": [
+          "mse"
+        ]
+      }
+    },
+    {
+      "id": "b4e3a1c700000018",
+      "check_type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "b4e3a1c700000017"
+      ],
+      "params": {
+        "output_path": "eval_outputs/mario_smoke.json",
+        "metric_name": "mse",
+        "baseline": 0.0096,
+        "mode": "min"
+      }
+    }
+  ]
+}

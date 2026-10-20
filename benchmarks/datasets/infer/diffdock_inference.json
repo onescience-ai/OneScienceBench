@@ -1,0 +1,490 @@
+{
+  "id": "diffdock_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 DiffDock 风格蛋白-配体姿态采样与置信度评估",
+  "prompt": "实现一个独立于 onescience Python 包的轻量 DiffDock 风格蛋白-配体推理入口。模型文件命名为 diffdock_inference.py，模型类命名为 DiffDock，默认 hidden_size=32、distance_bins=16（RBF 中心均匀覆盖 0-20Å），解析蛋白 PDB 原子坐标和配体 SDF 原子坐标，使用 ligand/receptor atom encoders、Gaussian/RBF cross-distance embedding、ligand-receptor cross message passing（拼接 ligand/receptor/edge 三路特征），并实现 tr_pred [1,3]、rot_pred [1,3]、tor_pred [num_ligand_atoms-1] 三个扩散 score 头。通过可复现的平移采样产生多个候选姿态，并以蛋白-配体最近原子距离定义 pose score。命令行必须支持 --protein-path、--ligand-path、--checkpoint、--out-dir、--samples、--seed；严格加载原始 state_dict 或 model_state_dict，在 eval/no_grad 下运行，按 score 降序写出 rankN_confidence*.sdf 和 scores.csv，CSV 至少包含 rank、score、pose_file。不得导入 onescience。\n请在当前工作目录生成且仅生成 diffdock_inference.py；脚本必须支持 --protein-path、--ligand-path、--checkpoint、--out-dir、--samples、--seed；所有 rankN_confidence*.sdf 和 scores.csv 必须保存到命令行指定的 --out-dir。",
+  "evaluation_script": "evaluate_diffdock_inference.py",
+  "stardard_dir_name": "diffdock_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_diffdock_inference"
+  },
+  "checks": [
+    {
+      "id": "8c2877ba898ae6f6",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "submission_filename": "diffdock_inference.py",
+        "torch_manual_seed": 20260819,
+        "candidate_module_name": "diffdock_submission",
+        "reference_module_name": "diffdock_reference",
+        "reference_file": "benchmarks/standard/diffdock_inference/diffdock_inference.py",
+        "create_temporary_work_dir": true,
+        "standard_assets": [
+          {
+            "filename": "inference_config.json",
+            "require_nonempty": true,
+            "require_json_object": true,
+            "external_assets": {
+              "mount_required": true,
+              "required_string_paths": {
+                "weights": "/public/share/",
+                "dataset": "/public/share/"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "f91df60856a1acb1",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "8c2877ba898ae6f6"
+      ],
+      "params": {
+        "model_class": "DiffDock",
+        "strict": true,
+        "reference_state_dict": {
+          "source": "reference_model.state_dict()",
+          "model_eval": true
+        },
+        "candidate_load": {
+          "method": "load_state_dict",
+          "strict": true
+        },
+        "fixtures": {
+          "protein": {
+            "filename": "protein.pdb",
+            "coordinates": [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                2.0,
+                0.0
+              ]
+            ]
+          },
+          "ligand": {
+            "filename": "ligand.sdf",
+            "coordinates": [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.8,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.8,
+                0.0
+              ]
+            ]
+          }
+        },
+        "checkpoint": {
+          "filename": "reference_checkpoint.pt",
+          "payload_key": "model_state_dict"
+        },
+        "cli": {
+          "samples": 1,
+          "seed": 5,
+          "require_returncode": 0,
+          "required_output": "scores.csv"
+        },
+        "state_key_contract": {
+          "nonempty": true,
+          "all_keys_type": "str"
+        },
+        "source_required_substring": "torch.load"
+      }
+    },
+    {
+      "id": "619b34000c50f247",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "f91df60856a1acb1"
+      ],
+      "params": {
+        "model_class": "DiffDock",
+        "hidden_size": 32,
+        "distance_bins": 16,
+        "required_modules": [
+          "ligand_encoder",
+          "receptor_encoder",
+          "cross_edge_encoder",
+          "cross_message",
+          "translation_head",
+          "rotation_head",
+          "torsion_head"
+        ],
+        "heads": {
+          "translation_head": {
+            "type": "torch.nn.Linear",
+            "out_features": 3
+          },
+          "rotation_head": {
+            "type": "torch.nn.Linear",
+            "out_features": 3
+          },
+          "torsion_head": {
+            "type": "torch.nn.Sequential",
+            "last_out_features": 1
+          }
+        },
+        "rbf_cross_edges": {
+          "attribute": "distance_bins",
+          "expected": 16,
+          "encoder_type": "torch.nn.Sequential",
+          "first_in_features": 16
+        },
+        "child_order": [
+          "ligand_encoder",
+          "receptor_encoder",
+          "cross_edge_encoder",
+          "cross_message",
+          "translation_head",
+          "rotation_head",
+          "torsion_head"
+        ],
+        "module_probes": [
+          {
+            "name": "ligand_encoder",
+            "input_shape": [
+              3,
+              3
+            ],
+            "output_shape": [
+              3,
+              32
+            ]
+          },
+          {
+            "name": "receptor_encoder",
+            "input_shape": [
+              4,
+              3
+            ],
+            "output_shape": [
+              4,
+              32
+            ]
+          },
+          {
+            "name": "cross_edge_encoder",
+            "input_shape": [
+              3,
+              4,
+              16
+            ],
+            "output_shape": [
+              3,
+              4,
+              32
+            ]
+          },
+          {
+            "name": "cross_message",
+            "input_shape": [
+              3,
+              4,
+              96
+            ],
+            "output_shape": [
+              3,
+              4,
+              32
+            ]
+          },
+          {
+            "name": "translation_head",
+            "input_shape": [
+              32
+            ],
+            "output_shape": [
+              3
+            ]
+          },
+          {
+            "name": "rotation_head",
+            "input_shape": [
+              2,
+              32
+            ],
+            "output_shape": [
+              2,
+              3
+            ]
+          },
+          {
+            "name": "torsion_head",
+            "input_shape": [
+              2,
+              64
+            ],
+            "output_shape": [
+              2,
+              1
+            ]
+          }
+        ],
+        "cross_message": {
+          "type": "torch.nn.Sequential",
+          "first_in_features": 96
+        }
+      }
+    },
+    {
+      "id": "12d499a82662884a",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "619b34000c50f247"
+      ],
+      "params": {
+        "forward_args": {
+          "protein_fixture": "context.protein",
+          "ligand_fixture": "context.ligand",
+          "diffusion_time": 0.5,
+          "inference_mode": true
+        },
+        "required_output_keys": [
+          "tr_pred",
+          "rot_pred",
+          "tor_pred"
+        ],
+        "required_shapes": {
+          "tr_pred": [
+            1,
+            3
+          ],
+          "rot_pred": [
+            1,
+            3
+          ],
+          "tor_pred": "num_ligand_atoms_minus_1"
+        },
+        "require_finite": true,
+        "comparison": {
+          "atol": 1e-06,
+          "rtol": 1e-06
+        },
+        "translation_invariance": {
+          "offset": [
+            3.0,
+            -2.0,
+            1.5
+          ],
+          "compare_keys": [
+            "tr_pred",
+            "rot_pred",
+            "tor_pred"
+          ]
+        },
+        "determinism": {
+          "repeat_diffusion_time": 0.5,
+          "compare_keys": [
+            "tr_pred",
+            "rot_pred",
+            "tor_pred"
+          ]
+        },
+        "invalid_shape": {
+          "protein_column_count": 2,
+          "accepted_exceptions": [
+            "ValueError",
+            "RuntimeError"
+          ]
+        },
+        "time_sensitivity": {
+          "later_diffusion_time": 0.9,
+          "output_key": "tr_pred",
+          "require_not_allclose": true
+        }
+      }
+    },
+    {
+      "id": "ca00b85ff4cd2a44",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "12d499a82662884a"
+      ],
+      "params": {
+        "cli_timeout_seconds": 180,
+        "required_cli_flags": [
+          "--protein-path",
+          "--ligand-path",
+          "--checkpoint",
+          "--out-dir",
+          "--samples",
+          "--seed"
+        ],
+        "forbid_import_root": "onescience",
+        "source_requirements": {
+          "eval_substring": ".eval()",
+          "inference_context_substrings": [
+            "inference_mode",
+            "no_grad"
+          ]
+        },
+        "parsers": {
+          "protein_function": "parse_pdb_coordinates",
+          "ligand_function": "parse_sdf_coordinates",
+          "protein_shape": [
+            4,
+            3
+          ],
+          "ligand_shape": [
+            3,
+            3
+          ]
+        },
+        "smoke_cli": {
+          "samples": 3,
+          "seed": 5,
+          "require_returncode": 0,
+          "scores_filename": "scores.csv",
+          "required_csv_columns": [
+            "rank",
+            "score",
+            "pose_file"
+          ],
+          "ranks": [
+            "1",
+            "2",
+            "3"
+          ],
+          "scores_descending": true,
+          "pose_glob": "*.sdf",
+          "pose_count": 3,
+          "sdf_atom_count_line": 3,
+          "expected_atom_count": 3
+        },
+        "raw_checkpoint_cli": {
+          "filename": "raw_state.pt",
+          "payload": "reference_model.state_dict()",
+          "samples": 1,
+          "seed": 5,
+          "require_returncode": 0,
+          "required_output": "scores.csv"
+        },
+        "invalid_samples_cli": {
+          "samples": 0,
+          "seed": 5,
+          "require_nonzero_returncode": true
+        }
+      }
+    },
+    {
+      "id": "77cf7ff449262c7e",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "ca00b85ff4cd2a44"
+      ],
+      "params": {
+        "reference_forward": {
+          "protein": "context.protein",
+          "ligand": "context.ligand",
+          "diffusion_time": 0.5,
+          "inference_mode": true
+        },
+        "score_equivalence": {
+          "keys": [
+            "tr_pred",
+            "rot_pred",
+            "tor_pred"
+          ],
+          "atol": 1e-06,
+          "rtol": 1e-06,
+          "record_mae_keys": [
+            "tr_mae",
+            "rot_mae",
+            "tor_mae"
+          ]
+        },
+        "pose_sampling": {
+          "method": "sample",
+          "samples": 3,
+          "seed": 5,
+          "require_list": true,
+          "pose_fields": {
+            "translation": {
+              "shape": [
+                3
+              ]
+            },
+            "rotation_score": {
+              "shape": [
+                3
+              ]
+            },
+            "torsion_score": {
+              "shape": "num_ligand_atoms_minus_1"
+            },
+            "score": {
+              "type": "float"
+            }
+          }
+        },
+        "score_pose_rule": {
+          "translation": "protein.mean(dim=0)-ligand.mean(dim=0)",
+          "far_offset": [
+            50.0,
+            0.0,
+            0.0
+          ],
+          "require_near_greater_than_far": true,
+          "record_metric": "pose_score_gap"
+        },
+        "seed_sensitivity": {
+          "second_seed": 6,
+          "minimum_score_difference": 1e-08,
+          "require_any_difference": true
+        },
+        "score_finiteness": {
+          "require_math_isfinite": true
+        }
+      }
+    }
+  ]
+}

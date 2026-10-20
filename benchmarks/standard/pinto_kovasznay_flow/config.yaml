@@ -1,0 +1,39 @@
+experiment:
+  name: pinto_kovasznay_flow
+  seed: 1234
+  checkpoint_path: weight/best_model.pt
+  results_dir: results
+
+data:
+  domain_start: [-0.5, -0.5]
+  domain_stop: [1.0, 1.5]
+  grid_size: 64
+  smoke_grid_size: 16
+  domain_samples: 2000
+  smoke_domain_samples: 32
+  seq_len: 20
+  smoke_seq_len: 5
+  train_nue: [0.05, 0.03333333333333333, 0.02, 0.0125]
+  test_nue: [0.1, 0.05, 0.03333333333333333, 0.025, 0.02]
+  output_channels: [u, v, p]
+
+model:
+  hidden_dim: 64
+  num_heads: 2
+  activation: swish
+  input_dim: 2
+  boundary_value_dim: 3
+  output_dim: 3
+
+training:
+  epochs: 1
+  batch_size: 4
+  learning_rate: 0.0005
+  optimizer: Adam
+  loss_fn: MSE
+  pde_loss_weight: 0.1
+  boundary_loss_weight: 1.0
+
+inference:
+  grid_size: 16
+  nue: 0.025

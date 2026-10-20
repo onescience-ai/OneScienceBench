@@ -1,0 +1,32 @@
+# MTL-Airfoil-Surrogate training configuration.
+# Paper: Hu et al., Physics of Fluids 2025 (DOI 10.1063/5.0258928).
+# Model: MTL MLP Decoder I (surface / volume separation) + STCH weighting.
+
+# ---- model architecture (paper Table I) ----
+nb_hidden_layers: 3            # backbone hidden layer count
+size_hidden_layers: 64         # backbone hidden layer width
+bn_bool: true                  # batch norm on the backbone (Table I: Backbone BN = yes)
+encoder: [7, 64, 64, 8]        # encoder channel list
+decoder_surf: [8, 64, 64, 1]   # surface decoder channel list (predicts p|S)
+decoder_vol: [8, 64, 64, 4]    # volume decoder channel list (predicts u, v, p, nu_t)
+
+# ---- MTL weighting (paper Section III.B) ----
+weight_method: stch            # stch | fairgrad | famo
+mu: 1.0                        # STCH smoothing parameter
+warmup_epoch: 4                # STCH warmup epochs (sum-of-log before nadir)
+n_tasks: 2                     # Decoder I -> 2 tasks (surface, volume)
+
+# ---- training (paper Section IV.B) ----
+lr: 0.001                      # max learning rate (one-cycle cosine)
+epochs: 800
+batch_size: 1                  # one simulation per step
+pct_start: 0.1                 # one-cycle warmup fraction
+early_stopping_patience: 200
+seed: 1
+
+# ---- data (paper Section IV.A) ----
+subsampling: 32000             # random point subsample per training epoch
+val_split_ratio: 0.1           # last 10% of full_train -> validation
+train_name: full_train
+test_name: full_test
+# crop: [-2, 4, -1.5, 1.5]     # optional bounding-box crop (paper uses this)

@@ -1,0 +1,258 @@
+{
+  "id": "alphafold3_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 AlphaFold3 风格复合物扩散结构推理",
+  "prompt": "实现一个独立于 onescience Python 包的轻量 AlphaFold3 风格复合物结构推理入口。模型文件命名为 alphafold3_inference.py，模型类命名为 AlphaFold3，读取包含 protein 或 dna 序列的 JSON 输入，构造 target_feat [B,L,R,22] 和 residue_index [B,L,R]，沿 recycling 维执行 TargetEmbedder、两层 PairFormerIteration、DiffusionHead 和 ConfidenceHead，输出 diffusion_samples、atom_positions、predicted_lddt、predicted_experimentally_resolved、full_pae、average_pae、single_embeddings 和 pair_embeddings。命令行必须支持 --json-path、--model-dir、--output-dir、--run-data-pipeline、--run-inference、--flash-attention-implementation、--num-recycles、--num-diffusion-samples、--seed、--device；严格加载 model.pt 或 model_state_dict，在 eval/no_grad 下推理，按 rank 写出 sample_0.pdb、confidence.json 和 ranking_scores.csv。不得导入 onescience。\n请在当前工作目录生成且仅生成 alphafold3_inference.py；脚本必须支持 --json-path、--model-dir、--output-dir、--run-data-pipeline、--run-inference、--flash-attention-implementation、--num-recycles、--num-diffusion-samples、--seed、--device；所有 sample_*.pdb、confidence.json 和 ranking_scores.csv 必须保存到命令行指定的 --output-dir。",
+  "evaluation_script": "evaluate_alphafold3_inference.py",
+  "stardard_dir_name": "alphafold3_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_alphafold3_inference"
+  },
+  "checks": [
+    {
+      "id": "ed3e3b747a1825fc",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {"required_files": ["alphafold3_inference.py"]}
+    },
+    {
+      "id": "af16335584e53af5",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": ["ed3e3b747a1825fc"],
+      "params": {
+        "files": ["alphafold3_inference.py"],
+        "required_interfaces": ["main", "sequence_from_json", "make_features", "write_pdb"]
+      }
+    },
+    {
+      "id": "9d71a4116753a8b9",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": ["ed3e3b747a1825fc"],
+      "params": {
+        "files": ["alphafold3_inference.py"],
+        "required_interfaces": ["AlphaFold3", "AlphaFold3.forward", "TargetEmbedder", "PairFormerIteration", "DiffusionHead", "ConfidenceHead"]
+      }
+    },
+    {
+      "id": "16c90bfb77fb4ddb",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": ["9d71a4116753a8b9"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFG",
+        "seed": 7,
+        "timeout": 90
+      }
+    },
+    {
+      "id": "0913a668328fbed2",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": ["9d71a4116753a8b9"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "seed": 7,
+        "rules": [
+          {"id": "root_children", "type": "children_count", "severity": "error", "params": {"target_path": "", "count": 4}},
+          {"id": "root_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "", "pattern": ["TargetEmbedder", "ModuleList", "DiffusionHead", "ConfidenceHead"]}},
+
+          {"id": "target_embedder_count", "type": "module_count", "severity": "error", "params": {"selector": {"class_name": "TargetEmbedder"}, "count": 1}},
+          {"id": "pairformer_count", "type": "module_count", "severity": "error", "params": {"selector": {"class_name": "PairFormerIteration"}, "count": 2}},
+          {"id": "diffusion_head_count", "type": "module_count", "severity": "error", "params": {"selector": {"class_name": "DiffusionHead"}, "count": 1}},
+          {"id": "confidence_head_count", "type": "module_count", "severity": "error", "params": {"selector": {"class_name": "ConfidenceHead"}, "count": 1}},
+
+          {"id": "target_embedder_children", "type": "children_count", "severity": "error", "params": {"target_path": "target_embedder", "count": 2}},
+          {"id": "target_embedder_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "target_embedder", "pattern": ["Linear", "Linear"]}},
+          {"id": "target_embedder_single_projection", "type": "linear_shape", "severity": "error", "params": {"target_path": "target_embedder.single_projection", "in_features": 22, "out_features": 32, "bias": true}},
+          {"id": "target_embedder_pair_projection", "type": "linear_shape", "severity": "error", "params": {"target_path": "target_embedder.pair_projection", "in_features": 45, "out_features": 32, "bias": true}},
+
+          {"id": "pairformer_length", "type": "modulelist_length", "severity": "error", "params": {"target_path": "pairformer", "length": 2}},
+          {"id": "pairformer_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer", "pattern": ["PairFormerIteration", "PairFormerIteration"]}},
+
+          {"id": "pairformer_0_children", "type": "children_count", "severity": "error", "params": {"target_path": "pairformer.0", "count": 4}},
+          {"id": "pairformer_0_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer.0", "pattern": ["LayerNorm", "Sequential", "LayerNorm", "Sequential"]}},
+          {"id": "pairformer_0_single_norm", "type": "layer_norm_shape", "severity": "error", "params": {"target_path": "pairformer.0.single_norm", "normalized_shape": [32]}},
+          {"id": "pairformer_0_single_update_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer.0.single_update", "pattern": ["Linear", "SiLU", "Linear"]}},
+          {"id": "pairformer_0_single_update_in", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.0.single_update.0", "in_features": 32, "out_features": 64, "bias": true}},
+          {"id": "pairformer_0_single_update_out", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.0.single_update.2", "in_features": 64, "out_features": 32, "bias": true}},
+          {"id": "pairformer_0_pair_norm", "type": "layer_norm_shape", "severity": "error", "params": {"target_path": "pairformer.0.pair_norm", "normalized_shape": [32]}},
+          {"id": "pairformer_0_pair_update_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer.0.pair_update", "pattern": ["Linear", "SiLU", "Linear"]}},
+          {"id": "pairformer_0_pair_update_in", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.0.pair_update.0", "in_features": 32, "out_features": 64, "bias": true}},
+          {"id": "pairformer_0_pair_update_out", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.0.pair_update.2", "in_features": 64, "out_features": 32, "bias": true}},
+
+          {"id": "pairformer_1_children", "type": "children_count", "severity": "error", "params": {"target_path": "pairformer.1", "count": 4}},
+          {"id": "pairformer_1_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer.1", "pattern": ["LayerNorm", "Sequential", "LayerNorm", "Sequential"]}},
+          {"id": "pairformer_1_single_norm", "type": "layer_norm_shape", "severity": "error", "params": {"target_path": "pairformer.1.single_norm", "normalized_shape": [32]}},
+          {"id": "pairformer_1_single_update_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer.1.single_update", "pattern": ["Linear", "SiLU", "Linear"]}},
+          {"id": "pairformer_1_single_update_in", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.1.single_update.0", "in_features": 32, "out_features": 64, "bias": true}},
+          {"id": "pairformer_1_single_update_out", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.1.single_update.2", "in_features": 64, "out_features": 32, "bias": true}},
+          {"id": "pairformer_1_pair_norm", "type": "layer_norm_shape", "severity": "error", "params": {"target_path": "pairformer.1.pair_norm", "normalized_shape": [32]}},
+          {"id": "pairformer_1_pair_update_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "pairformer.1.pair_update", "pattern": ["Linear", "SiLU", "Linear"]}},
+          {"id": "pairformer_1_pair_update_in", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.1.pair_update.0", "in_features": 32, "out_features": 64, "bias": true}},
+          {"id": "pairformer_1_pair_update_out", "type": "linear_shape", "severity": "error", "params": {"target_path": "pairformer.1.pair_update.2", "in_features": 64, "out_features": 32, "bias": true}},
+
+          {"id": "diffusion_head_children", "type": "children_count", "severity": "error", "params": {"target_path": "diffusion_head", "count": 2}},
+          {"id": "diffusion_head_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "diffusion_head", "pattern": ["LayerNorm", "Linear"]}},
+          {"id": "diffusion_head_norm", "type": "layer_norm_shape", "severity": "error", "params": {"target_path": "diffusion_head.norm", "normalized_shape": [32]}},
+          {"id": "diffusion_head_atom_position_head", "type": "linear_shape", "severity": "error", "params": {"target_path": "diffusion_head.atom_position_head", "in_features": 32, "out_features": 3, "bias": true}},
+
+          {"id": "confidence_head_children", "type": "children_count", "severity": "error", "params": {"target_path": "confidence_head", "count": 2}},
+          {"id": "confidence_head_pattern", "type": "block_pattern", "severity": "error", "params": {"target_path": "confidence_head", "pattern": ["Linear", "Linear"]}},
+          {"id": "confidence_head_plddt", "type": "linear_shape", "severity": "error", "params": {"target_path": "confidence_head.plddt", "in_features": 32, "out_features": 1, "bias": true}},
+          {"id": "confidence_head_resolved", "type": "linear_shape", "severity": "error", "params": {"target_path": "confidence_head.resolved", "in_features": 32, "out_features": 1, "bias": true}}
+        ]
+      }
+    },
+    {
+      "id": "3e1cf97d99f262f2",
+      "type": "model_components_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": ["9d71a4116753a8b9"],
+      "params": {
+        "scope": "model_components",
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "seed": 7
+      }
+    },
+    {
+      "id": "a4d164dbd6d9f7e3",
+      "type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": ["9d71a4116753a8b9"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequences": ["A", "ACD", "ACDEFG"],
+        "seed": 7
+      }
+    },
+    {
+      "id": "dab28862b335249f",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": ["9d71a4116753a8b9"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFG",
+        "seed": 11
+      }
+    },
+    {
+      "id": "b42d2e30b2ce2f8c",
+      "type": "infer_helpers_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": ["af16335584e53af5"],
+      "params": {
+        "scope": "inference_helpers",
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFG",
+        "seed": 7
+      }
+    },
+    {
+      "id": "c28aaf52f428919d",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": ["ed3e3b747a1825fc"],
+      "params": {
+        "required_flags": ["--json-path", "--model-dir", "--output-dir", "--run-data-pipeline", "--run-inference", "--flash-attention-implementation", "--num-recycles", "--num-diffusion-samples", "--seed", "--device"]
+      }
+    },
+    {
+      "id": "0d8998279af06344",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": ["ed3e3b747a1825fc"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFG",
+        "seed": 7,
+        "timeout": 90
+      }
+    },
+    {
+      "id": "5299e34bfbfa5a30",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": ["0d8998279af06344"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFG",
+        "seed": 7,
+        "timeout": 90
+      }
+    },
+    {
+      "id": "ee5af1ddaeab723f",
+      "type": "infer_output_validity",
+      "method": "check_infer_output_validity",
+      "phase": "infer_execution",
+      "depends": ["5299e34bfbfa5a30"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFG",
+        "seed": 7,
+        "timeout": 90
+      }
+    },
+    {
+      "id": "4d1450be3a0f0f71",
+      "type": "infer_metric",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": ["ee5af1ddaeab723f"],
+      "params": {
+        "num_recycles": 2,
+        "num_diffusion_samples": 2,
+        "num_pairformer_layers": 2,
+        "sequence": "ACDEFGHIK",
+        "seed": 7,
+        "timeout": 90
+      }
+    }
+  ]
+}

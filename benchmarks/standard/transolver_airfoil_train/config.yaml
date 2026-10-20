@@ -1,0 +1,34 @@
+# Transolver / AirfRANS experiment configuration
+
+data:
+  # Directory containing AirfRANS manifest.json and simulation folders.
+  root: /public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset
+  # full | scarce | reynolds | aoa
+  task: full
+  # The original Transolver code reserves the last 10% of *_train as validation.
+  val_ratio: 0.10
+
+model:
+  space_dim: 7
+  out_dim: 4
+  hidden_dim: 256
+  layers: 8
+  heads: 8
+  slice_num: 32
+  mlp_ratio: 2
+  dropout: 0.0
+  act: gelu
+  ref: 8
+  unified_pos: true
+
+training:
+  seed: 0
+  device: auto
+  output_dir: runs/transolver_airfrans
+  epochs: 398
+  batch_size: 1
+  lr: 0.001
+  sample_points: 32000
+  surface_weight: 1.0
+  val_interval: 10
+  val_repeats: 20

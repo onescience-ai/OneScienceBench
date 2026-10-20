@@ -1,0 +1,30 @@
+{
+  "task": "proteinmpnn_inference",
+  "entrypoint": "proteinmpnn_inference.py",
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/ProteinMPNN/vanilla_model_weights/v_48_030.pt",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/proteinmpnn/pdb_2021aug02_sample",
+    "mount_required": true
+  },
+  "input": {
+    "source": "/public/share/sugonhpcapp01/onestore/onedatasets/proteinmpnn/pdb_2021aug02_sample",
+    "format": "pdb",
+    "selection": "one deterministic protein structure from the mounted set"
+  },
+  "model_class": "ProteinMPNN",
+  "hidden_size": 32,
+  "k_neighbors": 4,
+  "num_encoder_layers": 2,
+  "num_decoder_layers": 2,
+  "edge_features": {
+    "radial_basis_bins": 16,
+    "radial_basis_maximum": 20.0,
+    "unit_direction_channels": 3
+  },
+  "sequence_vocab": "ACDEFGHIKLMNPQRSTVWYX",
+  "sampling": {
+    "num_seq_per_target": 2,
+    "temperature": 0.1,
+    "seed": 20260820
+  }
+}

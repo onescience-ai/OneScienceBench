@@ -1,0 +1,534 @@
+{
+  "id": "meshgraphnet_cylinderflow_sec_develop",
+  "eval_type": "sec_develop",
+  "domain": "cfd",
+  "task": "基于 MeshGraphNet 模型实现 DeepMind CylinderFlow 二维圆柱绕流预测任务的二次开发",
+  "prompt": "基于 MeshGraphNet 模型实现 DeepMind CylinderFlow 二维圆柱绕流预测任务的二次开发。\n任务输入为当前时间步的二维速度场、节点类型以及非结构化三角网格信息，模型预测下一时间步的速度增量和压力。数据集路径为 /public/share/sugonhpcapp01/onestore/onedatasets/vortex_shedding_mgn/cylinder_flow。\n原始任务：\n1. `model.py`：实现核心类 `MeshGraphNet`，采用 Encode–Process–Decode 架构。节点输入为 `[u_t,v_t]` 与 4 类节点类型 one-hot，共 6 维；边输入为相对坐标 `[dx,dy]` 及其 L2 距离，共 3 维；输出为 `[Δu,Δv,p_{t+1}]`，共 3 维。默认隐藏维度 128，所有 MLP 含 2 个隐藏层并使用 ReLU，除 Decoder 外均在输出端使用 LayerNorm。Processor 堆叠 15 个消息传递块：先由边、发送节点和接收节点特征更新边，再按接收节点进行 sum 聚合并更新节点，边和节点更新均使用残差连接。前向接口为 `forward(node_features, edge_features, edge_index)`，输入形状分别为 `[N,6]`、`[E,3]`、`[2,E]`，输出 `[N,3]`。\n2. `dataset.py`：读取 CylinderFlow TFRecord 中的 `cells、mesh_pos、node_type、velocity、pressure`，将三角形网格转换为去重双向边，并把 `NORMAL、INFLOW、OUTFLOW、WALL_BOUNDARY` 编码为 4 维 one-hot。默认读取 train/valid/test 前 `400/10/10` 条轨迹及每条前 300 步。采用单步 teacher forcing：输入 `velocity[t]`，目标为 `velocity[t+1]-velocity[t]` 和 `pressure[t+1]`。训练时仅向 NORMAL 节点速度添加 `std=0.02` 的高斯噪声，并从速度增量目标中减去同一噪声。归一化统计量只能来自训练集，优先读取 `stats/edge_stats.json` 和 `stats/node_stats.json`。\n3. `utils.py`：实现配置读取、随机种子、设备与分布式管理、日志、参数统计、归一化、checkpoint 和 JSON 保存；提供单步 normalized MSE 及自回归 rollout 评测。Rollout 仅更新 NORMAL/OUTFLOW 节点，其余节点使用真实边界速度，分别报告 1-step、50-step 和 full-rollout velocity RMSE，pressure MSE 单独报告。\n4. `config.yaml`：集中定义全部超参数。默认采用 OneScience 缩减配置：数据量 `400/10/10`、300 步、noise `0.02`、batch size `1`、25 epochs、Adam、初始学习率 `1e-4`、逐步乘 `0.9999991`、隐藏维度 `128`、2 层 MLP、15 个消息传递块、sum 聚合和 MSE。`loss_nodes` 默认 `all`，并支持 `normal_outflow`。\n5. `train.py`：实现 DataLoader、MeshGraphNet、Adam 和逐 step 指数调度的完整训练，支持单卡/DDP、AMP、续训、早停及单步 teacher forcing；按最低验证 normalized MSE 保存 `best.pt`，每轮保存 `last.pt`，最终加载最佳模型执行 1/50/299-step rollout，分别报告 velocity RMSE 和 pressure MSE，并在 `./results/meshgraphnet_cylinderflow_seed0/` 保存 checkpoint、日志及包含配置和指标的 `history.json、summary.json`。提供 `--config、--data、--output、--device、--epochs、--rollout`\n二次开发：\n1. 多尺度 Processor：保留 MeshGraphNet 的 Encoder 和 Decoder，将原有 15 层单尺度 Processor 改为“细网格传播—下采样—粗网格传播—上采样融合—细网格修正”结构。数据 Pipeline 为每条轨迹预计算并缓存 fine/coarse 图及跨尺度映射，粗网格通过 FPS 选取约 25% 节点并构建 kNN 边；模型先在细网格提取局部流动特征，再利用粗网格传递长距离信息，最后将粗尺度特征插值回细网格并通过残差 MLP 融合，以增强对压力耦合和大范围涡结构的建模能力。\n\n2. 课程式 Rollout Loss：将单步 teacher-forcing 训练扩展为连续时间窗口上的多步自回归训练，并随训练进度将 rollout horizon 从 1 逐步增加到 2、4、8。每一步使用模型预测的速度增量更新 NORMAL/OUTFLOW 节点，其他边界节点使用真实速度；前若干步停止梯度，仅在最后一步计算 rollout loss，再与原单步 loss 加权求和。速度和压力分别计算损失并独立设置权重，从而让模型适应推理时由自身预测构成的输入分布，降低长时 rollout 的误差累积。\n  \n    ",
+  "evaluation_script": "evaluate_meshgraphnet_cylinderflow_sec_develop.py",
+  "stardard_dir_name": "meshgraphnet_cylinderflow_sec_develop",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "ntasks_per_node": 1,
+    "cpus_per_task": 4,
+    "time": "00:30:00"
+  },
+    "checks": [
+        {
+            "id": "ffd604b1d40dfae5",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "config.yaml"
+                ]
+            }
+        },
+        {
+            "id": "d1bf853f5aa480e1",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "dataset.py"
+                ]
+            }
+        },
+        {
+            "id": "55aeb9527b4a5901",
+            "type": "data_config_content",
+            "method": "check_config_content",
+            "phase": "data_analysis",
+            "depends": [
+                "ffd604b1d40dfae5"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "data",
+                        "type": "dict"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "e1069941f136c0b4",
+            "type": "data_contract",
+            "method": "check_data_contract",
+            "phase": "data_analysis",
+            "depends": [
+                "d1bf853f5aa480e1",
+                "55aeb9527b4a5901"
+            ],
+            "params": {
+                "files": [
+                    "dataset.py"
+                ],
+                "config_name": "config.yaml"
+            }
+        },
+        {
+            "id": "e4b97003a65454c8",
+            "type": "model_file",
+            "method": "check_files",
+            "phase": "model_structure",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "model.py"
+                ]
+            }
+        },
+        {
+            "id": "78def4132b0b583a",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": [
+                "e4b97003a65454c8"
+            ],
+            "params": {
+                "files": [
+                    "model.py"
+                ],
+                "required_interfaces": [
+                    "MeshGraphNet",
+                    "MeshGraphNet.forward"
+                ]
+            }
+        },
+        {
+            "id": "6143c9aa1a7cfcfb",
+            "type": "model_structure",
+            "method": "check_model_structure",
+            "phase": "model_structure",
+            "depends": [
+                "78def4132b0b583a",
+                "ffd604b1d40dfae5"
+            ],
+            "params": {
+                "model_file": "model.py",
+                "model_class": "MeshGraphNet",
+                "config_name": "config.yaml",
+                "model_args": {
+                    "node_input_dim": 6,
+                    "node_dim": 6,
+                    "edge_input_dim": 3,
+                    "edge_dim": 3,
+                    "output_dim": 3,
+                    "out_dim": 3,
+                    "hidden_dim": 128,
+                    "latent_dim": 128,
+                    "mlp_hidden_layers": 2,
+                    "hidden_layers": 2,
+                    "processor_steps": 15,
+                    "message_passing_steps": 15,
+                    "num_message_passing_steps": 15,
+                    "fine_steps_before": 5,
+                    "fine_pre_steps": 5,
+                    "coarse_steps": 5,
+                    "fine_steps_after": 5,
+                    "fine_post_steps": 5,
+                    "coarse_ratio": 0.25,
+                    "coarse_knn": 3,
+                    "coarse_k": 3,
+                    "cross_scale_knn": 2,
+                    "interpolation_k": 2,
+                    "aggregation": "sum",
+                    "activation": "relu",
+                    "num_mlp_layers": 2,
+                    "num_processor_blocks": 15,
+                    "multiscale": true,
+                    "multiscale_config": {
+                        "num_fine_blocks": 5,
+                        "num_coarse_blocks": 5,
+                        "num_correction_blocks": 5,
+                        "upsample_k": 2,
+                        "fusion_hidden_layers": 2
+                    }
+                },
+                "device": "cpu",
+                "rules": [
+                    {
+                        "id": "root_model_type",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "",
+                            "expected": "MeshGraphNet"
+                        }
+                    },
+                    {
+                        "id": "node_encoder_input",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "node_encoder.network.0",
+                            "target_path_aliases": [
+                                "encoder.node_encoder.net.0"
+                            ],
+                            "in_features": 6
+                        }
+                    },
+                    {
+                        "id": "node_encoder_output",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "node_encoder.network.4",
+                            "target_path_aliases": [
+                                "encoder.node_encoder.net.4"
+                            ],
+                            "out_features": 128
+                        }
+                    },
+                    {
+                        "id": "edge_encoder_input",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "fine_edge_encoder.network.0",
+                            "target_path_aliases": [
+                                "encoder.edge_encoder.net.0"
+                            ],
+                            "in_features": 3
+                        }
+                    },
+                    {
+                        "id": "decoder_output",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "decoder.network.4",
+                            "target_path_aliases": [
+                                "decoder.decoder.net.4"
+                            ],
+                            "out_features": 3
+                        }
+                    }
+                ],
+                "check_config": {
+                    "match_model_signature": true
+                }
+            }
+        },
+        {
+            "id": "0d85d523be1f79e4",
+            "type": "model_structure_contract",
+            "method": "check_model_contract",
+            "phase": "model_structure",
+            "depends": [
+                "78def4132b0b583a",
+                "ffd604b1d40dfae5"
+            ],
+            "params": {
+                "model_file": "model.py",
+                "model_class": "MeshGraphNet",
+                "config_name": "config.yaml",
+                "model_args": {
+                    "node_input_dim": 6,
+                    "node_dim": 6,
+                    "edge_input_dim": 3,
+                    "edge_dim": 3,
+                    "output_dim": 3,
+                    "out_dim": 3,
+                    "hidden_dim": 128,
+                    "latent_dim": 128,
+                    "mlp_hidden_layers": 2,
+                    "hidden_layers": 2,
+                    "processor_steps": 15,
+                    "message_passing_steps": 15,
+                    "num_message_passing_steps": 15,
+                    "fine_steps_before": 5,
+                    "fine_pre_steps": 5,
+                    "coarse_steps": 5,
+                    "fine_steps_after": 5,
+                    "fine_post_steps": 5,
+                    "coarse_ratio": 0.25,
+                    "coarse_knn": 3,
+                    "coarse_k": 3,
+                    "cross_scale_knn": 2,
+                    "interpolation_k": 2,
+                    "aggregation": "sum",
+                    "activation": "relu",
+                    "num_mlp_layers": 2,
+                    "num_processor_blocks": 15,
+                    "multiscale": true,
+                    "multiscale_config": {
+                        "num_fine_blocks": 5,
+                        "num_coarse_blocks": 5,
+                        "num_correction_blocks": 5,
+                        "upsample_k": 2,
+                        "fusion_hidden_layers": 2
+                    }
+                },
+                "device": "cpu",
+                "check_config": {
+                    "match_model_signature": true
+                }
+            }
+        },
+        {
+            "id": "92a845c1becf068d",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": [
+                "78def4132b0b583a",
+                "ffd604b1d40dfae5"
+            ],
+            "params": {
+                "model_file": "model.py",
+                "model_class": "MeshGraphNet",
+                "config_name": "config.yaml",
+                "model_args": {
+                    "node_input_dim": 6,
+                    "node_dim": 6,
+                    "edge_input_dim": 3,
+                    "edge_dim": 3,
+                    "output_dim": 3,
+                    "out_dim": 3,
+                    "hidden_dim": 16,
+                    "latent_dim": 16,
+                    "mlp_hidden_layers": 2,
+                    "hidden_layers": 2,
+                    "processor_steps": 3,
+                    "message_passing_steps": 3,
+                    "num_message_passing_steps": 3,
+                    "fine_steps_before": 1,
+                    "fine_pre_steps": 1,
+                    "coarse_steps": 1,
+                    "fine_steps_after": 1,
+                    "fine_post_steps": 1,
+                    "coarse_ratio": 0.25,
+                    "coarse_knn": 3,
+                    "coarse_k": 3,
+                    "cross_scale_knn": 2,
+                    "interpolation_k": 2,
+                    "aggregation": "sum",
+                    "activation": "relu",
+                    "num_mlp_layers": 2,
+                    "num_processor_blocks": 3,
+                    "multiscale": true,
+                    "multiscale_config": {
+                        "num_fine_blocks": 1,
+                        "num_coarse_blocks": 1,
+                        "num_correction_blocks": 1,
+                        "upsample_k": 2,
+                        "fusion_hidden_layers": 2
+                    }
+                },
+                "device": "cpu",
+                "forward_args": {
+                    "node_features": "$node_features",
+                    "fine_edge_features": "$fine_edge_features",
+                    "fine_edge_index": "$fine_edge_index",
+                    "coarse_node_index": "$coarse_node_index",
+                    "coarse_edge_features": "$coarse_edge_features",
+                    "coarse_edge_index": "$coarse_edge_index",
+                    "down_edge_features": "$down_edge_features",
+                    "down_edge_index": "$down_edge_index",
+                    "up_edge_features": "$up_edge_features",
+                    "up_edge_index": "$up_edge_index",
+                    "interpolation_index": "$interpolation_index",
+                    "interpolation_weight": "$interpolation_weight"
+                },
+                "out_shape": [
+                    8,
+                    3
+                ],
+                "check_nan_inf": true,
+                "check_config": {
+                    "match_model_signature": true,
+                    "match_forward_signature": true,
+                    "tiny_multiscale_graph": true,
+                    "seed": 20260821
+                }
+            }
+        },
+        {
+            "id": "aa61cf567c65ba0c",
+            "type": "train_file",
+            "method": "check_files",
+            "phase": "train_script",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "train.py"
+                ]
+            }
+        },
+        {
+            "id": "a4a77125542f9ab3",
+            "type": "train_file",
+            "method": "check_files",
+            "phase": "train_script",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "4d4c2e603ac862fe",
+            "type": "train_structure",
+            "method": "check_train_structure",
+            "phase": "train_script",
+            "depends": [
+                "d1bf853f5aa480e1",
+                "aa61cf567c65ba0c",
+                "ffd604b1d40dfae5"
+            ],
+            "params": {
+                "files": [
+                    "dataset.py",
+                    "train.py"
+                ],
+                "config_name": "config.yaml",
+                "check_config": {
+                    "teacher_forcing_noise": true
+                }
+            }
+        },
+        {
+            "id": "d67be4b11def472a",
+            "type": "train_structure",
+            "method": "check_train_structure",
+            "phase": "train_script",
+            "depends": [
+                "aa61cf567c65ba0c"
+            ],
+            "params": {
+                "files": [
+                    "train.py"
+                ],
+                "check_config": {
+                    "entry_names": [
+                        "main"
+                    ],
+                    "model_names": [
+                        "meshgraphnet",
+                        "build_model"
+                    ],
+                    "model_attributes": [
+                        "forward",
+                        "train"
+                    ],
+                    "dataloader_names": [
+                        "DataLoader"
+                    ],
+                    "optimizer_names": [
+                        "Adam"
+                    ],
+                    "loss_names": [
+                        "MSELoss"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "638320daecc47952",
+            "type": "train_structure",
+            "method": "check_train_structure",
+            "phase": "train_script",
+            "depends": [
+                "aa61cf567c65ba0c",
+                "a4a77125542f9ab3",
+                "ffd604b1d40dfae5",
+                "d67be4b11def472a"
+            ],
+            "params": {
+                "files": [
+                    "train.py",
+                    "utils.py"
+                ],
+                "config_name": "config.yaml",
+                "check_config": {
+                    "meshgraphnet_contract": true
+                }
+            }
+        },
+        {
+            "id": "5af732e3cc6b7bb2",
+            "type": "smoke_training",
+            "method": "check_meshgraphnet_smoke_training",
+            "phase": "smoke_train",
+            "depends": [
+                "78def4132b0b583a"
+            ],
+            "params": {
+                "config_name": null,
+                "smoke_config": {
+                    "model_args": {
+                        "node_input_dim": 6,
+                        "node_dim": 6,
+                        "edge_input_dim": 3,
+                        "edge_dim": 3,
+                        "output_dim": 3,
+                        "out_dim": 3,
+                        "hidden_dim": 16,
+                        "latent_dim": 16,
+                        "mlp_hidden_layers": 2,
+                        "hidden_layers": 2,
+                        "processor_steps": 3,
+                        "message_passing_steps": 3,
+                        "num_message_passing_steps": 3,
+                        "fine_steps_before": 1,
+                        "fine_pre_steps": 1,
+                        "coarse_steps": 1,
+                        "fine_steps_after": 1,
+                        "fine_post_steps": 1,
+                        "coarse_ratio": 0.25,
+                        "coarse_knn": 3,
+                        "coarse_k": 3,
+                        "cross_scale_knn": 2,
+                        "interpolation_k": 2,
+                        "aggregation": "sum",
+                        "activation": "relu",
+                        "num_mlp_layers": 2,
+                        "num_processor_blocks": 3,
+                        "multiscale": true,
+                        "multiscale_config": {
+                            "num_fine_blocks": 1,
+                            "num_coarse_blocks": 1,
+                            "num_correction_blocks": 1,
+                            "upsample_k": 2,
+                            "fusion_hidden_layers": 2
+                        }
+                    },
+                    "device": "cpu",
+                    "seed": 20260821,
+                    "optimizer_args": {
+                        "lr": 0.001
+                    }
+                },
+                "model_class": "MeshGraphNet",
+                "model_file": "model.py",
+                "forward_args": {
+                    "node_features": "$node_features",
+                    "fine_edge_features": "$fine_edge_features",
+                    "fine_edge_index": "$fine_edge_index",
+                    "coarse_node_index": "$coarse_node_index",
+                    "coarse_edge_features": "$coarse_edge_features",
+                    "coarse_edge_index": "$coarse_edge_index",
+                    "down_edge_features": "$down_edge_features",
+                    "down_edge_index": "$down_edge_index",
+                    "up_edge_features": "$up_edge_features",
+                    "up_edge_index": "$up_edge_index",
+                    "interpolation_index": "$interpolation_index",
+                    "interpolation_weight": "$interpolation_weight"
+                }
+            }
+        }
+    ]
+}

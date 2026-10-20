@@ -1,0 +1,228 @@
+{
+  "id": "graphcast_highres_downscaling_finetune",
+  "eval_type": "train",
+  "domain": "earth",
+  "task": "基于 GraphCast 全球特征微调高分辨率区域下采样模型",
+  "prompt": "基于 GraphCast 的网格到 mesh 编码和 mesh 到网格解码语义，实现高分辨率区域下采样微调。生成目录必须包含 graphcast_highres_downscaling.py、train.py 和 evaluate.py；模型类命名为 GraphCastHighResDownscaler，输入为 (B,5,H,W) 全球低分辨率特征，输出为 (B,2,2H,2W) 高分辨率区域变量。模型必须包含 grid_encoder、mesh_processor、grid_decoder，训练使用真实 AdamW、backward 和区域 RMSE/MAE。",
+  "evaluation_script": "evaluate_graphcast_highres_downscaling_finetune.py",
+  "stardard_dir_name": "graphcast_highres_downscaling_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "3dc668b757e67ab9",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "graphcast_highres_downscaling.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "encoding": "utf-8",
+        "file_must_be_regular": true,
+        "syntax_parser": "ast.parse"
+      }
+    },
+    {
+      "id": "187392a0e292f4da",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "input_shape": [
+          2,
+          5,
+          4,
+          4
+        ],
+        "target_shape": [
+          2,
+          2,
+          8,
+          8
+        ],
+        "input_initializer": "torch.randn",
+        "target_initializer": "torch.randn",
+        "mask_initializer": "torch.zeros_like(targets)",
+        "mask_shape": [
+          2,
+          2,
+          8,
+          8
+        ],
+        "mask_assignment": {
+          "index": "[..., :2, :2]",
+          "value": 1
+        },
+        "require_finite": [
+          "inputs",
+          "targets"
+        ]
+      }
+    },
+    {
+      "id": "dd7d08c33dfe5ab6",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "187392a0e292f4da"
+      ],
+      "params": {
+        "model_builder": {
+          "file": "train.py",
+          "function": "build_model",
+          "kwargs": {}
+        },
+        "input_shape": [
+          2,
+          5,
+          4,
+          4
+        ],
+        "no_grad": true,
+        "children": [
+          "grid_encoder",
+          "mesh_processor",
+          "grid_decoder"
+        ],
+        "mesh_processor": {
+          "type": "torch.nn.ModuleList",
+          "length": 2,
+          "residual_update": "processed + torch.nn.functional.gelu(block(processed))"
+        },
+        "upscale_factor": 2,
+        "encoded_shape": [
+          2,
+          16,
+          4,
+          4
+        ],
+        "processed_shape": [
+          2,
+          16,
+          4,
+          4
+        ],
+        "upsample": {
+          "scale_factor": 2,
+          "mode": "bilinear",
+          "align_corners": false
+        },
+        "decoded_shape": [
+          2,
+          2,
+          8,
+          8
+        ]
+      }
+    },
+    {
+      "id": "4c20c9c9edb45105",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "187392a0e292f4da",
+        "dd7d08c33dfe5ab6"
+      ],
+      "params": {
+        "model_mode": "eval",
+        "no_grad": true,
+        "forward_input": "synthetic_weather_contract.inputs",
+        "expected_shape": [
+          2,
+          2,
+          8,
+          8
+        ],
+        "require_tensor_output": true,
+        "require_finite": true
+      }
+    },
+    {
+      "id": "5e96077fa5f4802d",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "3dc668b757e67ab9"
+      ],
+      "params": {
+        "file": "train.py",
+        "parse_with": "ast.parse",
+        "function": "train_step",
+        "parameter_source": "args.args",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_attribute_calls": [
+          "backward",
+          "step"
+        ],
+        "required_source_text": "AdamW"
+      }
+    },
+    {
+      "id": "50de6775f3d76539",
+      "type": "train_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "187392a0e292f4da",
+        "dd7d08c33dfe5ab6",
+        "4c20c9c9edb45105",
+        "5e96077fa5f4802d"
+      ],
+      "params": {
+        "file": "train.py",
+        "function": "train_step",
+        "model_mode": "train",
+        "inputs": "synthetic_weather_contract.inputs",
+        "targets": "synthetic_weather_contract.targets",
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "model.parameters() where requires_grad",
+          "lr": 0.001
+        },
+        "before_parameters": "detach().clone()",
+        "after_parameters": "detach()",
+        "loss_types": [
+          "float",
+          "int"
+        ],
+        "loss_not_nan": "loss == loss",
+        "require_parameter_changed": true
+      }
+    },
+    {
+      "id": "a51286fbcca516fe",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "3dc668b757e67ab9"
+      ],
+      "params": {
+        "file": "evaluate.py",
+        "required_source_text": [
+          "def evaluate",
+          "rmse",
+          "mae"
+        ]
+      }
+    }
+  ]
+}

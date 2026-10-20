@@ -1,0 +1,264 @@
+{
+  "id": "rno_darcy_infer",
+  "eval_type": "infer",
+  "domain": "cfd",
+  "task": "基于 RNO 模型完成 Darcy 数据集 多步流场预测与推理验证。",
+  "prompt": "基于 RNO 模型完成 Darcy 数据集 多步流场预测与推理验证。\n    读取 /public/share/sugonhpcapp01/onestore/paper_repro/weight/rno/best_model.pth，检查并解析其中的模型状态字典，依据参数名称与形状还原模型结构，确保通过 strict=True 完整加载。数据集位于/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy，读取 Darcy 数据集 piececonst_r421_N1024_smooth2.mat 的前 200 个样本，使用 coeff 作为输入、sol 作为真实值，将 421×421 场按步长 5 下采样至 85×85。使用 checkpoint 中保存的归一化统计量完成输入归一化和预测结果反归一化。默认采用 batch_size=8、shuffle=False，评估第一个测试批次，计算物理空间中的 MSE 和逐样本 Relative L2，并将批次均值保存至 inference_summary.json。",
+  "evaluation_script": "evaluate_rno_darcy_infer.py",
+  "stardard_dir_name": "rno_darcy_infer",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "0b4e218076e6c94a",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "model.py",
+          "inference.py",
+          "inference_summary.json"
+        ],
+        "python_files": [
+          "model.py",
+          "inference.py"
+        ],
+        "syntax_check": "ast.parse",
+        "forbidden_import_roots": [
+          "codegen.standard",
+          "codegen.evaluators"
+        ]
+      }
+    },
+    {
+      "id": "5e485b7fe3345dfb",
+      "type": "data_transformation",
+      "method": "check_data_transformation",
+      "phase": "data_analysis",
+      "depends": [
+        "0b4e218076e6c94a"
+      ],
+      "params": {
+        "data_file": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy/piececonst_r421_N1024_smooth2.mat",
+        "mat_keys": {
+          "input": "coeff",
+          "target": "sol"
+        },
+        "selected_samples": 200,
+        "subsample_stride": 5,
+        "downsampled_shape": [
+          200,
+          1,
+          85,
+          85
+        ],
+        "batch_size": 8,
+        "shuffle": false,
+        "evaluated_batch_index": 0,
+        "evaluated_samples": 8
+      }
+    },
+    {
+      "id": "a8388fdf1e890e64",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "0b4e218076e6c94a"
+      ],
+      "params": {
+        "main_guard": true,
+        "checkpoint": "/public/share/sugonhpcapp01/onestore/paper_repro/weight/rno/best_model.pth",
+        "state_reconstruction": true,
+        "strict_load": true,
+        "normalizers": [
+          "input_normalizer",
+          "output_normalizer"
+        ],
+        "eval": true,
+        "no_grad_or_inference_mode": true,
+        "physical_space_decode": true,
+        "metrics": [
+          "mse",
+          "relative_l2"
+        ],
+        "summary_output": "inference_summary.json"
+      }
+    },
+    {
+      "id": "ba43d3db7bec8c72",
+      "type": "infer_cli",
+      "method": "check_eval_script_contract",
+      "phase": "infer_script",
+      "depends": [
+        "0b4e218076e6c94a",
+        "a8388fdf1e890e64"
+      ],
+      "params": {
+        "required_flags": [
+          "--checkpoint",
+          "--data",
+          "--output"
+        ],
+        "device_selection": [
+          "--device",
+          "torch.device"
+        ]
+      }
+    },
+    {
+      "id": "6ab3459f77170602",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "0b4e218076e6c94a"
+      ],
+      "params": {
+        "model_class": "RadonNeuralOperator2D",
+        "expected_model_config": {
+          "in_channels": 3,
+          "out_channels": 1,
+          "channels": 128,
+          "layers": 8,
+          "heads": 8,
+          "slices": 32,
+          "angles": 32,
+          "radon_indices": [
+            1,
+            3,
+            5,
+            7
+          ],
+          "angle_hidden": 16,
+          "mlp_ratio": 4.0,
+          "dropout": 0.0
+        },
+        "exact_state_keys_and_shapes": true,
+        "state_tensor_count": 178,
+        "strict_load": true
+      }
+    },
+    {
+      "id": "7576efe33481d6fd",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "6ab3459f77170602"
+      ],
+      "params": {
+        "seed": 20260826,
+        "input_shape": [
+          2,
+          1,
+          9,
+          11
+        ],
+        "output_shape": [
+          2,
+          1,
+          9,
+          11
+        ],
+        "inference_mode": true,
+        "finite_output": true,
+        "input_unchanged": true
+      }
+    },
+    {
+      "id": "a3613b5cbd399a49",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "6ab3459f77170602",
+        "7576efe33481d6fd"
+      ],
+      "params": {
+        "seed": 20260826,
+        "input_shape": [
+          1,
+          1,
+          9,
+          11
+        ],
+        "strict_load": true,
+        "compare": "allclose",
+        "atol": 1e-06,
+        "rtol": 1e-05
+      }
+    },
+    {
+      "id": "abd6329edce0ecad",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "6ab3459f77170602"
+      ],
+      "params": {
+        "seed": 20260826,
+        "normalizers": {
+          "input": "input_normalizer",
+          "output": "output_normalizer",
+          "stat_shape": [
+            1,
+            1,
+            85,
+            85
+          ]
+        },
+        "crop_shape": [
+          9,
+          11
+        ],
+        "input_offset": 0.25,
+        "encode": "(physical_input-input_mean)/(input_std+input_eps)",
+        "decode": "normalized_prediction*(output_std+output_eps)+output_mean",
+        "mse": "difference.square().flatten(1).mean(dim=1)",
+        "relative_l2": "vector_norm(difference.flatten(1),dim=1)/vector_norm(output_mean.flatten(1),dim=1).clamp_min(1e-12)",
+        "finite": true
+      }
+    },
+    {
+      "id": "e7384cb974211a04",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "0b4e218076e6c94a",
+        "5e485b7fe3345dfb",
+        "abd6329edce0ecad"
+      ],
+      "params": {
+        "output_path": "inference_summary.json",
+        "per_sample_count": 8,
+        "prediction_shape": [
+          8,
+          1,
+          85,
+          85
+        ],
+        "strict_load": true,
+        "checkpoint_state_tensor_count": 178,
+        "metrics_space": "physical",
+        "finite_metrics": true,
+        "mean_tolerances": {
+          "rel_tol": 1e-06,
+          "abs_tol": 1e-12
+        },
+        "baseline_tolerances": {
+          "rel_tol": 0.0002,
+          "mse_abs_tol": 1e-12,
+          "relative_l2_abs_tol": 1e-07
+        }
+      }
+    }
+  ]
+}

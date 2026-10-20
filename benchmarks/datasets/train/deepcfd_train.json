@@ -1,0 +1,535 @@
+{
+  "id": "deepcfd_train",
+  "eval_type": "train",
+  "domain": "cfd",
+  "task": "基于 DeepCFD 模型实现二维非均匀稳态层流的速度场与压力场预测",
+  "prompt": "基于 DeepCFD 模型实现二维非均匀稳态层流的速度场与压力场预测。\n    1. 任务定义和数据集使用\n    该任务该任务的输入和输出 shape 均为 (B, 3, 172, 79)，其中 B 为批次大小，172×79 为空间网格尺寸。输入的三个通道依次表示障碍物表面的符号距离函数（SDF）、流动区域标签（障碍物、自由流、壁面、入口和出口）以及上下壁面的 SDF；输出的三个通道依次为水平速度U_x、垂直速度U_y 和压力p。配套的数据集可使用`modelscope download --dataset OneScience/deepcfd --local_dir ./data --include '*.pkl'`下载，以 random.Random(0) 打乱并按0.7划分为686个训练样本和295个测试样本，batch_size=16、num_workers=0。所有文件的输出路径为./test_deepcfd_train_oneskills/\n    2.模型结构定义\n    模型文件命名为 unetex.py，实现 DoubleConv2D、Down2D、Up2D、UNetEncoder2D、UNetDecoder2D、UNetHead2D、DecoderPath 和 UNetEx；UNetEx 配置为 in_channels=3、out_channels=3、base_channels=8、num_stages=4、kernel_size=5、bilinear=True、normtype=\"none\"，共享编码器注册为 encoder，包含 inc 和 down_stages=nn.ModuleList(...)，通道依次为 8→16→32→64→128，每个下采样层必须注册为 maxpool_conv=nn.Sequential(nn.MaxPool2d(2), DoubleConv2D(...))；DoubleConv2D 的属性名为 double_conv，当 normtype=\"none\" 时必须严格按 Conv2d-ReLU-Conv2d-ReLU 顺序构造，不得插入归一化层或 nn.Identity，两个 Conv2d 均须设置 bias=False，确保参数键为 double_conv.0.weight 和 double_conv.2.weight 且不产生对应 bias 键；三个独立输出分支注册为 decoders=nn.ModuleList(...)，每个元素为独立的 DecoderPath，内部包含 decoder 和 head，decoder.up_stages 包含4个 Up2D，双线性上采样使用 nn.Upsample(scale_factor=2, mode=\"bilinear\", align_corners=True)，双线性模式下 DoubleConv2D 的中间通道为 in_channels // 2；输出头必须为 head.conv=nn.Conv2d(base_channels,1,kernel_size=1,padding=0,bias=True)，最终输出 shape 为 (B,3,172,79)\n    3. 训练细节\n    训练采用 AdamW 优化器（学习率为0.001，权重衰减为0.005），最多训练1000轮，每10轮评估一次，早停耐心值为200次评估；训练目标为经通道 RMS 加权的 \\(U_x、U_y\\) 平方误差与压力绝对误差之和，评估指标为每个样本的总网格平方误差和及各通道网格平方误差和（Total、Ux、Uy 和 p MSE），并根据验证损失 val_loss 选择最优模型及执行早停；配置文件为 config.yaml\n    4. 推理脚本\n    inference.py脚本中调用compute_sample_normalized_grid_mse(predictions, targets) 在完整测试集上按通道累加所有网格点平方误差并除以样本数，返回 Ux_MSE、Uy_MSE、p_MSE 及三者之和 Total_MSE\n    5. 运行命令\n    训练和推理命令分别为 python train.py --config config.yaml 和 python inference.py --config config.yaml，最优权重与测试指标分别保存至 weight/best_model.pt 和 result/deepcfd/metrics.json。\n    ",
+  "evaluation_script": "evaluate_deepcfd_train.py",
+  "stardard_dir_name": "deepcfd_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "02d46111986157d7",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "unetex.py",
+          "dataset.py",
+          "train.py",
+          "inference.py",
+          "config.yaml"
+        ],
+        "phase": "file",
+        "require_nonempty": true,
+        "python_syntax_check": {
+          "extensions": [
+            ".py"
+          ],
+          "parser": "ast.parse"
+        }
+      }
+    },
+    {
+      "id": "44f97d4564474841",
+      "type": "data_split",
+      "method": "check_data_split",
+      "phase": "data_analysis",
+      "depends": [
+        "02d46111986157d7"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "dataset_file": "dataset.py",
+        "load_func": "create_dataloaders",
+        "split_ratio": [
+          0.7,
+          0.3
+        ],
+        "seed": 0,
+        "expected_total_samples": 981,
+        "expected_train_samples": 686,
+        "expected_test_samples": 295,
+        "data_directory": "./data",
+        "input_file": "dataX.pkl",
+        "target_file": "dataY.pkl",
+        "batch_size": 16,
+        "num_workers": 0,
+        "sample_shape": [
+          3,
+          172,
+          79
+        ],
+        "model_channels": {
+          "in_channels": 3,
+          "out_channels": 3
+        },
+        "source_requirements": {
+          "random_shuffle": true,
+          "pickle": true,
+          "float32_tensor": true,
+          "dataloader": true,
+          "channel_rms": {
+            "formula": "sqrt(mean(train_targets**2))",
+            "by_channel": true
+          }
+        }
+      }
+    },
+    {
+      "id": "9ec4ae9786b894a6",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "02d46111986157d7",
+        "44f97d4564474841"
+      ],
+      "params": {
+        "files": [
+          "train.py",
+          "engine.py",
+          "losses.py",
+          "training_utils.py"
+        ],
+        "config_name": "config.yaml",
+        "check_config": {
+          "entry_names": [
+            "main",
+            "train"
+          ],
+          "optimizer_names": [
+            "AdamW"
+          ],
+          "loss_names": [
+            "loss_func",
+            "compute_loss",
+            "deepcfd_loss",
+            "RMSWeightedFieldLoss"
+          ],
+          "require_cli_config": true,
+          "require_zero_grad_backward_step": true,
+          "require_validation_tokens": [
+            "val_loss",
+            "ux",
+            "uy",
+            "p_mse"
+          ],
+          "require_best_checkpoint": true,
+          "require_early_stopping": true
+        },
+        "hyperparameters": {
+          "optimizer": "AdamW",
+          "learning_rate": 0.001,
+          "weight_decay": 0.005,
+          "num_epochs": 1000,
+          "eval_interval": 10,
+          "patience": 200
+        },
+        "loss_oracle": {
+          "predictions_shape": [
+            2,
+            3,
+            2,
+            2
+          ],
+          "targets_zero": true,
+          "rms": [
+            2.0,
+            4.0,
+            5.0
+          ],
+          "components": [
+            "Ux_square",
+            "Uy_square",
+            "p_abs"
+          ],
+          "reduction": "sum",
+          "rtol": 1e-10,
+          "atol": 1e-10
+        }
+      }
+    },
+    {
+      "id": "f4ca0b78f6fd10cb",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "02d46111986157d7",
+        "44f97d4564474841"
+      ],
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "config_name": "config.yaml",
+        "check_config": {
+          "entry_function_names": [
+            "main",
+            "inference",
+            "infer"
+          ],
+          "model_load_functions": [
+            "load_model",
+            "load_checkpoint",
+            "load_weights"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_load_functions": [
+            "DataLoader",
+            "load_dataset"
+          ],
+          "infer_call_functions": [
+            "compute_sample_normalized_grid_mse",
+            "inference"
+          ],
+          "infer_call_attributes": [
+            "forward",
+            "predict"
+          ],
+          "output_attributes": [
+            "json.dump",
+            "write_text"
+          ]
+        },
+        "optional_if_missing": true,
+        "metric_helper": "compute_sample_normalized_grid_mse",
+        "metric_keys": [
+          "Ux_MSE",
+          "Uy_MSE",
+          "p_MSE",
+          "Total_MSE"
+        ],
+        "metric_formula": "sum((predictions-targets)**2, dim=(0,2,3))/predictions.shape[0]",
+        "total": "Ux_MSE+Uy_MSE+p_MSE",
+        "require_full_test_accumulation": true,
+        "require_checkpoint_restore": true,
+        "require_eval": true,
+        "require_no_grad": true,
+        "metrics_path": "result/deepcfd/metrics.json"
+      }
+    },
+    {
+      "id": "3fd747c2bcf3c487",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "02d46111986157d7"
+      ],
+      "params": {
+        "model_file": "unetex.py",
+        "model_class": "UNetEx",
+        "required_classes": [
+          "DoubleConv2D",
+          "Down2D",
+          "Up2D",
+          "UNetEncoder2D",
+          "UNetDecoder2D",
+          "UNetHead2D",
+          "DecoderPath",
+          "UNetEx"
+        ],
+        "model_args": {
+          "in_channels": 3,
+          "out_channels": 3,
+          "base_channels": 8,
+          "num_stages": 4,
+          "kernel_size": 5,
+          "bilinear": true,
+          "normtype": "none"
+        },
+        "encoder": {
+          "type": "UNetEncoder2D",
+          "inc_channels": [
+            3,
+            8,
+            8
+          ],
+          "down_stages": 4,
+          "channels": [
+            8,
+            16,
+            32,
+            64,
+            128
+          ],
+          "registration": "ModuleList"
+        },
+        "double_conv": {
+          "sequence": [
+            "Conv2d",
+            "ReLU",
+            "Conv2d",
+            "ReLU"
+          ],
+          "kernel_size": 5,
+          "padding": 2,
+          "bias": false,
+          "checkpoint_weight_keys": [
+            "double_conv.0.weight",
+            "double_conv.2.weight"
+          ],
+          "forbid_bias_keys": true
+        },
+        "decoders": {
+          "count": 3,
+          "independent_parameters": true,
+          "up_stages": 4,
+          "upsample": {
+            "type": "Upsample",
+            "scale_factor": 2.0,
+            "mode": "bilinear",
+            "align_corners": true
+          },
+          "fused_channels": [
+            192,
+            96,
+            48,
+            24
+          ],
+          "mid_channels": [
+            96,
+            48,
+            24,
+            12
+          ],
+          "out_channels": [
+            64,
+            32,
+            16,
+            8
+          ],
+          "head": {
+            "in_channels": 8,
+            "out_channels": 1,
+            "kernel_size": 1,
+            "padding": 0,
+            "bias": true
+          }
+        },
+        "reference_state": {
+          "same_key_order": true,
+          "same_shapes": true
+        }
+      }
+    },
+    {
+      "id": "8666b4342d1b8f23",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "3fd747c2bcf3c487",
+        "44f97d4564474841"
+      ],
+      "params": {
+        "model_file": "unetex.py",
+        "model_class": "UNetEx",
+        "model_args": {
+          "in_channels": 3,
+          "out_channels": 3,
+          "base_channels": 8,
+          "num_stages": 4,
+          "kernel_size": 5,
+          "bilinear": true,
+          "normtype": "none"
+        },
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/DeepCFD/data/dataX.pkl",
+        "split": {
+          "total_samples": 981,
+          "ratio": 0.7,
+          "seed": 0,
+          "train_samples": 686,
+          "test_samples": 295,
+          "case_count": 6
+        },
+        "input_shape": [
+          6,
+          3,
+          172,
+          79
+        ],
+        "per_case_shape": [
+          1,
+          3,
+          172,
+          79
+        ],
+        "output_shape": [
+          6,
+          3,
+          172,
+          79
+        ],
+        "initialize_parameters": {
+          "seed": 20270815,
+          "device": "cpu"
+        },
+        "forward": {
+          "no_grad": true,
+          "require_finite": true
+        }
+      }
+    },
+    {
+      "id": "b73500c788bdcf9d",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "3fd747c2bcf3c487",
+        "8666b4342d1b8f23"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "unetex.py",
+          "model_class": "UNetEx"
+        },
+        "reference": {
+          "model_source": "standard/deepcfd_train/unetex.py",
+          "model_class": "UNetEx"
+        },
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/DeepCFD/data/dataX.pkl",
+        "case_count": 6,
+        "parameter_initialization": {
+          "seed": 20270815,
+          "require_same_names": true,
+          "require_same_shapes": true,
+          "require_equal_values": true
+        },
+        "expected_output_shape": [
+          1,
+          3,
+          172,
+          79
+        ],
+        "compare": {
+          "atol": 1e-06,
+          "rtol": 1e-06,
+          "require_same_shape": true
+        }
+      }
+    },
+    {
+      "id": "19299dd68fe8d426",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "3fd747c2bcf3c487",
+        "9ec4ae9786b894a6"
+      ],
+      "params": {
+        "model_file": "unetex.py",
+        "model_class": "UNetEx",
+        "initialization": {
+          "from_scratch": "deterministic direct initialization",
+          "checkpoint_modes": [
+            "resume",
+            "finetune",
+            "fine_tune",
+            "continued",
+            "pretrained"
+          ],
+          "checkpoint_keys": [
+            "model_state",
+            "model_state_dict",
+            "state_dict"
+          ],
+          "strict": true
+        },
+        "optimizer": {
+          "name": "AdamW",
+          "learning_rate": 0.001,
+          "weight_decay": 0.005
+        },
+        "batch": {
+          "input_shape": [
+            1,
+            3,
+            32,
+            33
+          ],
+          "target_shape": [
+            1,
+            3,
+            32,
+            33
+          ],
+          "generator_seed": 20261315,
+          "rms": [
+            1.1,
+            0.9,
+            1.3
+          ]
+        },
+        "loss": {
+          "components": [
+            "Ux_square",
+            "Uy_square",
+            "p_abs"
+          ],
+          "reduction": "sum",
+          "require_finite": true
+        },
+        "gradients": {
+          "require_all_trainable": true,
+          "require_finite": true
+        },
+        "update_scope": {
+          "all_trainable_change": true,
+          "frozen_unchanged": true
+        }
+      }
+    },
+    {
+      "id": "b037482be56283dc",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "9ec4ae9786b894a6",
+        "f4ca0b78f6fd10cb"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "checkpoint_path": "weight/best_model.pt",
+        "metrics_path": "result/deepcfd/metrics.json",
+        "checkpoint": {
+          "require_declared": true,
+          "require_if_materialized": true,
+          "state_keys": [
+            "model_state",
+            "model_state_dict",
+            "state_dict"
+          ],
+          "require_nonempty_mapping": true
+        },
+        "metrics": {
+          "format": "json",
+          "require_declared": true,
+          "required_keys": [
+            "Ux_MSE",
+            "Uy_MSE",
+            "p_MSE",
+            "Total_MSE"
+          ],
+          "require_finite": true,
+          "total_equals_channels": true,
+          "rel_tol": 1e-06,
+          "abs_tol": 1e-08
+        }
+      }
+    }
+  ]
+}

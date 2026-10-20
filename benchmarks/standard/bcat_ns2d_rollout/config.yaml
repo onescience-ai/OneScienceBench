@@ -1,0 +1,39 @@
+experiment:
+  name: bcat_ns2d_rollout
+  seed: 2026
+  checkpoint_path: weight/best_model.pt
+  results_dir: results
+
+data:
+  grid_size: 16
+  total_len: 5
+  input_len: 1
+  channels: 3
+  channel_names: [u, v, omega]
+  viscosity: 0.001
+  batch_size: 2
+  smoke_batch_size: 1
+  synthetic_generator: periodic_divergence_free_vortex
+
+model:
+  class_name: BCATLite
+  patch_num: 4
+  dim_emb: 32
+  dim_ffn: 64
+  n_head: 4
+  n_layer: 2
+  dropout: 0.0
+  norm_first: true
+  activation: gelu
+  block_causal: true
+
+training:
+  epochs: 1
+  batch_size: 2
+  learning_rate: 0.001
+  optimizer: AdamW
+  loss_fn: mse
+
+inference:
+  batch_size: 1
+  metric: relative_l2

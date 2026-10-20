@@ -1,0 +1,477 @@
+{
+  "id": "nequix_inference",
+  "eval_type": "infer",
+  "domain": "matchem",
+  "task": "独立实现 NequIX 等变原子间势模型并恢复 nequix-mp-1 checkpoint 完成能量、力和应力推理",
+  "prompt": "独立实现 NequIX（E(3) 等变图神经网络原子间势，PyTorch 后端，JAX-free）模型并完成固定 checkpoint 推理。计分模型必须由当前目录中的本地 PyTorch/e3nn 类实现，不得主动导入 `onescience`、外部 `nequip`、`mace`、`mattersim` 或 `nequix`，不得读取评测器、标准答案或旧候选。NequIX 可预测能量、原子力和应力；力由能量对位置求梯度得到，应力由能量对晶格应变求梯度除以体积得到。\n\n固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt`，SHA256 为 `c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c`。该 .pt 首行是 JSON 配置（含 atomic_numbers、hidden_irreps、lmax、cutoff、n_layers、radial_basis_size、radial_mlp_size、radial_mlp_layers、radial_polynomial_p、mlp_init_scale、index_weights、layer_norm、shift、scale、avg_n_neighbors、atom_energies），其余字节是 torch state_dict zip；必须读取配置行后用 `torch.load` 读取 state_dict，从 state_dict 精确恢复 107 项、732710 个元素的完整模型状态，再由本地模型类按配置构造（`NequixTorch(...)`），并对完整状态执行 `load_state_dict(..., strict=True)`，不得只挑选部分权重或绕过严格加载。模型为 89 元素、cutoff=6.0、4 层、hidden_irreps=128x0e+64x1o+32x2e+32x3o、lmax=3，共 38 个参数张量；顶层模块顺序为 layers、readout，每层卷积模块顺序为 linear_1、tp、sort、radial_mlp、linear_2、skip、layer_norm、gate。\n\n固定输入为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb`，SHA256 为 `b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b`，共 16 个周期结构。单结构接口 `evaluate_structure(model, atoms, device)` 必须返回 `energy [1]`、`forces [N,3]`、`stress [1,3,3]` 的有限 tensor，其中 N 为该结构原子数。CLI 必须支持 `--config`、`--checkpoint`、`--input`、`--output`、`--device`。\n\n请在当前工作目录生成 `nequix_inference/nequix_inference.py`、`nequix_inference/run_inference.py`、`nequix_inference/nequix_inference.yaml` 和独立本地包 `nequix_inference/portable_nequix/`。`nequix_inference.py` 必须公开 `load_checkpoint_payload`、`raw_model_state`、`build_model`、`load_model`、`evaluate_structure`；`run_inference.py` 必须公开 `load_config`、`load_structures`、`evaluate`、`save_predictions`、`main`。",
+  "evaluation_script": "evaluate_nequix_inference.py",
+  "stardard_dir_name": "nequix_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+    "time_limit": "00:20:00",
+    "job_name": "eval_nequix_infer",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "cbb16a7121dcab99",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_discovery": {
+          "environment_variable": "NEQUIX_INFERENCE_SUBMISSION_DIR",
+          "order": [
+            "environment_variable",
+            "current_working_directory",
+            "PYTHONPATH_entries"
+          ],
+          "candidate_marker": "nequix_inference/nequix_inference.py"
+        },
+        "required_files": [
+          "nequix_inference/nequix_inference.py",
+          "nequix_inference/run_inference.py",
+          "nequix_inference/nequix_inference.yaml",
+          "nequix_inference/portable_nequix/__init__.py"
+        ],
+        "require_is_file": true,
+        "prohibited_import_scan": {
+          "only_if_no_required_files_are_missing": true,
+          "source_glob": "**/*.py",
+          "exclude_path_substring": "portable_nequix",
+          "ast_import_nodes_only": true,
+          "prohibited_import_roots": [
+            "onescience",
+            "nequip",
+            "mace",
+            "mattersim",
+            "nequix"
+          ]
+        }
+      }
+    },
+    {
+      "id": "f4a1a3e89f50b702",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "cbb16a7121dcab99"
+      ],
+      "params": {
+        "source_inspection": {
+          "source_glob": "**/*.py",
+          "exclude_path_substring": "portable_nequix",
+          "prohibited_import_roots": [
+            "onescience",
+            "nequip",
+            "mace",
+            "mattersim",
+            "nequix"
+          ],
+          "require_no_prohibited_active_ast_imports": true,
+          "require_ast_call": {
+            "attribute": "load_state_dict",
+            "keyword": {
+              "strict": true
+            }
+          }
+        },
+        "checkpoint": {
+          "model_path_environment_variable": "NEQUIX_INFERENCE_MODEL_PATH",
+          "model_default_path": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+          "model_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+          "data_path_environment_variable": "NEQUIX_INFERENCE_DATA_PATH",
+          "data_default_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+          "data_sha256": "b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b"
+        },
+        "model_loader": {
+          "function": "load_model",
+          "arguments": [
+            "model_path",
+            "cpu"
+          ]
+        },
+        "returned_state_contract": {
+          "entry_count": 107,
+          "tensor_numel_sum": 732710,
+          "count_only_tensor_values_for_numel": true
+        },
+        "restored_model_state_contract": {
+          "key_sets_equal": true,
+          "per_key_cpu_tensor_values_equal": true
+        }
+      }
+    },
+    {
+      "id": "79b8f0206e35a5f0",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "f4a1a3e89f50b702"
+      ],
+      "params": {
+        "model_from_context": true,
+        "expected_class_name": "NequixTorch",
+        "expected_top_level_module_order": [
+          "layers",
+          "readout"
+        ],
+        "expected_layer_count": 4,
+        "expected_first_layer_module_order": [
+          "linear_1",
+          "tp",
+          "sort",
+          "radial_mlp",
+          "linear_2",
+          "skip",
+          "layer_norm",
+          "gate"
+        ],
+        "expected_parameter_tensor_count": 38,
+        "expected_attributes": {
+          "cutoff": {
+            "cast": "float",
+            "equals": 6.0,
+            "absolute_tolerance_exclusive": 1e-09
+          },
+          "n_species": {
+            "cast": "int",
+            "equals": 89
+          }
+        }
+      }
+    },
+    {
+      "id": "57570a1d56445b4b",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "79b8f0206e35a5f0"
+      ],
+      "params": {
+        "module_file": "nequix_inference/nequix_inference.py",
+        "module_name": "nequix_inference_submission",
+        "required_callable_functions": [
+          "load_model",
+          "evaluate_structure",
+          "load_checkpoint_payload",
+          "raw_model_state"
+        ],
+        "evaluate_structure_signature": {
+          "must_include_parameter_names": [
+            "model",
+            "atoms"
+          ]
+        },
+        "fixture": {
+          "loader": "ase.db.connect",
+          "path_environment_variable": "NEQUIX_INFERENCE_DATA_PATH",
+          "default_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+          "readonly": true,
+          "use_lock_file": false,
+          "select_first": true,
+          "toatoms": true,
+          "num_atoms": 28
+        },
+        "evaluation": {
+          "function": "evaluate_structure",
+          "arguments": [
+            "context.model",
+            "fixture",
+            "cpu"
+          ]
+        },
+        "output_contract": {
+          "required_keys": [
+            "energy",
+            "forces",
+            "stress"
+          ],
+          "allow_additional_keys": true,
+          "shapes": {
+            "energy": [
+              1
+            ],
+            "forces": [
+              28,
+              3
+            ],
+            "stress": [
+              1,
+              3,
+              3
+            ]
+          },
+          "all_required_tensors_finite": true
+        }
+      }
+    },
+    {
+      "id": "1a9b2b7a83feb170",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "57570a1d56445b4b"
+      ],
+      "params": {
+        "model_from_context": true,
+        "fixture": {
+          "loader": "ase.db.connect",
+          "path_environment_variable": "NEQUIX_INFERENCE_DATA_PATH",
+          "default_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+          "readonly": true,
+          "use_lock_file": false,
+          "select_first": true,
+          "toatoms": true,
+          "num_atoms": 28
+        },
+        "evaluation": {
+          "function": "evaluate_structure",
+          "arguments": [
+            "context.model",
+            "fixture",
+            "cpu"
+          ]
+        },
+        "required_outputs": {
+          "energy": {
+            "shape": [
+              1
+            ]
+          },
+          "forces": {
+            "shape": [
+              28,
+              3
+            ]
+          },
+          "stress": {
+            "shape": [
+              1,
+              3,
+              3
+            ]
+          }
+        },
+        "all_required_output_values_finite": true
+      }
+    },
+    {
+      "id": "f944062e3ddda19c",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "1a9b2b7a83feb170"
+      ],
+      "params": {
+        "model_from_context": true,
+        "fixture": {
+          "loader": "ase.db.connect",
+          "path_environment_variable": "NEQUIX_INFERENCE_DATA_PATH",
+          "default_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+          "readonly": true,
+          "use_lock_file": false,
+          "select_first": true,
+          "toatoms": true,
+          "num_atoms": 28
+        },
+        "evaluation": {
+          "function": "evaluate_structure",
+          "arguments": [
+            "context.model",
+            "fixture",
+            "cpu"
+          ]
+        },
+        "energy_oracle": {
+          "extract": "float(output.energy.reshape(-1)[0])",
+          "reference": -170.49705505371094,
+          "maximum_absolute_error": 0.001
+        },
+        "forces_oracle": {
+          "convert": "output.forces.detach().cpu().float()",
+          "reference": [
+            [
+              1.3364478945732117e-07,
+              0.0005347970873117447,
+              -0.1422138214111328
+            ],
+            [
+              -1.4319084584712982e-07,
+              0.0005343826487660408,
+              0.1421908140182495
+            ],
+            [
+              -1.2713694275134912e-07,
+              -0.0005360981449484825,
+              -0.1422053575515747
+            ],
+            [
+              1.1990778148174286e-08,
+              -0.0005349693819880486,
+              0.14221841096878052
+            ],
+            [
+              -2.669548848643899e-07,
+              -0.00968366488814354,
+              0.010525792837142944
+            ],
+            [
+              -5.6690289795824356e-08,
+              -0.009684372693300247,
+              -0.010528385639190674
+            ],
+            [
+              -4.886533133685589e-08,
+              0.009683892130851746,
+              0.010529249906539917
+            ],
+            [
+              1.2107162206120847e-07,
+              0.009682904928922653,
+              -0.010527253150939941
+            ],
+            [
+              -6.705522537231445e-08,
+              0.005860884208232164,
+              -0.005731863435357809
+            ],
+            [
+              -4.423782229423523e-09,
+              0.005860256031155586,
+              0.005727042444050312
+            ],
+            [
+              -1.4319084584712982e-07,
+              -0.005859747529029846,
+              -0.005731203593313694
+            ],
+            [
+              -4.074536263942718e-08,
+              -0.0058609540574252605,
+              0.005728244781494141
+            ],
+            [
+              3.387712155245026e-08,
+              -0.0329960472881794,
+              0.0133693041279912
+            ],
+            [
+              1.1274863709331847e-07,
+              -0.03299330919981003,
+              -0.013371221721172333
+            ],
+            [
+              4.2782630771398544e-08,
+              0.032992392778396606,
+              0.013371078297495842
+            ],
+            [
+              1.6469857655465603e-07,
+              0.032994020730257034,
+              -0.013369519263505936
+            ],
+            [
+              -1.0849863230077972e-07,
+              0.03672581911087036,
+              0.015066704712808132
+            ],
+            [
+              8.265487849712372e-08,
+              0.03672276809811592,
+              -0.015069331973791122
+            ],
+            [
+              1.4784021118430246e-07,
+              -0.036721017211675644,
+              0.01506915781646967
+            ],
+            [
+              5.920122703173547e-08,
+              -0.03672335296869278,
+              -0.015068503096699715
+            ],
+            [
+              1.3504194384950097e-07,
+              0.0044353557750582695,
+              0.10970360785722733
+            ],
+            [
+              1.9554863683879375e-07,
+              0.004435777198523283,
+              -0.10969489812850952
+            ],
+            [
+              9.872019290924072e-08,
+              -0.004435214679688215,
+              0.1097038984298706
+            ],
+            [
+              -3.306486178189516e-07,
+              -0.0044356402941048145,
+              -0.1097040474414821
+            ],
+            [
+              1.7847924027591944e-08,
+              -0.019763752818107605,
+              0.0038284333422780037
+            ],
+            [
+              1.0703444530690831e-07,
+              -0.019763141870498657,
+              -0.003813760355114937
+            ],
+            [
+              -7.847160077290027e-08,
+              0.019764456897974014,
+              0.003828110173344612
+            ],
+            [
+              -3.541936166584492e-08,
+              0.01976354792714119,
+              -0.0038306722417473793
+            ]
+          ],
+          "maximum_absolute_error": 0.001
+        },
+        "stress_oracle": {
+          "convert": "output.stress.detach().cpu().float()",
+          "reference": [
+            [
+              0.0012042548041790724,
+              -7.824133702039049e-12,
+              3.647646629190149e-09
+            ],
+            [
+              -7.824133702039049e-12,
+              -0.004582214169204235,
+              -7.934428225553347e-09
+            ],
+            [
+              3.647646629190149e-09,
+              -7.934428225553347e-09,
+              0.010338063351809978
+            ]
+          ],
+          "maximum_absolute_error": 0.001
+        }
+      }
+    }
+  ]
+}

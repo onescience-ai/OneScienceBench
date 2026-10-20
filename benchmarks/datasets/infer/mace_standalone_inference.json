@@ -1,0 +1,346 @@
+{
+  "id": "mace_standalone_inference",
+  "eval_type": "infer",
+  "domain": "matchem",
+  "task": "基于 portable TorchScript 权重实现独立 MACE 能量与力推理",
+  "prompt": "实现一个不依赖 onescience 或 mace Python 包的 MACE 推理 runner。调用方会传入固定的 portable TorchScript 模型；模型内嵌 mace_portable_metadata.json，其中包含 format、r_max、atomic_numbers、heads（本任务为单元素列表）、default_head 和 dtype。注意：元数据中的 default_head 是字符串名称（例如 Default），而模型输入 tensor dict 中的 head 是表示 head 索引的整型 tensor（单 head 时使用索引 0），不能把元数据的 default_head 当作非负整数解析。运行时只允许使用 torch、numpy、ase 和 h5py：使用 ASE 构造邻居边、周期 unit shifts 和笛卡尔 shifts，生成模型需要的 tensor dict，再通过 torch.jit.load 计算每个结构的总能量和 (N, 3) forces。不得导入、动态导入或为 onescience/mace 建立兼容别名，不得训练、下载、替换模型或硬编码预测。支持 data_format='ase' 和 data_format='hdf5'；ASE 输入可以是 ASE 可读文件、单个 ase.Atoms 或 ase.Atoms 序列。HDF5 输入可以是单个 .h5/.hdf5 文件或分片目录；结构 group 至少包含 atomic_numbers 和 positions，可选 cell、pbc。必须递归发现任意层级中同时包含 atomic_numbers 和 positions 的结构 group，跳过不含这些字段的中间容器 group，不得把容器当作损坏结构；分片按文件名、结构按 group 路径稳定排序并保持该输入顺序。\n\n请在当前工作目录生成且仅生成 mace_standalone_inference.py。文件中定义 MACEStandaloneInferenceRunner，构造函数必须支持 model_path、input_path、output_dir、data_format='ase' 和 device='cpu'，并提供公开的 run() 方法。在调用方给定的 output_dir 中直接生成 predictions.jsonl 和 inference_manifest.json；每条预测包含 index、atomic_numbers、energy 和 forces，manifest 至少包含 model_path、data_format 和 num_structures。输入、模型元数据、元素映射、输出 shape 或数值不符合约定时必须明确失败。",
+  "evaluation_script": "evaluate_mace_standalone_inference.py",
+  "stardard_dir_name": "mace_standalone_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_mace_standalone_inference",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "aa822df7ab71fb5f",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_directory_environment_variable": "MACE_STANDALONE_SUBMISSION_DIR",
+        "explicit_environment_value_collected_but_not_selected": true,
+        "pythonpath_scan": true,
+        "accepted_entry_basenames": [
+          "mace_standalone_inference",
+          "mace_standalone_inference_V1"
+        ],
+        "accepted_entry_basename_prefix": "mace_standalone_inference_V",
+        "failure_if_no_matching_pythonpath_entry": true
+      }
+    },
+    {
+      "id": "7f2d9d9295fe710d",
+      "type": "checkpoint_file",
+      "method": "check_checkpoint_file",
+      "phase": "checkpoint_loading",
+      "depends": [],
+      "params": {
+        "model_path_environment_variable": "MACE_STANDALONE_MODEL_PATH",
+        "default_model_path": "/public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-portable.pt",
+        "require_regular_file": true,
+        "required_sha256": "c53bab687dc91abf1084219ebf3ed55029f60708a53b7807752932d38c3680be"
+      }
+    },
+    {
+      "id": "e20dd7f623dc806a",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "aa822df7ab71fb5f"
+      ],
+      "params": {
+        "forbidden_import_roots": [
+          "onescience",
+          "mace"
+        ],
+        "forbid_dynamic_calls": [
+          "__import__",
+          "import_module"
+        ],
+        "forbid_sys_modules_alias": true,
+        "install_runtime_import_guard": true,
+        "validate_standard_module": true,
+        "validate_candidate_module": true,
+        "standard_module_path": "benchmarks/standard/mace_standalone_inference/mace_standalone_inference.py",
+        "standard_only_environment_variable": "MACE_STANDALONE_STANDARD_ONLY",
+        "standard_only_value": "1"
+      }
+    },
+    {
+      "id": "e606416ecba987c2",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "e20dd7f623dc806a"
+      ],
+      "params": {
+        "runner_class": "MACEStandaloneInferenceRunner",
+        "constructor_required_parameters": [
+          "model_path",
+          "input_path",
+          "output_dir",
+          "data_format",
+          "device"
+        ],
+        "required_method": "run",
+        "constructor_defaults": {
+          "data_format": "ase",
+          "device": "cpu"
+        },
+        "validate_standard_module": true,
+        "validate_candidate_module": true,
+        "standard_module_name": "mace_standalone_inference_standard",
+        "candidate_module_name": "mace_standalone_inference_candidate"
+      }
+    },
+    {
+      "id": "14ad74a07fd6986f",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "7f2d9d9295fe710d",
+        "e606416ecba987c2"
+      ],
+      "params": {
+        "device_environment_variable": "MACE_STANDALONE_EVAL_DEVICE",
+        "device_default": "cuda if torch.cuda.is_available() else cpu",
+        "temporary_directory_prefix": "mace-standalone-inference-",
+        "fixture": {
+          "water_positions": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.9572,
+              0.0,
+              0.0
+            ],
+            [
+              -0.239,
+              0.927,
+              0.0
+            ]
+          ],
+          "water_deltas": [
+            0.0,
+            0.04
+          ],
+          "water_atomic_numbers": [
+            8,
+            1,
+            1
+          ],
+          "water_cell": [
+            10.0,
+            10.0,
+            10.0
+          ],
+          "water_pbc": false,
+          "periodic_atomic_numbers": [
+            1,
+            1
+          ],
+          "periodic_positions": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              7.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "periodic_cell": [
+            12.0,
+            12.0,
+            12.0
+          ],
+          "periodic_pbc": [
+            true,
+            false,
+            false
+          ],
+          "ase_filename": "structures.extxyz",
+          "ase_format": "extxyz",
+          "hdf5_filename": "structures.h5",
+          "hdf5_directory": "structures_hdf5",
+          "hdf5_shards": [
+            "shard_0.h5",
+            "shard_1.hdf5"
+          ],
+          "hdf5_group": "config_batch_0",
+          "hdf5_structure_group_prefix": "config_",
+          "hdf5_fields": [
+            "atomic_numbers",
+            "positions",
+            "cell",
+            "pbc"
+          ]
+        },
+        "cases": [
+          {
+            "name": "ase_file",
+            "data_format": "ase",
+            "expected_structures": 3
+          },
+          {
+            "name": "ase_single_atoms",
+            "data_format": "ase",
+            "expected_structures": 1
+          },
+          {
+            "name": "ase_atoms_sequence",
+            "data_format": "ase",
+            "expected_structures": 3
+          },
+          {
+            "name": "hdf5_file",
+            "data_format": "hdf5",
+            "expected_structures": 3
+          },
+          {
+            "name": "hdf5_sharded_dir",
+            "data_format": "hdf5",
+            "expected_structures": 3
+          }
+        ],
+        "runner_method": "run"
+      }
+    },
+    {
+      "id": "f77fd357e0f64b09",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "14ad74a07fd6986f"
+      ],
+      "params": {
+        "required_output_files": [
+          "inference_manifest.json",
+          "predictions.jsonl"
+        ],
+        "manifest_fields": {
+          "model_path": "resolved_path_equals_fixed_model",
+          "data_format": "case_data_format",
+          "num_structures": "case_expected_structures"
+        },
+        "jsonl": {
+          "ignore_blank_lines": true,
+          "record_count": "case_expected_structures",
+          "ordered_index_starts_at": 0,
+          "required_fields": [
+            "index",
+            "atomic_numbers",
+            "energy",
+            "forces"
+          ],
+          "force_shape": [
+            "len(atomic_numbers)",
+            3
+          ],
+          "energy_cast": "float64",
+          "forces_cast": "float64",
+          "require_finite_energy": true,
+          "require_finite_forces": true
+        },
+        "cases": [
+          {
+            "name": "ase_file",
+            "data_format": "ase",
+            "expected_structures": 3
+          },
+          {
+            "name": "ase_single_atoms",
+            "data_format": "ase",
+            "expected_structures": 1
+          },
+          {
+            "name": "ase_atoms_sequence",
+            "data_format": "ase",
+            "expected_structures": 3
+          },
+          {
+            "name": "hdf5_file",
+            "data_format": "hdf5",
+            "expected_structures": 3
+          },
+          {
+            "name": "hdf5_sharded_dir",
+            "data_format": "hdf5",
+            "expected_structures": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "2e2a671816dc1ae5",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "f77fd357e0f64b09"
+      ],
+      "params": {
+        "standard_module_path": "benchmarks/standard/mace_standalone_inference/mace_standalone_inference.py",
+        "standard_module_name": "mace_standalone_inference_standard",
+        "reference_input": "structures.extxyz",
+        "reference_data_format": "ase",
+        "reference_structures": 3,
+        "candidate_cases": [
+          {
+            "name": "ase_file",
+            "expected_reference_records": "all"
+          },
+          {
+            "name": "ase_single_atoms",
+            "expected_reference_records": "first_1"
+          },
+          {
+            "name": "ase_atoms_sequence",
+            "expected_reference_records": "all"
+          },
+          {
+            "name": "hdf5_file",
+            "expected_reference_records": "all"
+          },
+          {
+            "name": "hdf5_sharded_dir",
+            "expected_reference_records": "all"
+          }
+        ],
+        "require_equal_record_count": true,
+        "require_equal_index": true,
+        "require_equal_atomic_numbers": true,
+        "energy_comparison": {
+          "cast": "float",
+          "maximum_absolute_error_strictly_less_than": 1e-06
+        },
+        "force_comparison": {
+          "cast": "float64",
+          "maximum_absolute_error_strictly_less_than": 1e-06
+        }
+      }
+    }
+  ]
+}

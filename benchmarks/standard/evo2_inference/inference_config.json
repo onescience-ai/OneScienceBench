@@ -1,0 +1,30 @@
+{
+  "task": "evo2_inference",
+  "entrypoint": "evo2_inference.py",
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/evo2/evo2_nemo_7b/weights",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/evo2/data_mini",
+    "mount_required": true
+  },
+  "model": {
+    "vocab": "ACGTN|;:_-abcdefghijklmnopqrstuvwxyz0123456789 ",
+    "hidden_size": 32,
+    "conv_kernel": 4,
+    "num_layers": 2
+  },
+  "generation": {
+    "prompt": "ACGTACGT",
+    "max_new_tokens": 8,
+    "temperature": 1.0,
+    "top_k": 0,
+    "top_p": 0.0,
+    "seed": 20260820
+  },
+  "checkpoint": {
+    "accepted_forms": [
+      "state_dict",
+      "model_state_dict"
+    ],
+    "strict": true
+  }
+}

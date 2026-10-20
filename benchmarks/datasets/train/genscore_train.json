@@ -1,0 +1,413 @@
+{
+  "id": "genscore_train",
+  "eval_type": "train",
+  "domain": "bio",
+  "task": "实现 GenScore 风格亲和力回归短训练",
+  "prompt": "实现独立于 onescience Python 包的轻量 GenScore 风格亲和力模型与训练入口。GenScoreModel 默认 ligand_features=8、pocket_features=10、hidden_size=32、radial_bins=8、num_layers=2；依次包含 ligand_encoder、pocket_encoder、distance_expansion、ligand_layers、pocket_layers、cross_projection、score_head。用三维坐标 RBF 距离 gate 进行双图消息传递，再融合两个图的 pooled 表征、交互和最近跨图距离；输入配体/口袋特征、坐标及布尔 mask，输出 [B] affinity。真实数据 NPZ 还包含 affinity 标签；训练执行 MSE、AdamW、backward 与梯度裁剪。请在当前工作目录生成且仅生成 genscore_train.py；模型类命名为 GenScoreModel；脚本必须支持 --dataset-npz 与 --mock-data 二选一、--output-dir、--max-steps、--batch-size、--seed、--device，并将 metrics.jsonl 和 genscore_train.pt 保存到 --output-dir。",
+  "evaluation_script": "evaluate_genscore_train.py",
+  "stardard_dir_name": "genscore_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_genscore_train"
+  },
+  "checks": [
+    {
+      "id": "5f195fdbd04d7ef7",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "submission_filename": "genscore_train.py",
+        "standard_config_path": "benchmarks/standard/genscore_train/train_config.json",
+        "external_assets": {
+          "mount_required": true,
+          "required_paths": [
+            "weights",
+            "dataset"
+          ]
+        },
+        "load_candidate_module": true,
+        "load_reference_module": true
+      }
+    },
+    {
+      "id": "06efd2bfafee2802",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "5f195fdbd04d7ef7"
+      ],
+      "params": {
+        "candidate": {
+          "file": "genscore_train.py",
+          "calls": [
+            {
+              "function": "mock_dataset",
+              "expected": {
+                "shape_alignment": [
+                  [
+                    "ligand_features",
+                    "ligand_coordinates"
+                  ],
+                  [
+                    "pocket_features",
+                    "pocket_coordinates"
+                  ]
+                ],
+                "shape_prefix_axes": [
+                  0,
+                  1
+                ],
+                "mask_dtypes": {
+                  "ligand_mask": "torch.bool",
+                  "pocket_mask": "torch.bool"
+                }
+              }
+            },
+            {
+              "function": "GenScoreModel.forward",
+              "constructor_args": {},
+              "args": {
+                "ligand_features": "data['ligand_features'][:2]",
+                "ligand_coordinates": "data['ligand_coordinates'][:2,:,:2]",
+                "pocket_features": "data['pocket_features'][:2]",
+                "pocket_coordinates": "data['pocket_coordinates'][:2]"
+              },
+              "expected": {
+                "raises": "ValueError"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0183a53c8176be83",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "5f195fdbd04d7ef7"
+      ],
+      "params": {
+        "files": [
+          "genscore_train.py"
+        ],
+        "forbidden_imports": [
+          "onescience"
+        ],
+        "required_cli_flags": [
+          "--dataset-npz",
+          "--mock-data",
+          "--output-dir",
+          "--max-steps",
+          "--seed"
+        ],
+        "required_attribute_names": [
+          "AdamW",
+          "backward",
+          "clip_grad_norm_"
+        ],
+        "required_source_tokens": [
+          "metrics.jsonl",
+          "model_state_dict"
+        ]
+      }
+    },
+    {
+      "id": "14bec414218c4132",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "5f195fdbd04d7ef7"
+      ],
+      "params": {
+        "candidate_file": "genscore_train.py",
+        "reference_file": "benchmarks/standard/genscore_train/genscore_train.py",
+        "model_class": "GenScoreModel",
+        "constructor_args": {
+          "ligand_features": 8,
+          "pocket_features": 10,
+          "hidden_size": 32,
+          "radial_bins": 8,
+          "num_layers": 2
+        },
+        "strict_state_dict": true,
+        "required_components": [
+          "ligand_encoder",
+          "pocket_encoder",
+          "distance_expansion",
+          "ligand_layers",
+          "ligand_layers.0.edge_gate",
+          "pocket_layers",
+          "cross_projection",
+          "score_head"
+        ],
+        "compare_component_types": true,
+        "compare_state_dict_key_order": true,
+        "compare_top_level_child_order": true,
+        "require_constructor_parameters": [
+          "ligand_features",
+          "pocket_features",
+          "hidden_size",
+          "radial_bins",
+          "num_layers"
+        ]
+      }
+    },
+    {
+      "id": "ee498d696c568b99",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "14bec414218c4132"
+      ],
+      "params": {
+        "model_file": "genscore_train.py",
+        "model_class": "GenScoreModel",
+        "fixture": {
+          "seed": 73,
+          "generator": "torch.Generator",
+          "inputs": [
+            {
+              "shape": [
+                2,
+                5,
+                8
+              ],
+              "constructor": "torch.randn"
+            },
+            {
+              "shape": [
+                2,
+                5,
+                3
+              ],
+              "constructor": "torch.randn"
+            },
+            {
+              "shape": [
+                2,
+                7,
+                10
+              ],
+              "constructor": "torch.randn"
+            },
+            {
+              "shape": [
+                2,
+                7,
+                3
+              ],
+              "constructor": "torch.randn"
+            },
+            {
+              "shape": [
+                2,
+                5
+              ],
+              "constructor": "torch.ones",
+              "dtype": "torch.bool"
+            },
+            {
+              "shape": [
+                2,
+                7
+              ],
+              "constructor": "torch.ones",
+              "dtype": "torch.bool"
+            }
+          ]
+        },
+        "inference_mode": true,
+        "expected_type": "torch.Tensor",
+        "expected_shape": [
+          2
+        ],
+        "require_finite": true,
+        "repeat_calls": 2,
+        "require_exact_repeat_equality": true
+      }
+    },
+    {
+      "id": "fa5e8453b234707b",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "ee498d696c568b99"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "genscore_train.py",
+          "model_class": "GenScoreModel",
+          "source": "context.model"
+        },
+        "reference": {
+          "model_file": "benchmarks/standard/genscore_train/genscore_train.py",
+          "model_class": "GenScoreModel",
+          "source": "context.reference_model"
+        },
+        "fixture": {
+          "seed": 73,
+          "generator": "torch.Generator",
+          "input_shapes": [
+            [
+              2,
+              5,
+              8
+            ],
+            [
+              2,
+              5,
+              3
+            ],
+            [
+              2,
+              7,
+              10
+            ],
+            [
+              2,
+              7,
+              3
+            ],
+            [
+              2,
+              5
+            ],
+            [
+              2,
+              7
+            ]
+          ],
+          "mask_dtype": "torch.bool"
+        },
+        "inference_mode": true,
+        "comparison": "torch.allclose",
+        "compare_atol": 1e-06,
+        "compare_rtol": 1e-06
+      }
+    },
+    {
+      "id": "fe928b109a97c704",
+      "type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": [
+        "0183a53c8176be83",
+        "14bec414218c4132"
+      ],
+      "params": {
+        "run_file": "genscore_train.py",
+        "mock_run": {
+          "args": [
+            "--mock-data",
+            "--output-dir",
+            "output",
+            "--max-steps",
+            "5",
+            "--batch-size",
+            "4",
+            "--seed",
+            "41",
+            "--device",
+            "cpu"
+          ],
+          "timeout_seconds": 180
+        },
+        "checkpoint": "genscore_train.pt",
+        "initial_state": {
+          "reference_model_class": "GenScoreModel",
+          "constructor_args": {
+            "ligand_features": 8,
+            "pocket_features": 10,
+            "hidden_size": 32,
+            "radial_bins": 8,
+            "num_layers": 2
+          },
+          "seed": 41,
+          "compare_state_keys": true,
+          "require_any_parameter_changed": true
+        },
+        "npz_run": {
+          "dataset_file": "complexes.npz",
+          "dataset_source": "reference.mock_dataset",
+          "args": [
+            "--dataset-npz",
+            "complexes.npz",
+            "--output-dir",
+            "npz_output",
+            "--max-steps",
+            "1",
+            "--batch-size",
+            "2",
+            "--seed",
+            "41",
+            "--device",
+            "cpu"
+          ],
+          "timeout_seconds": 180,
+          "required_outputs": [
+            "metrics.jsonl",
+            "genscore_train.pt"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dabcb1a97a82a4a3",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "fe928b109a97c704"
+      ],
+      "params": {
+        "artifacts": {
+          "files": [
+            "genscore_train.pt",
+            "metrics.jsonl"
+          ]
+        },
+        "checkpoint": {
+          "required_keys": [
+            "model_state_dict",
+            "optimizer_state_dict",
+            "step",
+            "config"
+          ],
+          "step": 5
+        },
+        "metrics": {
+          "file": "metrics.jsonl",
+          "row_count": 5,
+          "step_values": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "loss_key": "train_loss",
+          "require_finite": true,
+          "jsonl": true
+        }
+      }
+    }
+  ]
+}

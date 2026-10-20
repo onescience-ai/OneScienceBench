@@ -1,0 +1,31 @@
+{
+  "task": "simplefold_train",
+  "entrypoint": "simplefold_train.py",
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/simplefold/simplefold_100M.ckpt",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/foldbench/foldbench_ground_truths",
+    "mount_required": true
+  },
+  "model": {
+    "name": "FoldingDiT",
+    "hidden_size": 32,
+    "num_heads": 4,
+    "esm_dim": 16,
+    "num_trunk_layers": 2,
+    "output_channels": 3
+  },
+  "flow_matching": {
+    "t_min": 0.001,
+    "t_max": 0.999,
+    "self_condition_probability": 0.5
+  },
+  "training": {
+    "max_steps": 2,
+    "seed": 20260820,
+    "batch_size": 2,
+    "atom_count": 8,
+    "token_count": 4,
+    "esm_dim": 16,
+    "data_source": "/public/share/sugonhpcapp01/onestore/onedatasets/foldbench/foldbench_ground_truths"
+  }
+}

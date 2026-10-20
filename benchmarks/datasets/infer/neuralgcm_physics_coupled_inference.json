@@ -1,0 +1,230 @@
+{
+  "id": "neuralgcm_physics_coupled_inference",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现物理耦合 NeuralGCM 风格多步大气状态推理",
+  "prompt": "实现物理耦合 NeuralGCM 风格多步大气状态推理模型文件命名为 neuralgcm_physics_coupled_inference.py，模型类命名为 NeuralGCMInference，默认 channels=4、hidden_dim=16、dt=0.1。forward(state, forcing=None) 接收 [B,4,H,W] 有限大气状态，可选 forcing 形状相同，并返回同形状的一步状态；rollout(state, steps, forcing=None) 必须在 torch.no_grad() 下逐步把前一步输出作为下一步输入，返回 [steps,B,4,H,W]，不得修改输入，steps 必须为正整数。模型结构必须包含 encoder、processor、decoder 三段，状态更新应为 state + dt*tanh(tendency)。实现 load_checkpoint(path, device)，checkpoint 只能包含 model_state_dict，先 map_location=cpu，再 strict=True 加载。请在当前工作目录生成且仅生成 neuralgcm_physics_coupled_inference.py，禁止下载真实数据或权重。",
+  "evaluation_script": "evaluate_neuralgcm_physics_coupled_inference.py",
+  "stardard_dir_name": "neuralgcm_physics_coupled_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "55cb9e4f39f899ab",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "neuralgcm_physics_coupled_inference.py"
+        ]
+      }
+    },
+    {
+      "id": "2d9d6d4b1436acbd",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "55cb9e4f39f899ab"
+      ],
+      "params": {
+        "source_file": "neuralgcm_physics_coupled_inference.py",
+        "class_name": "NeuralGCMInference",
+        "loader": "load_checkpoint",
+        "loader_args": {
+          "device": "cpu"
+        },
+        "valid_checkpoint": {
+          "filename": "good.pt",
+          "payload": {
+            "model_state_dict": "standard.NeuralGCMInference().state_dict()"
+          }
+        },
+        "invalid_checkpoint": {
+          "filename": "bad.pt",
+          "payload": {}
+        },
+        "assertions": {
+          "state_dict_key_order_matches_reference": true,
+          "all_state_tensors_equal_reference": true,
+          "malformed_payload_expected_exception": "Exception"
+        }
+      }
+    },
+    {
+      "id": "f5173249e64595ad",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "55cb9e4f39f899ab"
+      ],
+      "params": {
+        "source_file": "neuralgcm_physics_coupled_inference.py",
+        "class_name": "NeuralGCMInference",
+        "constructor_args": {},
+        "expected_top_level_module_order": [
+          "encoder",
+          "processor",
+          "decoder"
+        ],
+        "expected_attributes": {
+          "encoder.in_channels": 4,
+          "decoder.out_channels": 4
+        },
+        "required_descendant": {
+          "parent": "processor",
+          "type": "torch.nn.Conv2d",
+          "quantifier": "any"
+        }
+      }
+    },
+    {
+      "id": "c3061355566defcb",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "55cb9e4f39f899ab"
+      ],
+      "params": {
+        "source_file": "neuralgcm_physics_coupled_inference.py",
+        "class_name": "NeuralGCMInference",
+        "required_class_methods": [
+          "forward",
+          "rollout"
+        ],
+        "required_module_functions": [
+          "load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "67260707db22855b",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "f5173249e64595ad",
+        "c3061355566defcb"
+      ],
+      "params": {
+        "source_file": "neuralgcm_physics_coupled_inference.py",
+        "class_name": "NeuralGCMInference",
+        "forward_shape_probe": {
+          "model_eval": true,
+          "state": "torch.randn(2,4,8,12)",
+          "assert_output_shape_equals_state": true,
+          "required_successful_calls": [
+            {
+              "method": "rollout",
+              "args": {
+                "state": "same_state",
+                "steps": 3
+              }
+            },
+            {
+              "method": "rollout",
+              "args": {
+                "state": "same_state",
+                "steps": 2,
+                "forcing": "torch.zeros_like(state)"
+              }
+            },
+            {
+              "method": "rollout",
+              "args": {
+                "state": "same_state",
+                "steps": 2,
+                "forcing": "torch.ones_like(state)"
+              }
+            }
+          ]
+        },
+        "forward_finite_probe": {
+          "state": "torch.randn(2,4,8,12)",
+          "require_finite": true
+        },
+        "rollout_shape_probe": {
+          "state": "torch.randn(2,4,8,12)",
+          "steps": 3,
+          "expected_shape": [
+            3,
+            2,
+            4,
+            8,
+            12
+          ]
+        },
+        "rollout_no_grad_probe": {
+          "state": "torch.randn(1,4,4,4)",
+          "steps": 2,
+          "expected_requires_grad": false
+        },
+        "input_immutable_probe": {
+          "model_eval": true,
+          "state": "torch.randn(1,4,4,4)",
+          "steps": 2,
+          "comparison": "torch.equal(before,after)"
+        },
+        "forcing_effect_probe": {
+          "model_eval": true,
+          "state": "torch.zeros(1,4,4,4)",
+          "steps": 2,
+          "zero_forcing": "torch.zeros_like(state)",
+          "one_forcing": "torch.ones_like(state)",
+          "assertion": "not torch.allclose(zero_forcing_rollout,one_forcing_rollout)"
+        },
+        "invalid_steps_probe": {
+          "state": "torch.randn(1,4,4,4)",
+          "steps": 0,
+          "expected_exception": "ValueError"
+        }
+      }
+    },
+    {
+      "id": "03b0cf95f9393638",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "67260707db22855b"
+      ],
+      "params": {
+        "source_file": "neuralgcm_physics_coupled_inference.py",
+        "class_name": "NeuralGCMInference",
+        "reference_source": "benchmarks/standard/neuralgcm_physics_coupled_inference/neuralgcm_physics_coupled_inference.py",
+        "state_transfer": {
+          "reference_to_candidate": true,
+          "strict": true
+        },
+        "rollout_fixture": {
+          "state": "torch.linspace(-1,1,384).reshape(1,4,8,12)",
+          "steps": 3
+        },
+        "metrics": [
+          {
+            "name": "rollout_rmse",
+            "formula": "float(torch.sqrt(torch.mean((candidate_rollout-reference_rollout).detach().square())))",
+            "comparison": "less_than_or_equal",
+            "threshold": 1e-06
+          },
+          {
+            "name": "rollout_mae",
+            "formula": "float(torch.mean((candidate_rollout-reference_rollout).detach().abs()))",
+            "comparison": "less_than_or_equal",
+            "threshold": 1e-06
+          }
+        ]
+      }
+    }
+  ]
+}

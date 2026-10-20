@@ -1,0 +1,366 @@
+{
+  "id": "nequip_energy_force_finetune",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "恢复完整 NequIP EMA checkpoint 并完成 readout-only 单步能量-力微调",
+  "prompt": "独立实现 NequIP tutorial-smoke Cu 模型，并从固定成功 checkpoint 完成一次 readout-only 能量-力微调。计分模型必须由当前目录中的本地 PyTorch/e3nn 类实现，不得主动导入 `onescience`、外部 `nequip`、`mace` 或 `mattersim`，不得读取评测器、标准答案或旧候选。模型配置与从头任务相同：r_max=4.0、type_names=[Cu]、2 层、l_max=1、parity=false、features=8、radial MLP 1x16、4 个 Bessel、avg_num_neighbors=18.0、固定能量 scale/shift，并由 autograd 输出力和 stress。\n\n固定 checkpoint 为 `/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt`，SHA256 为 `3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b`；固定训练数据为 `/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz`，SHA256 为 `6671f9b28d37484379f51f1deb23a6f4b165ed628467ee6bffa0648b6d50a5b5`。checkpoint 必须使用 `torch.load(..., weights_only=True)`，从 `model.sole_model.` 精确恢复 33 项/1855 元素的原始完整状态，再按官方 EMALightningModule evaluation_model 语义应用按参数顺序保存的 11 个 EMA tensor，并对最终完整状态执行 `load_state_dict(..., strict=True)` 和逐项相等验证。reference 和 candidate 必须使用同一完整 EMA state 后才允许比较前向。\n\n只允许 `per_atom_energy_readout` 权重参与优化，其余 10 个参数必须 `requires_grad=false` 且更新前后逐项不变。损失为 per-atom total-energy MSE 与 force MSE 各乘 0.5；固定 Adam、lr=1e-4、eps=1e-8、max_steps=1、gradient_clip_norm=10.0。一次微调必须生成 `nequip_finetuned.pt`、`metrics.jsonl`、`train.log`；checkpoint 保存完整微调后状态、非空优化器状态、唯一 trainable parameter 名称、source checkpoint SHA256、completed_steps=1、配置和 history，并可 `strict=True` 重载。\n\n请在指定目录生成 `nequip_energy_force_finetune.py`、`nequip_energy_force_finetune/train_nequip_finetune.py`、`nequip_finetune.yaml` 和独立包 `portable_nequip/`。模型模块必须公开 checkpoint、数据和预测 API；训练脚本必须公开 `load_config`、`trainable_named_parameters`、`build_model`、`build_trainer`、`train_step`、`train`、`main`。",
+  "evaluation_script": "evaluate_nequip_energy_force_finetune.py",
+  "stardard_dir_name": "nequip_energy_force_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "8G",
+    "time_limit": "00:20:00",
+    "job_name": "eval_nequip_finetune",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "7a86d52e66eec987",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "nequip_energy_force_finetune.py",
+          "train_nequip_finetune.py",
+          "nequip_finetune.yaml",
+          "portable_nequip/internal.py",
+          "portable_nequip/model.py",
+          "portable_nequip/energy_modules.py",
+          "portable_nequip/runtime.py",
+          "portable_nequip/NOTICE.md",
+          "portable_nequip/data/AtomicDataDict.py",
+          "portable_nequip/data/_keys.py",
+          "portable_nequip/data/_key_registry.py",
+          "portable_nequip/nn/_ghost_exchange_base.py",
+          "portable_nequip/nn/_graph_mixin.py",
+          "portable_nequip/nn/_tp_scatter_base.py",
+          "portable_nequip/nn/atomwise.py",
+          "portable_nequip/nn/convnetlayer.py",
+          "portable_nequip/nn/grad_output.py",
+          "portable_nequip/nn/graph_model.py",
+          "portable_nequip/nn/interaction_block.py",
+          "portable_nequip/nn/misc.py",
+          "portable_nequip/nn/mlp.py",
+          "portable_nequip/nn/model_modifier_utils.py",
+          "portable_nequip/nn/nonlinearities.py",
+          "portable_nequip/nn/norm.py",
+          "portable_nequip/nn/utils.py",
+          "portable_nequip/nn/embedding/_edge.py",
+          "portable_nequip/nn/embedding/cutoffs.py",
+          "portable_nequip/nn/embedding/node.py",
+          "portable_nequip/nn/embedding/node_tensor.py",
+          "portable_nequip/nn/embedding/utils.py"
+        ],
+        "prohibited_imports": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim"
+        ]
+      }
+    },
+    {
+      "id": "aada9669b7023a27",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "7a86d52e66eec987"
+      ],
+      "params": {
+        "candidate": {
+          "file": "nequip_energy_force_finetune.py",
+          "functions": [
+            "load_training_structures",
+            "build_finetune_batch"
+          ]
+        },
+        "data_path": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
+        "structure_index": 0,
+        "expected": {
+          "data_sha256": "6671f9b28d37484379f51f1deb23a6f4b165ed628467ee6bffa0648b6d50a5b5",
+          "structure_count": 8,
+          "atoms_per_structure": 8,
+          "shapes": {
+            "positions": [
+              8,
+              3
+            ],
+            "edge_index": [
+              2,
+              144
+            ],
+            "cell_shift": [
+              144,
+              3
+            ],
+            "cell": [
+              1,
+              3,
+              3
+            ],
+            "energy": [
+              1,
+              1
+            ],
+            "forces": [
+              8,
+              3
+            ]
+          },
+          "energy": -27.622615177843876,
+          "first_force": [
+            -0.01459779,
+            0.12819022,
+            0.10740306
+          ],
+          "energy_atol": 1e-12,
+          "force_atol": 1e-08,
+          "force_rtol": 0.0
+        }
+      }
+    },
+    {
+      "id": "889ef2da57f1ce41",
+      "type": "train_config_content",
+      "method": "check_config_content",
+      "phase": "train_script",
+      "depends": [
+        "aada9669b7023a27"
+      ],
+      "params": {
+        "config_name": "nequip_finetune.yaml",
+        "required_apis": [
+          "load_config",
+          "trainable_named_parameters",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ],
+        "required_training_keys": [
+          "optimizer",
+          "lr",
+          "eps",
+          "energy_weight",
+          "force_weight",
+          "gradient_clip_norm",
+          "max_steps",
+          "structure_index",
+          "seed"
+        ],
+        "training_values": {
+          "optimizer": "Adam",
+          "lr": 0.0001,
+          "max_steps": 1
+        },
+        "model_values": {
+          "trainable_scope": "per_atom_energy_readout"
+        }
+      }
+    },
+    {
+      "id": "5474e8535e0a3677",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "889ef2da57f1ce41"
+      ],
+      "params": {
+        "model_file": "nequip_energy_force_finetune.py",
+        "load_function": "load_model",
+        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
+        "checkpoint_sha256": "3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b",
+        "safe_load_weights_only": true,
+        "strict_state_load": true,
+        "raw_state_count": 33,
+        "raw_state_numel": 1855,
+        "expected_module_order": [
+          "type_embed",
+          "spharm",
+          "edge_norm",
+          "bessel_encode",
+          "factor",
+          "layer0_convnet",
+          "layer1_convnet",
+          "per_atom_energy_readout",
+          "per_type_energy_scale_shift",
+          "total_energy_sum"
+        ],
+        "expected_classes": [
+          "GraphModel",
+          "ForceStressOutput",
+          "SequentialGraphNetwork"
+        ],
+        "expected_layer_count": 2,
+        "expected_layer_type": "ConvNetLayer",
+        "layer0_skip_connection": false,
+        "layer1_skip_connection": true,
+        "expected_shapes": {
+          "type_embedding": [
+            1,
+            8
+          ],
+          "bessel": [
+            1,
+            4
+          ],
+          "layer0_radial_in": [
+            4,
+            16
+          ],
+          "layer0_radial_out": [
+            16,
+            16
+          ],
+          "layer1_radial_in": [
+            4,
+            16
+          ],
+          "layer1_radial_out": [
+            16,
+            16
+          ],
+          "readout": [
+            8,
+            1
+          ]
+        },
+        "prohibited_imports": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim"
+        ]
+      }
+    },
+    {
+      "id": "dd76fba11292355e",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "5474e8535e0a3677"
+      ],
+      "params": {
+        "model_file": "nequip_energy_force_finetune.py",
+        "load_function": "load_model",
+        "predict_function": "predict_energy_forces",
+        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
+        "data_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
+        "structure_index": 0,
+        "output_shapes": {
+          "energy": [
+            1,
+            1
+          ],
+          "forces": [
+            8,
+            3
+          ],
+          "stress": [
+            1,
+            3,
+            3
+          ]
+        },
+        "finite": true
+      }
+    },
+    {
+      "id": "10295f0676a1f56e",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "dd76fba11292355e"
+      ],
+      "params": {
+        "reference_file": "benchmarks/standard/nequip_energy_force_finetune/nequip_energy_force_finetune.py",
+        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
+        "data_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
+        "seed": 456,
+        "compare_atol": 1e-06,
+        "require_same_state": true,
+        "outputs": [
+          "energy",
+          "forces",
+          "stress"
+        ]
+      }
+    },
+    {
+      "id": "0dee5630718b4eb3",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "10295f0676a1f56e"
+      ],
+      "params": {
+        "files": [
+          "train_nequip_finetune.py"
+        ],
+        "optimizer": "Adam",
+        "max_steps": 1,
+        "expected_trainable_scope": "per_atom_energy_readout",
+        "expected_trainable_count": 1,
+        "expected_changed_count": 1,
+        "frozen_requires_grad": false,
+        "frozen_unchanged": true,
+        "finite_record": true,
+        "optimizer_matches_trainable": true
+      }
+    },
+    {
+      "id": "155c902628096b99",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "0dee5630718b4eb3"
+      ],
+      "params": {
+        "train_file": "train_nequip_finetune.py",
+        "config_file": "nequip_finetune.yaml",
+        "output_files": [
+          "nequip_finetuned.pt",
+          "metrics.jsonl",
+          "train.log"
+        ],
+        "checkpoint_payload_keys": [
+          "format",
+          "model_name",
+          "model",
+          "optimizer",
+          "completed_steps",
+          "trainable_parameter_names",
+          "source_checkpoint_sha256",
+          "config",
+          "history"
+        ],
+        "format": "nequip-energy-force-finetune-v1",
+        "source_checkpoint_sha256": "3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b",
+        "completed_steps": 1,
+        "trainable_parameter_count": 1,
+        "optimizer_nonempty": true,
+        "history_length": 1,
+        "weights_only": true,
+        "strict_reload": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,457 @@
+{
+  "id": "protenix_infer",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "Pritenix 模型推理任务",
+  "prompt": "构建完整的 Protenix 模型实现及模型参数配置文件，参考onescience实现，但禁止直接导入onescience相关模块，禁止参考官方仓库代码，生成的所有文件放在protenix_infer文件夹中，生成的模型类名为Protenix，模型类必须支持通过 Protenix(model_configs) 直接构造。model_configs 不保证是 Python dict，必须兼容：collections.abc.Mapping； ml_collections.ConfigDict / FrozenConfigDict；OmegaConf DictConfig；提供 to_dict()、as_dict() 或 items() 的类 Mapping 配置对象；SimpleNamespace 等属性式配置对象。python文件名为protenix_infer.py，模型配置需要读取配置文件，内部配置文件和protenix_infer.py存放在protenix_infer根目录下，命名为inference_config.yaml，模型实现的各个模块需要具体实现，可以分文件生成，模型需要能输出 coordinate、plddt、pae、pde、resolved、full_data 和 summary_confidence 等推理结果，不需要生成测试代码，另外要确保模型配置匹配官方权重model_v0.5.0.pt，允许读取官方 checkpoint 的 state-dict key、shape、dtype 和 requires_grad， 用于确保权重兼容性，必须保证 Protenix(configs) 兼容任意 Mapping、items()/to_dict() 配置对象及推理参数覆盖，并支持外部直接执行 model.load_state_dict(checkpoint[\"model\"], strict=True) 后立即推理，不得依赖自定义加载函数或加载状态标记；所有输入特征须依据 OneScience 的真实语义动态适配形状，尤其不得臆定 ref_atom_name_chars 为 [N_atom,4,64]，仅严格校验影响 state_dict key、shape 和 dtype 的架构参数，必须允许评测器覆盖 N_cycle 等运行时配置。模型必须兼容评测器通过 load_state_dict(..., strict=True) 外部加载权重，并在完整核对 key、shape、dtype 且 missing_keys、unexpected_keys 均为空后允许推理。",
+  "evaluation_script": "evaluate_protenix_infer.py",
+  "stardard_dir_name": "protenix_infer",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01"
+  },
+  "checks": [
+    {
+      "id": "ab49d5744f0fa30d",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "submission_root": {
+          "search_environment": "PYTHONPATH",
+          "accepted_names": [
+            "protenix_infer",
+            "protenix_infer_V*"
+          ],
+          "required_config_file": "inference_config.yaml"
+        },
+        "module_file": "protenix_infer.py",
+        "official_prerequisites": {
+          "standard_config": "standard/protenix_infer/inference_config.yaml",
+          "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/Protenix/model_v0.5.0.pt"
+        }
+      }
+    },
+    {
+      "id": "acc3d51dc42ded4f",
+      "type": "infer_config",
+      "method": "check_config",
+      "phase": "infer_script",
+      "depends": [
+        "ab49d5744f0fa30d"
+      ],
+      "params": {
+        "submission_config": "inference_config.yaml",
+        "yaml_loader": "yaml.safe_load",
+        "submission_top_level_type": "dict",
+        "standard_config": "standard/protenix_infer/inference_config.yaml",
+        "standard_required_root": "inference",
+        "standard_materialization": {
+          "config_type": "ml_collections.ConfigDict",
+          "load_checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/Protenix/model_v0.5.0.pt",
+          "train_confidence_only": false,
+          "train_noise_sampler": {
+            "p_mean": -1.2,
+            "p_std": 1.5,
+            "sigma_data": 16.0
+          },
+          "diffusion_batch_size": 48,
+          "model.N_cycle": 1,
+          "model.N_model_seed": 1,
+          "sample_diffusion.N_sample": 1,
+          "sample_diffusion.N_step": 2
+        }
+      }
+    },
+    {
+      "id": "f2e198ee953a9a1f",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "acc3d51dc42ded4f"
+      ],
+      "params": {
+        "module_file": "protenix_infer.py",
+        "module_name": "protenix_infer",
+        "class_name": "Protenix",
+        "require_exact_class_name": true,
+        "constructor": {
+          "config_path_parameter": "config_path",
+          "config_path_call": {
+            "config_path": "inference_config.yaml"
+          },
+          "config_object_fallback": {
+            "payload_key": "inference",
+            "required_payload_type": "dict",
+            "materializer": "materialize_inference_config",
+            "call": "Protenix(model_configs)"
+          }
+        },
+        "module_cache_isolation": {
+          "standard": "unload_modules_from_root",
+          "submission_import": "import_protenix_class"
+        }
+      }
+    },
+    {
+      "id": "2be386d6bacbc94d",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "f2e198ee953a9a1f"
+      ],
+      "params": {
+        "standard_model": {
+          "source_root": "standard/protenix_infer",
+          "class_import": "import_protenix_class",
+          "constructor_config": "materialize_inference_config",
+          "require_no_missing_semantic_paths": true,
+          "cleanup": "unload_modules_from_root"
+        },
+        "submission_model": {
+          "class": "Protenix",
+          "set_eval": true
+        },
+        "runtime_overrides": {
+          "apply_only_when_path_exists": true,
+          "paths": {
+            "N_cycle": 1,
+            "N_model_seed": 1,
+            "diffusion_batch_size": 48,
+            "train_confidence_only": false,
+            "configs.model.N_cycle": 1,
+            "configs.model.N_model_seed": 1,
+            "configs.sample_diffusion.N_sample": 1,
+            "configs.sample_diffusion.N_step": 2,
+            "configs.diffusion_batch_size": 48,
+            "configs.train_confidence_only": false,
+            "config.model.n_cycle": 1,
+            "config.model.n_model_seed": 1,
+            "config.model.diffusion_batch_size": 48,
+            "config.model.diffusion_sampling.n_samples": 1,
+            "config.model.diffusion_sampling.n_steps": 2,
+            "diffusion_sampler.n_samples": 1,
+            "diffusion_sampler.n_steps": 2
+          }
+        },
+        "semantic_oracle": {
+          "component_discovery": "discover_semantic_components",
+          "allow_evaluation_components_registry": true,
+          "registry_values_must_be_reachable_torch_nn_modules": true,
+          "semantic_sections": [
+            "component_presence",
+            "depths",
+            "channels",
+            "attention_heads",
+            "atom_windows",
+            "inference_hyperparameters"
+          ],
+          "comparison": "compare_semantic_model_specs",
+          "require_exact_flattened_section_equality": true
+        },
+        "parameter_oracle": {
+          "collector": "collect_model_parameter_profiles",
+          "scopes": [
+            "global",
+            "input_embedder",
+            "relative_position_encoding",
+            "template_embedder",
+            "msa_module",
+            "pairformer",
+            "diffusion_module",
+            "confidence_head",
+            "distogram_head"
+          ],
+          "compare": {
+            "summary": [
+              "parameter_tensors",
+              "total_numel",
+              "trainable_numel",
+              "frozen_numel",
+              "dtype_numel"
+            ],
+            "shape_distribution": true,
+            "frozen_value_distribution": {
+              "sha256": true
+            },
+            "buffers_report_only": true
+          },
+          "comparison": "compare_model_parameter_profiles"
+        },
+        "require_positive_total_and_trainable_parameter_numel": true,
+        "failure_policy": "return_failure_before_checkpoint_loading_when_semantic_or_parameter_comparison_fails"
+      }
+    },
+    {
+      "id": "e68cc432116d611c",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "2be386d6bacbc94d"
+      ],
+      "params": {
+        "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/Protenix/model_v0.5.0.pt",
+        "device": "cuda:current_device when CUDA is available, otherwise cpu",
+        "require_all_model_parameters_on_device": true,
+        "payload": {
+          "required_mapping_key": "model",
+          "required_state_type": "nonempty dict",
+          "strip_prefix": "module."
+        },
+        "key_mapping": {
+          "default": "exact official state keys equal target named-parameter keys",
+          "override_attributes": [
+            "OFFICIAL_STATE_DICT_KEY_MAP",
+            "official_state_dict_key_map"
+          ],
+          "override_location": [
+            "model",
+            "model_module"
+          ],
+          "direction": "official_key_to_submission_parameter_key",
+          "callable_mapping_allowed": true,
+          "mapping_type": "dict[str,str]",
+          "require_full_bijection": true
+        },
+        "parameter_compatibility": {
+          "compare_each_mapped_parameter": [
+            "shape",
+            "dtype"
+          ]
+        },
+        "persistent_buffers": {
+          "preserve_instance_values": true,
+          "include_in_strict_load_state": true
+        },
+        "strict_load": {
+          "api": "torch.nn.Module.load_state_dict",
+          "strict": true,
+          "require_missing_keys_empty": true,
+          "require_unexpected_keys_empty": true
+        }
+      }
+    },
+    {
+      "id": "248c268977ee268e",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "e68cc432116d611c"
+      ],
+      "params": {
+        "model_mode": "eval",
+        "gradient_context": "torch.inference_mode",
+        "input_fixture": {
+          "builder": "make_virtual_protenix_input",
+          "counts": {
+            "n_token": 3,
+            "n_atom": 9,
+            "n_msa": 1,
+            "atoms_per_token": 3
+          },
+          "validator": "validate_preprocessed_input",
+          "require_all_fields_tensor_and_on_restype_device": true,
+          "required_shapes": {
+            "restype": [
+              3,
+              32
+            ],
+            "profile": [
+              3,
+              32
+            ],
+            "deletion_mean": [
+              3,
+              1
+            ],
+            "ref_pos": [
+              9,
+              3
+            ],
+            "ref_charge": [
+              9
+            ],
+            "ref_mask": [
+              9
+            ],
+            "ref_element": [
+              9,
+              128
+            ],
+            "ref_atom_name_chars": [
+              9,
+              256
+            ],
+            "ref_space_uid": [
+              9
+            ],
+            "atom_to_token_idx": [
+              9
+            ],
+            "atom_to_tokatom_idx": [
+              9
+            ],
+            "distogram_rep_atom_mask": [
+              9
+            ],
+            "asym_id": [
+              3
+            ],
+            "residue_index": [
+              3
+            ],
+            "entity_id": [
+              3
+            ],
+            "token_index": [
+              3
+            ],
+            "sym_id": [
+              3
+            ],
+            "token_bonds": [
+              3,
+              3
+            ],
+            "has_frame": [
+              3
+            ],
+            "is_ligand": [
+              9
+            ],
+            "msa": [
+              1,
+              3
+            ],
+            "has_deletion": [
+              1,
+              3
+            ],
+            "deletion_value": [
+              1,
+              3
+            ]
+          },
+          "mapping_constraints": {
+            "atom_to_token_idx_range": [
+              0,
+              3
+            ],
+            "atom_to_tokatom_idx_range": [
+              0,
+              3
+            ],
+            "exact_atoms_per_token": 3
+          }
+        },
+        "forward_call": {
+          "input_feature_dict": "fixture",
+          "label_full_dict": null,
+          "label_dict": null,
+          "mode": "inference"
+        },
+        "return_contract": {
+          "tuple_length": 3,
+          "prediction_type": "dict",
+          "normalizer": "normalize_prediction_for_evaluation",
+          "required_evaluation_fields": [
+            "coordinate",
+            "plddt",
+            "pae",
+            "pde",
+            "resolved",
+            "contact_probs"
+          ],
+          "contact_probs_fallback": "full_data[0].contact_probs",
+          "all_nested_prediction_tensors_finite": true,
+          "coordinate": {
+            "type": "torch.Tensor",
+            "last_dimension": 3
+          },
+          "log_keys_recorded_when_dict": true
+        }
+      }
+    },
+    {
+      "id": "b2f55683fc54bc52",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "248c268977ee268e"
+      ],
+      "params": {
+        "reference_output": "standard/protenix_infer/protenix_infer_reference.json",
+        "reference_loader": "load_required_standard_output",
+        "prediction_fields": [
+          "coordinate",
+          "plddt",
+          "pae",
+          "pde",
+          "resolved",
+          "contact_probs"
+        ],
+        "tolerances": {
+          "rtol": 0.0001,
+          "atol": 1e-05
+        },
+        "deterministic": {
+          "seed": 101,
+          "seed_setter": "seed_random_sources",
+          "require_reference_seed": 101,
+          "runs": 2,
+          "assert_replay": "compare_tensor_predictions",
+          "assert_reference": "compare_tensor_predictions"
+        },
+        "stochastic": {
+          "seeds": [
+            101,
+            202,
+            303
+          ],
+          "require_reference_seeds": [
+            101,
+            202,
+            303
+          ],
+          "require_prediction_for_each_seed": true,
+          "per_seed_comparator": "compare_tensor_predictions",
+          "summary": "summarize_stochastic_predictions",
+          "distribution_comparator": "compare_distribution_summaries"
+        },
+        "tensor_comparison": {
+          "require_matching_shape_per_field": true,
+          "record": [
+            "mae",
+            "rmse",
+            "max_abs_error"
+          ],
+          "require_torch_allclose_per_field": true,
+          "coordinate_pairwise_distance": {
+            "compute_when_atom_count_at_least": 2,
+            "require_allclose": true
+          }
+        },
+        "distribution_comparison": {
+          "statistics": [
+            "mean",
+            "std",
+            "min",
+            "max"
+          ],
+          "require_field_shape_match": true,
+          "non_coordinate_fields_require_allclose": true,
+          "coordinate_uses_pairwise_distance_when_available": true
+        },
+        "pass_condition": "deterministic_replay && deterministic_reference && every_stochastic_per_seed_reference && stochastic_distribution"
+      }
+    }
+  ]
+}

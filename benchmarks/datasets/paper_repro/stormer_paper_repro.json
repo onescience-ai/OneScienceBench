@@ -1,0 +1,451 @@
+{
+  "id": "stormer_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "earth",
+  "task": "复现 Stormer 的 patch 化全球天气 Transformer 与单步预报训练评估链路",
+  "prompt": "复现 Stormer 论文中的数据驱动天气预报核心模型：把连续 history 帧气象场按空间 patch 编码为 token，加入可学习空间位置表示，经多层 pre-norm 自注意力和 MLP 残差块建模后恢复下一时刻气象场；实现真实 AdamW、MSE、backward 单步训练和 MAE/RMSE 评估，不得导入评测器或标准实现。请在 stormer_paper_repro 目录生成 stormer.py、train.py 和 evaluate.py；stormer.py 定义 Stormer，构造参数至少包含 in_channels、out_channels、img_size、patch_size、embed_dim、depth、num_heads、history，forward 接收 (B,history,C,H,W) 或等价展平历史通道并返回 (B,out_channels,H,W)，必须校验历史长度、通道、网格和 patch 整除关系。",
+  "evaluation_script": "evaluate_stormer_paper_repro.py",
+  "stardard_dir_name": "stormer_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+        "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "297d29d174dc4edf",
+      "type": "model_file",
+      "phase": "model_structure",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "stormer.py"
+        ]
+      },
+      "depends": []
+    },
+    {
+      "id": "e6e3757215134013",
+      "type": "model_interface",
+      "phase": "model_structure",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "stormer.py"
+        ],
+        "required_interfaces": [
+          "Stormer",
+          "Stormer.forward"
+        ]
+      },
+      "depends": [
+        "297d29d174dc4edf"
+      ]
+    },
+    {
+      "id": "a0dbda0488a544c8",
+      "type": "model_structure",
+      "phase": "model_structure",
+      "method": "check_model_structure",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "rules": [
+          {
+            "id": "stormer_structure:patch_projection_conv",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "patch_projection",
+              "when_module_type": "Conv2d",
+              "kernel_size": ["$patch_size", "$patch_size"],
+              "stride": ["$patch_size", "$patch_size"],
+              "out_channels": "$embed_dim"
+            }
+          },
+          {
+            "id": "stormer_structure:patch_projection_linear",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "patch_projection",
+              "when_module_type": "Linear",
+              "out_features": "$embed_dim"
+            }
+          },
+          {
+            "id": "stormer_structure:block_norm",
+            "type": "layer_norm_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "block_norm",
+              "normalized_shape": ["$embed_dim"]
+            }
+          },
+          {
+            "id": "stormer_structure:block_mlp_input",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "block_mlp_input",
+              "in_features": "$embed_dim"
+            }
+          },
+          {
+            "id": "stormer_structure:block_mlp_output",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "block_mlp_output",
+              "out_features": "$embed_dim"
+            }
+          }
+        ]
+      },
+      "depends": [
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "5a23b90625114870",
+      "type": "model_forward",
+      "phase": "model_structure",
+      "method": "check_model_forward_executable",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        }
+      },
+      "depends": [
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "e5add63ed4c34052",
+      "type": "model_method_correctness",
+      "phase": "model_structure",
+      "method": "check_method_correctness",
+      "params": {
+        "task_rule": "component_usage",
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        }
+      },
+      "depends": [
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "66bdd613e9fe4a8d",
+      "type": "train_file",
+      "phase": "train_script",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "train.py"
+        ]
+      },
+      "depends": []
+    },
+    {
+      "id": "034da6ff20b74066",
+      "type": "train_interface",
+      "phase": "train_script",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "model_file": "stormer.py"
+      },
+      "depends": [
+        "66bdd613e9fe4a8d",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "07b2d7315dda43fd",
+      "type": "train_structure",
+      "phase": "train_script",
+      "method": "check_train_structure",
+      "params": {
+        "files": [
+          "train.py"
+        ]
+      },
+      "depends": [
+        "66bdd613e9fe4a8d"
+      ]
+    },
+    {
+      "id": "a3bfdf242b8c48e3",
+      "type": "train_method_correctness",
+      "phase": "train_script",
+      "method": "check_method_correctness",
+      "params": {
+        "task_rule": "optimizer",
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "train_file": "train.py"
+      },
+      "depends": [
+        "034da6ff20b74066",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "d150c4ae8389495a",
+      "type": "train_loss",
+      "phase": "train_script",
+      "method": "check_train_loss",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "train_file": "train.py"
+      },
+      "depends": [
+        "034da6ff20b74066",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "c113bc579852456d",
+      "type": "parameter_update",
+      "phase": "train_script",
+      "method": "check_parameter_update",
+      "params": {
+        "files": [
+          "train.py"
+        ]
+      },
+      "depends": [
+        "034da6ff20b74066"
+      ]
+    },
+    {
+      "id": "a0245b2a1a6949eb",
+      "type": "smoke_training",
+      "phase": "smoke_train",
+      "method": "check_smoke_training",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "run_file": "train.py"
+      },
+      "depends": [
+        "034da6ff20b74066",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "eb1771eab68a45c8",
+      "type": "infer_file",
+      "phase": "infer_script",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "evaluate.py"
+        ]
+      },
+      "depends": []
+    },
+    {
+      "id": "1f65c55117f8459a",
+      "type": "infer_interface",
+      "phase": "infer_script",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "evaluate.py"
+        ],
+        "model_file": "stormer.py"
+      },
+      "depends": [
+        "eb1771eab68a45c8",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "a1d6be46f37e4382",
+      "type": "infer_structure",
+      "phase": "infer_script",
+      "method": "check_infer_structure",
+      "params": {
+        "files": [
+          "evaluate.py"
+        ]
+      },
+      "depends": [
+        "eb1771eab68a45c8"
+      ]
+    },
+    {
+      "id": "e559faf5594d4de9",
+      "type": "infer_execution",
+      "phase": "infer_execution",
+      "method": "check_infer_execution",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "evaluate_file": "evaluate.py"
+      },
+      "depends": [
+        "1f65c55117f8459a",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "c7c474746d19494e",
+      "type": "infer_output_validity",
+      "phase": "infer_execution",
+      "method": "check_infer_output_validity",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "evaluate_file": "evaluate.py"
+      },
+      "depends": [
+        "1f65c55117f8459a",
+        "e6e3757215134013"
+      ]
+    },
+    {
+      "id": "5195201eb17142ca",
+      "type": "infer_metric",
+      "phase": "infer_metric",
+      "method": "check_infer_metrics",
+      "params": {
+        "model_file": "stormer.py",
+        "model_class": "Stormer",
+        "model_args": {
+          "in_channels": 2,
+          "out_channels": 2,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "num_heads": 4,
+          "history": 2
+        },
+        "evaluate_file": "evaluate.py"
+      },
+      "depends": [
+        "1f65c55117f8459a",
+        "e6e3757215134013"
+      ]
+    }
+  ]
+}

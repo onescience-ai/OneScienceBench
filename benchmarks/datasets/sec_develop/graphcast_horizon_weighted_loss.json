@@ -1,0 +1,364 @@
+{
+  "id": "graphcast_horizon_weighted_loss",
+  "eval_type": "sec_develop",
+  "domain": "earth",
+  "task": "为 GraphCast 实现按预报时效、变量和纬度加权的训练损失",
+  "prompt": "完成 GraphCast 多时效训练损失的二次开发。在输出目录 graphcast_horizon_weighted_loss/ 中生成 graphcast_horizon_weighted_loss.py 和 train.py。主文件定义 torch.nn.Module 子类 GraphCastHorizonWeightedLoss，构造函数为 (horizon_weights, variable_weights=None, eps=1e-8)：时效与变量权重必须是一维、有限、非负且至少有一个正值，并注册为 buffer；eps 必须为正。forward(predictions, targets, latitude_weights=None) 接收相同形状 [B,T,C,H,W] 的张量，T 必须等于时效权重长度，变量权重非空时长度必须等于 C；latitude_weights 支持 [H] 或 [H,W]，必须有限、非负且总和为正。计算逐元素平方误差乘以时效、变量及网格权重，对每个样本用实际广播后权重总和归一化，再对 batch 求均值，返回有限可反向传播标量。train.py 必须提供 build_loss(config=None) 和 train_step(loss_fn, predictions, targets, optimizer, latitude_weights=None)，后者完成清梯度、反向传播和优化器更新。对 rank、shape、权重长度或数值非法的输入抛出明确异常。",
+  "evaluation_script": "evaluate_graphcast_horizon_weighted_loss.py",
+  "stardard_dir_name": "graphcast_horizon_weighted_loss",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "d7707696488fd869",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_resolution": {
+          "environment_variable": "GRAPHCAST_HORIZON_WEIGHTED_LOSS_SUBMISSION_DIR",
+          "pythonpath_hints": [
+            "graphcast_horizon_weighted_loss",
+            "graphcast_horizon_weighted_loss_V1"
+          ],
+          "pythonpath_version_prefix": "graphcast_horizon_weighted_loss_V",
+          "selection": "first candidate containing every required file; otherwise last candidate; otherwise evaluator-file parent"
+        },
+        "required_files": [
+          "graphcast_horizon_weighted_loss.py",
+          "train.py"
+        ],
+        "assertion": "Path.is_file"
+      }
+    },
+    {
+      "id": "b807ecae60e98bcc",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "d7707696488fd869"
+      ],
+      "params": {
+        "predictions": {
+          "factory": "torch.zeros",
+          "shape": [
+            2,
+            3,
+            2,
+            3,
+            4
+          ],
+          "requires_grad": true
+        },
+        "targets": {
+          "factory": "torch.ones_like",
+          "source": "predictions"
+        },
+        "latitude": {
+          "factory": "torch.tensor",
+          "value": [
+            1.0,
+            2.0,
+            1.0
+          ]
+        },
+        "assertions": {
+          "predictions_shape_equals_targets": true,
+          "latitude_shape": [
+            3
+          ],
+          "layout": "[B,T,C,H,W]"
+        },
+        "legacy_exception_fallback": "data:weighted_batch_contract"
+      }
+    },
+    {
+      "id": "af4f3a820af64d4b",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "d7707696488fd869"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "train.py"
+        ],
+        "module_load_name": "graphcast_horizon_weighted_loss_train_submission",
+        "required_interfaces": [
+          "build_loss",
+          "train_step"
+        ],
+        "assertion": "callable(getattr(train,name,None)) for every required callable",
+        "legacy_exception_fallback": "train_script:public_entrypoints"
+      }
+    },
+    {
+      "id": "98a293fe17315a04",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "d7707696488fd869"
+      ],
+      "params": {
+        "model_file": "graphcast_horizon_weighted_loss.py",
+        "model_class": "GraphCastHorizonWeightedLoss",
+        "model_constructor": {
+          "positional_args": [
+            [
+              1.0,
+              2.0,
+              4.0
+            ],
+            [
+              1.0,
+              0.5
+            ]
+          ]
+        },
+        "assertions": {
+          "instanceof": "torch.nn.Module"
+        },
+        "legacy_exception_fallback": "model_structure:module_contract"
+      }
+    },
+    {
+      "id": "b9c6d25657135ade",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "b807ecae60e98bcc",
+        "98a293fe17315a04"
+      ],
+      "params": {
+        "model_file": "graphcast_horizon_weighted_loss.py",
+        "model_class": "GraphCastHorizonWeightedLoss",
+        "model_constructor": {
+          "positional_args": [
+            [
+              1.0,
+              2.0,
+              4.0
+            ],
+            [
+              1.0,
+              0.5
+            ]
+          ]
+        },
+        "valid_inputs": {
+          "predictions": {
+            "factory": "torch.zeros",
+            "shape": [
+              2,
+              3,
+              2,
+              3,
+              4
+            ],
+            "requires_grad": true
+          },
+          "targets": {
+            "factory": "torch.ones_like",
+            "source": "predictions"
+          },
+          "latitude": {
+            "factory": "torch.tensor",
+            "value": [
+              1.0,
+              2.0,
+              1.0
+            ]
+          }
+        },
+        "assertions": {
+          "output_type": "torch.Tensor",
+          "output_ndim": 0,
+          "output_finite": true
+        },
+        "invalid_case": {
+          "predictions_shape": [
+            1,
+            2,
+            2,
+            2,
+            2
+          ],
+          "targets_shape": [
+            1,
+            2,
+            2,
+            2,
+            2
+          ],
+          "latitude_shape": [
+            2
+          ],
+          "accepted_exception_types": [
+            "ValueError"
+          ]
+        },
+        "legacy_exception_fallback": "forward_executable:forward_contract"
+      }
+    },
+    {
+      "id": "60f29ae2731e89a7",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "b9c6d25657135ade"
+      ],
+      "params": {
+        "model_file": "graphcast_horizon_weighted_loss.py",
+        "model_class": "GraphCastHorizonWeightedLoss",
+        "model_constructor": {
+          "positional_args": [
+            [
+              1.0,
+              2.0,
+              4.0
+            ],
+            [
+              1.0,
+              0.5
+            ]
+          ]
+        },
+        "inputs": {
+          "predictions": {
+            "factory": "torch.zeros",
+            "shape": [
+              2,
+              3,
+              2,
+              3,
+              4
+            ]
+          },
+          "targets": {
+            "factory": "torch.ones_like",
+            "source": "predictions"
+          },
+          "latitude": {
+            "factory": "torch.tensor",
+            "value": [
+              1.0,
+              2.0,
+              1.0
+            ]
+          }
+        },
+        "oracle": {
+          "horizon_weights": [
+            1.0,
+            2.0,
+            4.0
+          ],
+          "variable_weights": [
+            1.0,
+            0.5
+          ],
+          "latitude_expand": "latitude.view(1,1,1,3,1).expand(1,1,1,3,4)",
+          "formula": "(((predictions-targets).square()*oracle_weights).sum(dim=(1,2,3,4))/oracle_weights.sum()).mean()"
+        },
+        "assertions": {
+          "candidate_output_scalar": true,
+          "allclose": {
+            "atol": 1e-06
+          }
+        },
+        "legacy_exception_fallback": "forward_equivalence:oracle"
+      }
+    },
+    {
+      "id": "7b7b92c53e46cb5f",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "af4f3a820af64d4b",
+        "60f29ae2731e89a7"
+      ],
+      "params": {
+        "loss_constructor": {
+          "class": "GraphCastHorizonWeightedLoss",
+          "positional_args": [
+            [
+              1.0,
+              2.0,
+              4.0
+            ],
+            [
+              1.0,
+              0.5
+            ]
+          ]
+        },
+        "predictions": {
+          "factory": "torch.zeros",
+          "shape": [
+            2,
+            3,
+            2,
+            3,
+            4
+          ],
+          "requires_grad": true
+        },
+        "targets": {
+          "factory": "torch.ones_like",
+          "source": "predictions"
+        },
+        "latitude": {
+          "factory": "torch.tensor",
+          "value": [
+            1.0,
+            2.0,
+            1.0
+          ]
+        },
+        "gradient_assertions": {
+          "call": "actual.backward()",
+          "predictions_grad_non_none": true,
+          "predictions_grad_all_finite": true
+        },
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "[predictions]",
+          "kwargs": {
+            "lr": 0.001
+          }
+        },
+        "before": "predictions.detach().clone()",
+        "train_step": {
+          "module": "train",
+          "function": "train_step",
+          "args": [
+            "loss_fn",
+            "predictions",
+            "targets",
+            "optimizer",
+            "latitude"
+          ]
+        },
+        "assertions": {
+          "returned_loss_finite": true,
+          "predictions_changed": true
+        },
+        "legacy_exception_fallback": "traning:optimization_contract"
+      }
+    }
+  ]
+}

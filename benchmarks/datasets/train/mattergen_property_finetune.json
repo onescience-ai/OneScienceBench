@@ -1,0 +1,669 @@
+{
+  "id": "mattergen_property_finetune",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "基于预训练 MatterGen base 实现 dft_mag_density 属性适配微调",
+  "prompt": "基于固定 MatterGen base checkpoint，独立实现 dft_mag_density 标量属性的层级 adapter 微调。候选必须使用本地 PyTorch 类实现完整 GemNetTDenoiser/GemNet-T 和属性 adapter，不得主动导入 onescience、外部 mattergen、torch_geometric、torch_scatter 或 torch_sparse，不得读取评测器、标准实现或旧候选。固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt`；其 state_dict 含 281 个 tensor entry、53,737,595 个元素，键统一带 `diffusion_module.model.` 前缀。只允许剥离该前缀，281 项基座状态必须与本地基座键和 shape 完全一致；将基座状态与本地新增 adapter 初始状态合并后，必须通过 `load_state_dict(..., strict=True)` 完整加载，不得过滤键、忽略 missing/unexpected key、改写 tensor shape 或覆盖加载钩子绕过严格加载。允许 `torch.load(..., weights_only=False)` 仅用于解析原 checkpoint；被评分的前向、loss 和更新必须由候选本地模型完成。\n\n模型固定使用 hidden_dim=512、denoise_atom_types=true、atom_type_diffusion=mask；GemNet-T 使用 num_targets=1、cutoff=7.0、emb_size_atom=512、emb_size_edge=512、max_neighbors=50、max_cell_images_per_dim=5、num_blocks=4、regress_stress=true、otf_graph=true，并保留周期图、径向/球面基、4 个 interaction block、5 个 output block、5 个 lattice output block 和 101 类原子头。新增属性编码器把每个晶体的 dft_mag_density 标量编码为 512 维条件；在每个 interaction block 前设置一组 adapter MLP `Linear(1024,512)-ReLU-Linear(512,512)` 和一层无 bias 的 `Linear(512,512)` mixin，共 4 组，mixin 权重必须零初始化，使初始条件模型保持预训练基座输出。配置必须使用 full_finetuning=false：仅 `gemnet.cond_adapt_layers.*` 和 `gemnet.cond_mixin_layers.*` 可训练，全部预训练基座参数必须冻结。\n\n`build_finetune_batch(seed=20260819)` 必须在内存中确定性构造两个晶体、共 7 个原子的属性微调 batch：num_atoms=[4,3]，dft_mag_density=[0.12,0.68]，两个被 mask 原子使用类别 101；返回且仅返回 batch、timesteps、targets、atom_loss_mask。前向接收 batch 和 timesteps，返回且仅返回 pos [7,3]、cell [2,3,3]、atomic_numbers [7,101] 三个有限、可求梯度输出，并真实依赖 dft_mag_density。损失中位置和晶格使用 sum MSE，原子类型仅在两个 mask 原子上使用 sum cross entropy，权重固定为 pos=0.1、cell=1.0、atomic_numbers=1.0。微调固定使用 Adam、learning_rate=5e-6、steps=2、gradient_clip_val=0.5；必须执行真实 forward、backward、梯度裁剪和 optimizer.step。两步后所有 20 个可训练 adapter 参数张量都必须发生更新，全部冻结的预训练参数必须逐值不变。\n\n请在当前工作目录生成 `mattergen_property_finetune/mattergen_property_finetune.py`、`mattergen_property_finetune/train_mattergen_finetune.py`、`mattergen_property_finetune/mattergen_property_finetune.yaml`、`mattergen_property_finetune/portable_mattergen/__init__.py` 和 `mattergen_property_finetune/portable_mattergen/gemnet/gemnet-dT.json`；其余本地包文件可按完整 GemNet-T 实现需要自行组织。模型脚本必须公开 `GemNetTPropertyAdapter`、`load_config`、`build_model`、`load_checkpoint_payload`、`extract_base_model_state`、`is_adapter_parameter`、`load_pretrained_model`；训练脚本必须公开 `build_finetune_batch`、`compute_materials_loss`、`train_step`、`train`、`main`，并提供 `--config`、`--output-dir`、`--device auto|cpu|cuda`。训练必须在调用方传入的 output 目录生成 `mattergen_property_finetuned.pt`、`metrics.jsonl`、`train.log`；checkpoint 必须包含 format=mattergen-dft-mag-density-adapter-v1、completed_steps=2、完整 model_state_dict、非空 optimizer_state_dict、trainable_parameter_names、config 和两条 history，两个日志文件必须与 history 完全一致，微调 checkpoint 必须能 strict=True 完整重载。",
+  "evaluation_script": "evaluate_mattergen_property_finetune.py",
+  "stardard_dir_name": "mattergen_property_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "24G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_mattergen_property_finetune",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "b6b76740f8037047",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "mattergen_property_finetune.py",
+          "train_mattergen_finetune.py",
+          "mattergen_property_finetune.yaml",
+          "portable_mattergen/__init__.py",
+          "portable_mattergen/gemnet/gemnet-dT.json"
+        ],
+        "assertion": "Path.is_file",
+        "submission_resolution": {
+          "environment_variable": "MATTERGEN_PROPERTY_FINETUNE_SUBMISSION_DIR",
+          "cwd_candidates": [
+            ".",
+            "mattergen_property_finetune"
+          ],
+          "pythonpath_exact_hints": [
+            "mattergen_property_finetune",
+            "mattergen_property_finetune_V1"
+          ],
+          "pythonpath_version_prefix": "mattergen_property_finetune_V",
+          "selection": "first candidate containing every required file; otherwise first resolved candidate; otherwise cwd/mattergen_property_finetune"
+        }
+      }
+    },
+    {
+      "id": "ccd4b05beb8f28f3",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "b6b76740f8037047"
+      ],
+      "params": {
+        "candidate": {
+          "file": "train_mattergen_finetune.py",
+          "function": "build_finetune_batch",
+          "args": {
+            "seed": 20260819
+          }
+        },
+        "required_return_keys": [
+          "batch",
+          "timesteps",
+          "targets",
+          "atom_loss_mask"
+        ],
+        "batch_keys": [
+          "pos",
+          "cell",
+          "atomic_numbers",
+          "num_atoms",
+          "dft_mag_density",
+          "use_unconditional_dft_mag_density"
+        ],
+        "target_keys": [
+          "pos",
+          "cell",
+          "atomic_numbers"
+        ],
+        "batch_shapes": {
+          "pos": [
+            7,
+            3
+          ],
+          "cell": [
+            2,
+            3,
+            3
+          ],
+          "atomic_numbers": [
+            7
+          ],
+          "num_atoms": [
+            2
+          ],
+          "dft_mag_density": [
+            2
+          ],
+          "use_unconditional_dft_mag_density": [
+            2,
+            1
+          ]
+        },
+        "target_shapes": {
+          "pos": [
+            7,
+            3
+          ],
+          "cell": [
+            2,
+            3,
+            3
+          ],
+          "atomic_numbers": [
+            7
+          ]
+        },
+        "dtypes": {
+          "batch.pos": "torch.float32",
+          "batch.cell": "torch.float32",
+          "batch.atomic_numbers": "torch.long",
+          "batch.num_atoms": "torch.long",
+          "batch.dft_mag_density": "torch.float32",
+          "batch.use_unconditional_dft_mag_density": "torch.bool",
+          "timesteps": "torch.float32",
+          "atom_loss_mask": "torch.bool"
+        },
+        "timesteps_shape": [
+          2
+        ],
+        "atom_loss_mask_shape": [
+          7
+        ],
+        "expected_num_atoms": [
+          4,
+          3
+        ],
+        "expected_atom_loss_mask": [
+          false,
+          true,
+          false,
+          false,
+          false,
+          true,
+          false
+        ],
+        "expected_masked_atomic_numbers": [
+          101,
+          101
+        ],
+        "expected_dft_mag_density": [
+          0.12,
+          0.68
+        ],
+        "use_unconditional_any": false,
+        "numeric_assertions": {
+          "pos_and_cell_finite": true,
+          "cell_determinant_positive": true
+        },
+        "determinism": {
+          "second_call": {
+            "seed": 20260819
+          },
+          "tensor_equal_includes": [
+            "dtype",
+            "shape",
+            "detached_cpu_values"
+          ]
+        },
+        "save_fixture_as": "fixture"
+      }
+    },
+    {
+      "id": "81054c619dcd7b9a",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "b6b76740f8037047"
+      ],
+      "params": {
+        "module_loading": {
+          "model_file": "mattergen_property_finetune.py",
+          "train_file": "train_mattergen_finetune.py",
+          "config_file": "mattergen_property_finetune.yaml"
+        },
+        "required_model_functions": [
+          "load_config",
+          "build_model",
+          "load_checkpoint_payload",
+          "extract_base_model_state",
+          "load_pretrained_model",
+          "is_adapter_parameter"
+        ],
+        "required_train_functions": [
+          "build_finetune_batch",
+          "compute_materials_loss",
+          "train_step",
+          "train",
+          "main"
+        ],
+        "source_scan": {
+          "python_glob": "**/*.py",
+          "forbidden_import_roots": [
+            "onescience",
+            "mattergen",
+            "torch_geometric",
+            "torch_scatter",
+            "torch_sparse"
+          ],
+          "forbidden_string_subpaths": [
+            "benchmarks/standard",
+            "benchmarks/evaluators"
+          ],
+          "forbidden_dynamic_calls": [
+            "__import__",
+            "import_module"
+          ],
+          "require_direct_calls": {
+            "torch.load": true,
+            "load_state_dict_strict_true": true
+          }
+        },
+        "train_file_ast": {
+          "required_cli_flags": [
+            "--config",
+            "--output-dir",
+            "--device"
+          ],
+          "required_called_attributes": [
+            "backward",
+            "step"
+          ],
+          "required_optimizer_name": "Adam"
+        },
+        "config": {
+          "model": {
+            "hidden_dim": 512,
+            "denoise_atom_types": true,
+            "atom_type_diffusion": "mask",
+            "gemnet": {
+              "num_targets": 1,
+              "cutoff": 7.0,
+              "emb_size_atom": 512,
+              "emb_size_edge": 512,
+              "max_neighbors": 50,
+              "max_cell_images_per_dim": 5,
+              "num_blocks": 4,
+              "regress_stress": true,
+              "otf_graph": true
+            }
+          },
+          "finetuning": {
+            "property_name": "dft_mag_density",
+            "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt",
+            "full_finetuning": false,
+            "seed": 20260819,
+            "optimizer": "Adam",
+            "steps": 2,
+            "learning_rate": 5e-06,
+            "gradient_clip_val": 0.5,
+            "loss_weights": {
+              "pos": 0.1,
+              "cell": 1.0,
+              "atomic_numbers": 1.0
+            }
+          }
+        },
+        "report_signatures": [
+          "build_finetune_batch",
+          "compute_materials_loss",
+          "train_step",
+          "train"
+        ]
+      }
+    },
+    {
+      "id": "56cb6e18346d0525",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [
+        "b6b76740f8037047"
+      ],
+      "params": {
+        "optional_glob": "eval*.py",
+        "exclude_filename": "evaluate_mattergen_property_finetune.py",
+        "required": false,
+        "result": "pass regardless of optional files"
+      }
+    },
+    {
+      "id": "b775d76f01916c3d",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "81054c619dcd7b9a"
+      ],
+      "params": {
+        "model_loader": {
+          "function": "load_pretrained_model",
+          "config_file": "mattergen_property_finetune.yaml",
+          "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt",
+          "device": "cpu",
+          "torch_seed": 20260819
+        },
+        "checkpoint": {
+          "sha256": "81668ee12afc1ee1b037f362420730de3460bfd2d36e547585fdcb911a3dfdef",
+          "base_state_entries": 281,
+          "base_state_numel": 53737595,
+          "base_prefix": "diffusion_module.model.",
+          "base_tensors_must_match_model_exactly": true
+        },
+        "model": {
+          "class_name": "MatterGenPropertyAdapter",
+          "must_be_local_to_submission": true,
+          "forward_parameter_prefix": [
+            "batch",
+            "timesteps"
+          ],
+          "top_level_child_order": [
+            "gemnet",
+            "noise_level_encoding",
+            "property_embeddings",
+            "fc_atom",
+            "property_embeddings_adapt"
+          ],
+          "hidden_dim": 512,
+          "property_adapter_keys": [
+            "dft_mag_density"
+          ],
+          "required_gemnet_components": [
+            "radial_basis",
+            "cbf_basis3",
+            "mlp_rbf_lattice",
+            "mlp_rbf3",
+            "mlp_cbf3",
+            "mlp_rbf_h",
+            "mlp_rbf_out",
+            "atom_emb",
+            "atom_latent_emb",
+            "edge_emb",
+            "int_blocks",
+            "out_blocks",
+            "lattice_out_blocks"
+          ],
+          "required_graph_builder": "generate_interaction_graph",
+          "block_counts": {
+            "interaction": 4,
+            "output": 5,
+            "lattice": 5
+          },
+          "adapter_block_counts": {
+            "adapt": 4,
+            "mixin": 4
+          },
+          "shape_probes": {
+            "atom_embedding_input": [
+              1,
+              6,
+              14,
+              101
+            ],
+            "atom_embedding_shape": [
+              4,
+              512
+            ],
+            "time_input": [
+              0.125,
+              0.875
+            ],
+            "time_shape": [
+              2,
+              512
+            ],
+            "atom_head_input_shape": [
+              3,
+              512
+            ],
+            "atom_head_shape": [
+              3,
+              101
+            ],
+            "property_input": [
+              0.12,
+              0.68
+            ],
+            "property_mask_shape": [
+              2,
+              1
+            ],
+            "property_shape": [
+              2,
+              512
+            ]
+          }
+        },
+        "state": {
+          "entries": 302,
+          "numel": 57936251
+        },
+        "trainability": {
+          "trainable_tensors": 20,
+          "trainable_numel": 4198400,
+          "adapter_name_predicate": "is_adapter_parameter",
+          "require_frozen_pretrained_parameters": true,
+          "zero_initialized_name_prefix": "gemnet.cond_mixin_layers."
+        }
+      }
+    },
+    {
+      "id": "df169c8527a90895",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "ccd4b05beb8f28f3",
+        "b775d76f01916c3d"
+      ],
+      "params": {
+        "fixture": "fixture",
+        "model_loader": {
+          "function": "load_pretrained_model",
+          "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt",
+          "training_mode": true,
+          "torch_seed": 20260819,
+          "device": "cuda:0 when available else cpu"
+        },
+        "adapter_constant_initialization": {
+          "parameter_prefixes": [
+            "gemnet.cond_adapt_layers.",
+            "gemnet.cond_mixin_layers."
+          ],
+          "weight_value": 0.002,
+          "bias_value": 0.0001,
+          "embedding_value": 0.001,
+          "norm_value": 1.0,
+          "attention_value": 0.001,
+          "temperature_value": 1.0,
+          "other_value": 0.001
+        },
+        "required_outputs": {
+          "pos": {
+            "shape": [
+              7,
+              3
+            ],
+            "floating": true,
+            "finite": true,
+            "requires_grad": true
+          },
+          "cell": {
+            "shape": [
+              2,
+              3,
+              3
+            ],
+            "floating": true,
+            "finite": true,
+            "requires_grad": true
+          },
+          "atomic_numbers": {
+            "shape": [
+              7,
+              101
+            ],
+            "floating": true,
+            "finite": true,
+            "requires_grad": true
+          }
+        },
+        "conditioning_sensitivity": {
+          "replace_batch_dft_mag_density_add": 0.25,
+          "assertion": "at least one required output has maximum absolute difference greater than 0"
+        }
+      }
+    },
+    {
+      "id": "3ebd05bd5744db50",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "ccd4b05beb8f28f3",
+        "b775d76f01916c3d",
+        "df169c8527a90895"
+      ],
+      "params": {
+        "fixture": "fixture",
+        "candidate": {
+          "model_file": "mattergen_property_finetune.py",
+          "config_file": "mattergen_property_finetune.yaml",
+          "loader": "load_pretrained_model"
+        },
+        "reference": {
+          "directory": "benchmarks/standard/mattergen_property_finetune",
+          "model_file": "mattergen_property_finetune.py",
+          "config_file": "mattergen_property_finetune.yaml",
+          "loader": "load_pretrained_model"
+        },
+        "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt",
+        "build_seed": 20260819,
+        "device": "cpu",
+        "adapter_constant_initialization": {
+          "weight_value": 0.002,
+          "bias_value": 0.0001,
+          "embedding_value": 0.001,
+          "norm_value": 1.0,
+          "attention_value": 0.001,
+          "temperature_value": 1.0,
+          "other_value": 0.001
+        },
+        "precondition": {
+          "same_state_key_set": true,
+          "same_state_shape_for_each_key": true,
+          "all_initialized_state_tensors_equal": true,
+          "on_failure": "do_not_run_forward_or_loss_comparison"
+        },
+        "forward": {
+          "training_mode": true,
+          "reset_rng_seed_before_each_forward": 20260819,
+          "keys": [
+            "pos",
+            "cell",
+            "atomic_numbers"
+          ],
+          "rtol": 1e-06,
+          "atol": 1e-06
+        },
+        "loss": {
+          "function": "compute_materials_loss",
+          "weights_source": "each implementation's finetuning.loss_weights",
+          "compare_total": {
+            "rtol": 1e-06,
+            "atol": 1e-06
+          },
+          "compare_components": [
+            "pos",
+            "cell",
+            "atomic_numbers"
+          ],
+          "component_rtol": 1e-06,
+          "component_atol": 1e-06
+        }
+      }
+    },
+    {
+      "id": "bd49aaf49960990a",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "81054c619dcd7b9a",
+        "b775d76f01916c3d",
+        "ccd4b05beb8f28f3"
+      ],
+      "params": {
+        "baseline": {
+          "loader": "load_pretrained_model",
+          "config_file": "mattergen_property_finetune.yaml",
+          "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt",
+          "device": "cpu",
+          "torch_seed_from": "finetuning.seed",
+          "capture_initial_trainable_parameters": true,
+          "capture_frozen_parameter_names": true,
+          "capture_state_key_set": true
+        },
+        "training": {
+          "function": "train",
+          "config_path": "mattergen_property_finetune.yaml",
+          "output_directory": "TemporaryDirectory(prefix=mattergen-property-finetune-eval-)",
+          "device": "auto",
+          "checkpoint_filename": "mattergen_property_finetuned.pt"
+        },
+        "checkpoint": {
+          "must_be_mapping": true,
+          "state_key_set_equals_baseline": true,
+          "format": "mattergen-dft-mag-density-adapter-v1",
+          "completed_steps": 2,
+          "optimizer_state_nonempty": true,
+          "trainable_parameter_names": "sorted names must equal initially requires_grad names",
+          "all_initially_trainable_tensors_changed": true,
+          "all_initially_frozen_tensors_equal_extracted_pretrained_base": true,
+          "strict_reload": true
+        },
+        "history": {
+          "record_count": 2,
+          "required_keys": [
+            "step",
+            "loss",
+            "pos_loss",
+            "cell_loss",
+            "atomic_numbers_loss",
+            "gradient_norm",
+            "parameters_with_grad"
+          ],
+          "steps": [
+            1,
+            2
+          ],
+          "finite_numeric_keys": [
+            "loss",
+            "pos_loss",
+            "cell_loss",
+            "atomic_numbers_loss",
+            "gradient_norm",
+            "parameters_with_grad"
+          ],
+          "positive_keys": [
+            "loss",
+            "gradient_norm",
+            "parameters_with_grad"
+          ],
+          "train_return_history_equals_checkpoint_history": true
+        },
+        "save_context": {
+          "training_output_dir": true,
+          "checkpoint_payload": true,
+          "train_result": true,
+          "training_history": true
+        }
+      }
+    },
+    {
+      "id": "b42c5e1703ffc530",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "bd49aaf49960990a"
+      ],
+      "params": {
+        "output_dir_from": "training_output_dir",
+        "required_nonempty_files": {
+          "checkpoint": "mattergen_property_finetuned.pt",
+          "metrics": "metrics.jsonl",
+          "log": "train.log"
+        },
+        "jsonl": {
+          "metrics": "parse every nonblank line with json.loads",
+          "log": "parse every nonblank line with json.loads",
+          "record_count": 2,
+          "metrics_equals_checkpoint_history": true,
+          "log_equals_checkpoint_history": true
+        },
+        "checkpoint": {
+          "payload_from": "checkpoint_payload",
+          "model_state_entries": 302,
+          "model_state_numel": 57936251,
+          "config_is_mapping": true,
+          "optimizer_state_nonempty": true,
+          "trainable_parameter_name_count": 20
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+checkpoint:
+  config_path: /public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/config.yaml
+  path: /public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt
+model:
+  hidden_dim: 512
+  denoise_atom_types: true
+  atom_type_diffusion: mask
+  gemnet:
+    num_targets: 1
+    cutoff: 7.0
+    emb_size_atom: 512
+    emb_size_edge: 512
+    max_neighbors: 50
+    max_cell_images_per_dim: 5
+    num_blocks: 4
+    regress_stress: true
+    otf_graph: true

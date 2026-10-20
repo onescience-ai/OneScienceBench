@@ -1,0 +1,66 @@
+experiment:
+  name: spectral_refiner_table2_forced_turbulence
+  paper: "Spectral-Refiner, arXiv:2405.17211"
+  section: "Table 2 forced-turbulence ablation"
+  seed: 1127825
+
+data:
+  train_file: /public/share/sugonhpcapp01/onestore/onedatasets/spectral_refiner_table2/fnodata_extra_64x64_N1280_v1e-3_T50_steps100_alpha2.5_tau7.pt
+  test_file: /public/share/sugonhpcapp01/onestore/onedatasets/spectral_refiner_table2/fnodata_extra_fp64_256x256_N16_v1e-3_T50_steps100_alpha2.5_tau7.pt
+  train_samples: 1152
+  validation_samples: 128
+  test_samples: 16
+  train_resolution: 64
+  evaluation_resolution: 256
+  input_steps: 10
+  output_steps: 40
+  test_start_step: 30
+  field: vorticity
+
+model:
+  modes_x: 12
+  modes_y: 12
+  modes_t: 5
+  width: 20
+  num_spectral_layers: 4
+  latent_steps: 10
+  beta: 0.01
+  activation: ReLU
+  spatial_padding: 0
+
+training:
+  epochs: 10
+  batch_size: 4
+  learning_rate: 0.01
+  optimizer: Adam
+  scheduler: OneCycleLR
+  scheduler_div_factor: 1000.0
+  scheduler_final_div_factor: 10000.0
+  loss: relative_l2
+
+fine_tuning:
+  iterations: 50
+  modes_x: 64
+  modes_y: 64
+  modes_t: 6
+  grid_size: 256
+  dt: 1.0e-6
+  delta: 1.0
+  diameter: 1.0
+  viscosity: 1.0e-3
+  bdf_weight: [0.5, 0.5]
+  norm: H^-1
+  norm_order: -1
+  alpha: 0.03162277660168379
+  bias_learning_rate: 0.2
+  weight_learning_rate: 1.0e-4
+  sample_index: 1
+
+outputs:
+  base_checkpoint: checkpoints/sfno_base.pt
+  refined_checkpoint: checkpoints/spectral_refiner_best.pt
+  metrics: results/metrics.json
+
+paper_baseline:
+  relative_l2_error: 3.16e-4
+  residual_hminus1: 4.59e-7

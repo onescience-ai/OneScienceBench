@@ -1,0 +1,371 @@
+{
+  "id": "graphcast_extreme_weather_finetune",
+  "eval_type": "train",
+  "domain": "earth",
+  "task": "微调 GraphCast 极端天气加权预测头",
+  "prompt": "基于 GraphCast 网格特征实现极端天气专项微调。生成目录必须包含 graphcast_extreme_weather.py、train.py 和 evaluate.py；模型类命名为 GraphCastExtremeWeather，输入为 (B,6,H,W)，输出为 (B,1,H,W) 极端天气强度场。模型必须包含 grid_encoder、三层 processor 和 extreme_head；event_mask 区域使用更高权重的 weighted MSE，训练执行真实 AdamW 和 backward，并返回 RMSE/MAE。",
+  "evaluation_script": "evaluate_graphcast_extreme_weather_finetune.py",
+  "stardard_dir_name": "graphcast_extreme_weather_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "13cb6a622f92bd0c",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_resolution": {
+          "case_name_environment": "WEATHER_FINETUNE_CASE",
+          "case_name_default": "weather_finetune_contract",
+          "explicit_environment": "GRAPHCAST_EXTREME_SUBMISSION_DIR",
+          "pythonpath_candidates": [
+            "entry",
+            "entry/case_name"
+          ],
+          "cwd_candidates": [
+            "cwd",
+            "cwd/case_name"
+          ],
+          "deduplicate": "dict.fromkeys(Path.resolve candidates)",
+          "selection": "first candidate with graphcast_extreme_weather.py and train.py as regular files"
+        },
+        "required_files": [
+          "graphcast_extreme_weather.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "source_validation": {
+          "encoding": "utf-8",
+          "must_be_regular_file": true,
+          "ast_parse": true,
+          "success_detail": "syntax=ok, bytes=path.stat().st_size"
+        },
+        "failure_accounting": {
+          "submission_resolution_failure_types": [
+            "file",
+            "data",
+            "train_script",
+            "model_structure",
+            "forward_executable",
+            "traning"
+          ],
+          "missing_stage_types": [
+            "file",
+            "data",
+            "train_script",
+            "model_structure",
+            "forward_executable",
+            "traning"
+          ]
+        }
+      }
+    },
+    {
+      "id": "537889ff3ad62354",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "13cb6a622f92bd0c"
+      ],
+      "params": {
+        "device": "cuda:0 if torch.cuda.is_available() else cpu",
+        "fixture": {
+          "inputs": {
+            "factory": "torch.randn",
+            "shape": [
+              2,
+              6,
+              8,
+              8
+            ]
+          },
+          "targets": {
+            "factory": "torch.randn",
+            "shape": [
+              2,
+              1,
+              8,
+              8
+            ]
+          },
+          "mask": {
+            "factory": "torch.zeros_like(targets)",
+            "assignment": "mask[..., :2, :2] = 1",
+            "reported_shape": [
+              2,
+              1,
+              8,
+              8
+            ]
+          }
+        },
+        "pass_assertion": "bool(torch.isfinite(inputs).all() and torch.isfinite(targets).all())",
+        "detail_shapes": {
+          "input": [
+            2,
+            6,
+            8,
+            8
+          ],
+          "target": [
+            2,
+            1,
+            8,
+            8
+          ],
+          "mask": [
+            2,
+            1,
+            8,
+            8
+          ]
+        },
+        "post_fixture_action": "inputs, targets, mask = inputs.to(device), targets.to(device), mask.to(device)"
+      }
+    },
+    {
+      "id": "e3a15d5c531b7eeb",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "13cb6a622f92bd0c"
+      ],
+      "params": {
+        "module_loads": [
+          {
+            "name": "weather_finetune_model",
+            "file": "graphcast_extreme_weather.py"
+          },
+          {
+            "name": "weather_finetune_train",
+            "file": "train.py"
+          },
+          {
+            "name": "weather_finetune_eval",
+            "file": "evaluate.py"
+          }
+        ],
+        "loader": {
+          "prepend_parent_to_sys_path_if_missing": true,
+          "factory": "importlib.util.spec_from_file_location",
+          "module_factory": "importlib.util.module_from_spec",
+          "register_in_sys_modules": true,
+          "execute": "spec.loader.exec_module(module)"
+        },
+        "load_order": "model, train, evaluate; stop subsequent loads on exception",
+        "load_failure_result": {
+          "type": "train_script",
+          "name": "train_script:modules_importable"
+        },
+        "model_build": {
+          "condition": "model_module and train_module",
+          "expression": "train_module.build_model({}).to(device)",
+          "failure_result": {
+            "type": "train_script",
+            "name": "train_script:build_model"
+          }
+        }
+      }
+    },
+    {
+      "id": "fea38a99581a7c09",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "e3a15d5c531b7eeb"
+      ],
+      "params": {
+        "file": "train.py",
+        "encoding": "utf-8",
+        "ast_parse": true,
+        "function_lookup": {
+          "name": "train_step",
+          "node_type": "ast.FunctionDef",
+          "search": "first ast.walk match"
+        },
+        "parameters": {
+          "source": "node.args.args",
+          "required": [
+            "model",
+            "inputs",
+            "targets"
+          ],
+          "match": "all_names_present"
+        },
+        "calls": {
+          "source": "ast.walk(node) Call.func Name.id or Attribute.attr",
+          "required": [
+            "backward",
+            "step"
+          ],
+          "match": "all_names_present"
+        },
+        "source_substring": {
+          "required": "AdamW",
+          "scope": "entire train.py source"
+        }
+      }
+    },
+    {
+      "id": "bd6817f1297c2877",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "e3a15d5c531b7eeb"
+      ],
+      "params": {
+        "file": "evaluate.py",
+        "source": "Path(eval_module.__file__).read_text(encoding='utf-8')",
+        "required_case_sensitive_substrings": [
+          "def evaluate",
+          "rmse",
+          "mae"
+        ],
+        "pass_assertion": "all(token in source for token in required_case_sensitive_substrings)",
+        "success_detail": "evaluate/rmse/mae"
+      }
+    },
+    {
+      "id": "629e7e4e9c96ddb0",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "e3a15d5c531b7eeb",
+        "537889ff3ad62354"
+      ],
+      "params": {
+        "model_source": "graphcast_extreme_weather.py",
+        "model_construction": "train_module.build_model({}).to(device)",
+        "case_kind": "extreme",
+        "execution": {
+          "no_grad": true,
+          "statements": [
+            "encoded = model.grid_encoder(inputs)",
+            "processed = encoded",
+            "for layer in model.processor: processed = processed + torch.tanh(layer(processed))",
+            "output = model.extreme_head(processed)"
+          ]
+        },
+        "assertions": {
+          "top_level_children_exact": [
+            "grid_encoder",
+            "processor",
+            "extreme_head"
+          ],
+          "processor_length": 3,
+          "encoded_shape": [
+            2,
+            16,
+            8,
+            8
+          ],
+          "processed_shape": [
+            2,
+            16,
+            8,
+            8
+          ],
+          "output_shape": [
+            2,
+            1,
+            8,
+            8
+          ]
+        },
+        "success_detail": "children, encoded, processed, output shapes"
+      }
+    },
+    {
+      "id": "846c0b0498934abb",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "e3a15d5c531b7eeb",
+        "537889ff3ad62354"
+      ],
+      "params": {
+        "model": "constructed train_module.build_model({}).to(device)",
+        "mode": "model.eval()",
+        "no_grad": true,
+        "forward": "output = model(inputs)",
+        "assertions": {
+          "output_shape_equals": "targets.shape",
+          "output_all_finite": "bool(torch.isfinite(output).all())"
+        },
+        "inputs_shape": [
+          2,
+          6,
+          8,
+          8
+        ],
+        "targets_shape": [
+          2,
+          1,
+          8,
+          8
+        ],
+        "legacy_unused_arguments": [
+          "mask",
+          "case"
+        ]
+      }
+    },
+    {
+      "id": "29eb9e0f2e7a0a2e",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "e3a15d5c531b7eeb",
+        "537889ff3ad62354"
+      ],
+      "params": {
+        "mode": "model.train()",
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "[p for p in model.parameters() if p.requires_grad]",
+          "kwargs": {
+            "lr": 0.001
+          }
+        },
+        "snapshot": "[p.detach().clone() for p in model.parameters() if p.requires_grad]",
+        "train_step": {
+          "file": "train.py",
+          "function": "train_step",
+          "positional_args": [
+            "model",
+            "inputs",
+            "targets"
+          ],
+          "keyword_args": {
+            "optimizer": "optimizer",
+            "event_mask": "mask"
+          }
+        },
+        "assertions": {
+          "loss_type": "isinstance(loss, (float, int))",
+          "loss_not_nan": "loss == loss",
+          "parameter_changed": "any(not torch.equal(left, right) for left, right in zip(before, after))"
+        },
+        "failure_result": {
+          "type": "traning",
+          "name": "traning:real_backward_optimizer_update"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,344 @@
+{
+  "id": "station_tft_probabilistic_forecast",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现带缺测掩码的气象站 TFT 概率预测推理",
+  "prompt": "实现带缺测掩码的气象站 TFT 概率预测推理模型文件命名为 station_tft_probabilistic_forecast.py，定义 TFTProbabilisticForecastModel，默认 variables=4、time_features=3、context_length=12、forecast_horizon=6、d_model=16。predict(batch) 接收 values [B,12,4]、time_features [B,12,3] 和 bool observed_mask [B,12,4]，使用变量编码、时间编码和 batch_first 多头注意力，输出 quantiles [B,6,4,3] 及 point [B,6,4]，最后一维固定对应 0.1、0.5、0.9 且严格单调，至少一个观测值。模型必须包含 variable_encoder、time_encoder、temporal_attention、quantile_head；实现 strict=True checkpoint 加载。请在当前工作目录生成且仅生成 station_tft_probabilistic_forecast.py，禁止下载数据或权重。",
+  "evaluation_script": "evaluate_station_tft_probabilistic_forecast.py",
+  "stardard_dir_name": "station_tft_probabilistic_forecast",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "1cc5adcd40af7281",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "submission_directory": {
+          "environment_variable": "STATION_TFT_PROBABILISTIC_FORECAST_SUBMISSION_DIR",
+          "pythonpath_fallback": true
+        },
+        "required_file": "station_tft_probabilistic_forecast.py",
+        "assertion": "Path.is_file"
+      }
+    },
+    {
+      "id": "0539eb0ddc01578f",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "1cc5adcd40af7281"
+      ],
+      "params": {
+        "candidate_file": "station_tft_probabilistic_forecast.py",
+        "reference_file": "benchmarks/standard/station_tft_probabilistic_forecast/station_tft_probabilistic_forecast.py",
+        "model_class": "TFTProbabilisticForecastModel",
+        "constructor_args": {},
+        "checkpoint_fixtures": [
+          {
+            "filename": "good.pt",
+            "payload": {
+              "model_state_dict": "reference_model.state_dict()"
+            }
+          },
+          {
+            "filename": "bad.pt",
+            "payload": {}
+          }
+        ],
+        "loader": {
+          "module_function": "load_checkpoint",
+          "args": [
+            "checkpoint_path",
+            "cpu"
+          ]
+        },
+        "assertions": {
+          "state_dict_keys_equal": true,
+          "state_tensor_values_equal": true,
+          "malformed_checkpoint_must_raise": "any_exception"
+        }
+      }
+    },
+    {
+      "id": "149234dc039a9ff3",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "1cc5adcd40af7281"
+      ],
+      "params": {
+        "candidate_file": "station_tft_probabilistic_forecast.py",
+        "model_class": "TFTProbabilisticForecastModel",
+        "constructor_args": {},
+        "top_level_module_order": [
+          "variable_encoder",
+          "time_encoder",
+          "temporal_attention",
+          "quantile_head"
+        ],
+        "assertions": {
+          "temporal_attention.batch_first": true,
+          "quantile_head.out_features": 12,
+          "quantile_levels": [
+            0.1,
+            0.5,
+            0.9
+          ]
+        }
+      }
+    },
+    {
+      "id": "c053b00f78a04728",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "1cc5adcd40af7281"
+      ],
+      "params": {
+        "candidate_file": "station_tft_probabilistic_forecast.py",
+        "required_class_callables": [
+          "TFTProbabilisticForecastModel.predict"
+        ],
+        "required_module_callables": [
+          "load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "f02177e55f2e6382",
+      "type": "model_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "1cc5adcd40af7281",
+        "149234dc039a9ff3",
+        "c053b00f78a04728"
+      ],
+      "params": {
+        "candidate_file": "station_tft_probabilistic_forecast.py",
+        "model_class": "TFTProbabilisticForecastModel",
+        "output_probe": {
+          "method": "predict",
+          "model_eval": true,
+          "batch": {
+            "values": {
+              "generator": "torch.randn",
+              "shape": [
+                2,
+                12,
+                4
+              ]
+            },
+            "time_features": {
+              "generator": "torch.randn",
+              "shape": [
+                2,
+                12,
+                3
+              ]
+            },
+            "observed_mask": {
+              "generator": "torch.ones",
+              "shape": [
+                2,
+                12,
+                4
+              ],
+              "dtype": "torch.bool"
+            }
+          },
+          "expected_shapes": {
+            "quantiles": [
+              2,
+              6,
+              4,
+              3
+            ],
+            "point": [
+              2,
+              6,
+              4
+            ]
+          }
+        },
+        "quantile_probe": {
+          "batch": {
+            "values": {
+              "generator": "torch.randn",
+              "shape": [
+                2,
+                12,
+                4
+              ]
+            },
+            "time_features": {
+              "generator": "torch.randn",
+              "shape": [
+                2,
+                12,
+                3
+              ]
+            },
+            "observed_mask": {
+              "generator": "torch.ones",
+              "shape": [
+                2,
+                12,
+                4
+              ],
+              "dtype": "torch.bool"
+            }
+          },
+          "require_quantiles_finite": true,
+          "strict_increase_last_axis": true
+        },
+        "invalid_batches": [
+          {
+            "label": "empty_mask",
+            "observed_mask": {
+              "generator": "torch.zeros",
+              "shape": [
+                1,
+                12,
+                4
+              ],
+              "dtype": "torch.bool"
+            },
+            "expected_exception": "ValueError"
+          },
+          {
+            "label": "mask_dtype",
+            "observed_mask": {
+              "generator": "torch.zeros",
+              "shape": [
+                1,
+                12,
+                4
+              ],
+              "dtype": "torch.float32"
+            },
+            "expected_exception": "ValueError"
+          }
+        ],
+        "invalid_batch_shared_tensors": {
+          "values": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              12,
+              4
+            ]
+          },
+          "time_features": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              12,
+              3
+            ]
+          }
+        },
+        "input_immutability": {
+          "method": "predict",
+          "batch": {
+            "values": {
+              "generator": "torch.randn",
+              "shape": [
+                1,
+                12,
+                4
+              ]
+            },
+            "time_features": {
+              "generator": "torch.randn",
+              "shape": [
+                1,
+                12,
+                3
+              ]
+            },
+            "observed_mask": {
+              "generator": "torch.ones",
+              "shape": [
+                1,
+                12,
+                4
+              ],
+              "dtype": "torch.bool"
+            }
+          },
+          "comparison": "torch.equal_for_every_batch_value"
+        }
+      }
+    },
+    {
+      "id": "0ceceaeb07594728",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "1cc5adcd40af7281",
+        "f02177e55f2e6382",
+        "0539eb0ddc01578f"
+      ],
+      "params": {
+        "candidate_file": "station_tft_probabilistic_forecast.py",
+        "reference_file": "benchmarks/standard/station_tft_probabilistic_forecast/station_tft_probabilistic_forecast.py",
+        "model_class": "TFTProbabilisticForecastModel",
+        "constructor_args": {},
+        "model_eval": true,
+        "candidate_initialization": {
+          "state_dict_source": "reference_model.state_dict()",
+          "strict": true
+        },
+        "forecast_batch": {
+          "values": "torch.linspace(-1,1,96).reshape(2,12,4)",
+          "time_features": "torch.zeros(2,12,3)",
+          "observed_mask": {
+            "generator": "torch.ones",
+            "shape": [
+              2,
+              12,
+              4
+            ],
+            "dtype": "torch.bool"
+          }
+        },
+        "target": "torch.zeros_like(reference_output.point.detach())",
+        "quantile_levels": [
+          0.1,
+          0.5,
+          0.9
+        ],
+        "metrics": [
+          {
+            "name": "pinball_loss",
+            "candidate_quantiles": "candidate_output.quantiles.detach()",
+            "reference_quantiles": "reference_output.quantiles.detach()",
+            "formula": "mean(max(levels*(target.unsqueeze(-1)-quantiles),(levels-1)*(target.unsqueeze(-1)-quantiles)))",
+            "absolute_difference_maximum": 1e-06
+          },
+          {
+            "name": "mae",
+            "candidate_point": "candidate_output.point.detach()",
+            "reference_point": "reference_output.point.detach()",
+            "formula": "mean(abs(point-target))",
+            "absolute_difference_maximum": 1e-06
+          }
+        ]
+      }
+    }
+  ]
+}

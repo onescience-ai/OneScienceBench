@@ -1,0 +1,395 @@
+{
+  "id": "geompnn_airfrans_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "cfd",
+  "task": "复现论文GeoMPNN 在 AirfRANS 二维翼型数据集上的实验",
+  "prompt": "复现论文《A Geometry-Aware Message Passing Neural Network\nfor Modeling Aerodynamics over Airfoils》(https://arxiv.org/pdf/2412.09399) 中 GeoMPNN 在 AirfRANS 二维翼型数据集上的实验。以论文为准，仅在论文未说明时参考官方仓库，禁止下载或复制官方仓库代码。数据路径为 /public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset/。模型脚本命名为 model.py，核心类为 GeoMPNN；训练脚本为 train.py，评测脚本为 inference.py，配置文件为 config.yaml。checkpoint、latent、曲线和评测结果统一保存到 trainings/，通过 print 或 tqdm 输出训练 loss 与评测指标。所有生成的文件代码都存放在./test_geompnn_paper_repro目录下。\n    ",
+  "evaluation_script": "evaluate_geompnn_airfrans_paper_repro.py",
+  "stardard_dir_name": "geompnn_airfrans_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "0e50c90a5f3b4f99",
+      "type": "task_artifacts",
+      "phase": "task_artifacts",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "config.yaml"
+        ],
+        "phase": "task_artifacts"
+      },
+      "depends": []
+    },
+    {
+      "id": "13201f1acb01a384",
+      "type": "model_file",
+      "phase": "model_structure",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "model.py"
+        ],
+        "phase": "model_structure"
+      },
+      "depends": []
+    },
+    {
+      "id": "1eb863f9a74d1883",
+      "type": "model_interface",
+      "phase": "model_structure",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "model.py"
+        ],
+        "required_interfaces": [
+          "GeoMPNN",
+          "GeoMPNN.forward"
+        ],
+        "phase": "model_structure"
+      },
+      "depends": [
+        "13201f1acb01a384"
+      ]
+    },
+    {
+      "id": "f43c85141d6786a3",
+      "type": "model_structure",
+      "phase": "model_structure",
+      "method": "check_model_structure",
+      "params": {
+        "model_file": "model.py",
+        "model_class": "GeoMPNN",
+        "config_name": "config.yaml",
+        "model_args": {
+          "cfg": "$config.model",
+          "field": "x-velocity",
+          "knn_query_chunk_size": 128
+        },
+        "rules": [
+          {
+            "id": "geompnn_class",
+            "type": "module_type",
+            "params": {
+              "expected": {
+                "class_name": "GeoMPNN"
+              }
+            }
+          },
+          {
+            "id": "four_layer_processing_stack",
+            "type": "modulelist_length",
+            "match": "any",
+            "params": {
+              "length": 4
+            }
+          },
+          {
+            "id": "scalar_output_layer",
+            "type": "linear_shape",
+            "match": "any",
+            "params": {
+              "out_features": 1
+            }
+          }
+        ],
+        "phase": "model_structure"
+      },
+      "depends": [
+        "13201f1acb01a384",
+        "0e50c90a5f3b4f99",
+        "1eb863f9a74d1883"
+      ]
+    },
+    {
+      "id": "32fe79c225aac755",
+      "type": "model_forward",
+      "phase": "model_structure",
+      "method": "check_model_forward_executable",
+      "params": {
+        "model_file": "model.py",
+        "model_class": "GeoMPNN",
+        "config_name": "config.yaml",
+        "model_args": {
+          "cfg": "$config.model",
+          "field": "x-velocity",
+          "knn_query_chunk_size": 128
+        },
+        "seed": 20260928,
+        "volume_points": 64,
+        "surface_points": 24,
+        "fields": [
+          "x-velocity",
+          "y-velocity",
+          "pressure",
+          "turbulent_viscosity"
+        ],
+        "out_shape": [
+          64,
+          1
+        ],
+        "phase": "model_structure"
+      },
+      "depends": [
+        "13201f1acb01a384",
+        "0e50c90a5f3b4f99",
+        "1eb863f9a74d1883"
+      ]
+    },
+    {
+      "id": "d5ade38188b29b05",
+      "type": "train_file",
+      "phase": "train_script",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "train.py"
+        ],
+        "phase": "train_script"
+      },
+      "depends": []
+    },
+    {
+      "id": "1416888e0d4cbb94",
+      "type": "train_interface",
+      "phase": "train_script",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "phase": "train_script"
+      },
+      "depends": [
+        "d5ade38188b29b05"
+      ]
+    },
+    {
+      "id": "b61ce2b9a8d663e4",
+      "type": "train_structure",
+      "phase": "train_script",
+      "method": "check_train_structure",
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "check_config": {
+          "model_names": [
+            "geompnn",
+            "build_four_models"
+          ],
+          "dataloader_names": [
+            "prepare_training_graphs",
+            "DataLoader",
+            "load_split"
+          ],
+          "optimizer_names": [
+            "Adam"
+          ],
+          "loss_names": [
+            "mean",
+            "MSELoss",
+            "mse_loss"
+          ]
+        },
+        "phase": "train_script"
+      },
+      "depends": [
+        "d5ade38188b29b05"
+      ]
+    },
+    {
+      "id": "faa89c02607057ad",
+      "type": "parameter_update",
+      "phase": "train_script",
+      "method": "check_parameter_update",
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "phase": "train_script"
+      },
+      "depends": [
+        "d5ade38188b29b05"
+      ]
+    },
+    {
+      "id": "930485ebf3844f79",
+      "type": "smoke_training",
+      "phase": "smoke_train",
+      "method": "check_smoke_training",
+      "params": {
+        "run_file": "train.py",
+        "config_name": "config.yaml",
+        "model_class": "GeoMPNN",
+        "fields": [
+          "x-velocity",
+          "y-velocity",
+          "pressure",
+          "turbulent_viscosity"
+        ],
+        "smoke_config": {
+          "epochs": 1,
+          "max_train_simulations": 1
+        },
+        "repeat_index": 0,
+        "budget_adapter": {
+          "config_loader": "load_config",
+          "dataset_loader": "prepare_training_graphs",
+          "epochs_key": "training.epochs"
+        },
+        "timeout_seconds": 1800,
+        "phase": "smoke_train"
+      },
+      "depends": [
+        "13201f1acb01a384",
+        "0e50c90a5f3b4f99",
+        "d5ade38188b29b05",
+        "1416888e0d4cbb94"
+      ]
+    },
+    {
+      "id": "f69e5d3f03f1d91a",
+      "type": "smoke_artifacts",
+      "phase": "smoke_train",
+      "method": "check_files",
+      "params": {
+        "phase": "smoke_train"
+      },
+      "depends": [
+        "930485ebf3844f79"
+      ]
+    },
+    {
+      "id": "a3381226bb408f44",
+      "type": "infer_file",
+      "phase": "infer_script",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "inference.py"
+        ],
+        "phase": "infer_script"
+      },
+      "depends": []
+    },
+    {
+      "id": "f373da801f16cb40",
+      "type": "infer_interface",
+      "phase": "infer_script",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "phase": "infer_script"
+      },
+      "depends": [
+        "a3381226bb408f44"
+      ]
+    },
+    {
+      "id": "194637b3d455159b",
+      "type": "infer_structure",
+      "phase": "infer_script",
+      "method": "check_infer_structure",
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "model_container_names": [
+          "models"
+        ],
+        "check_config": {
+          "input_load_attributes": [
+            "load",
+            "load_raw_graph"
+          ],
+          "input_load_functions": [
+            "AirfransRepository"
+          ],
+          "output_attributes": [
+            "savez_compressed",
+            "dump",
+            "savez",
+            "save"
+          ]
+        },
+        "phase": "infer_script"
+      },
+      "depends": [
+        "a3381226bb408f44"
+      ]
+    },
+    {
+      "id": "bc3390bf917ce578",
+      "type": "infer_execution",
+      "phase": "infer_execution",
+      "method": "check_infer_execution",
+      "params": {
+        "run_file": "inference.py",
+        "config_name": "config.yaml",
+        "model_class": "GeoMPNN",
+        "fields": [
+          "x-velocity",
+          "y-velocity",
+          "pressure",
+          "turbulent_viscosity"
+        ],
+        "split": "test",
+        "max_simulations": 1,
+        "timeout_seconds": 1800,
+        "phase": "infer_execution"
+      },
+      "depends": [
+        "f69e5d3f03f1d91a",
+        "0e50c90a5f3b4f99",
+        "a3381226bb408f44",
+        "f373da801f16cb40"
+      ]
+    },
+    {
+      "id": "7776638e509c2bb1",
+      "type": "infer_output_schema",
+      "phase": "infer_execution",
+      "method": "check_infer_output_schema",
+      "params": {
+        "fields": [
+          "x-velocity",
+          "y-velocity",
+          "pressure",
+          "turbulent_viscosity"
+        ],
+        "max_simulations": 1,
+        "phase": "infer_execution"
+      },
+      "depends": [
+        "bc3390bf917ce578"
+      ]
+    },
+    {
+      "id": "327c95dd7b9d9485",
+      "type": "infer_output_validity",
+      "phase": "infer_execution",
+      "method": "check_infer_output_validity",
+      "params": {
+        "fields": [
+          "x-velocity",
+          "y-velocity",
+          "pressure",
+          "turbulent_viscosity"
+        ],
+        "phase": "infer_execution"
+      },
+      "depends": [
+        "bc3390bf917ce578",
+        "7776638e509c2bb1"
+      ]
+    }
+  ]
+}

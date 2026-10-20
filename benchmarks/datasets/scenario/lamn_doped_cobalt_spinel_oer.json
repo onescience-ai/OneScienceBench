@@ -1,0 +1,74 @@
+{
+    "id": "lamn_doped_cobalt_spinel_oer",
+    "eval_type": "scenario",
+    "domain": "matchem",
+    "task": "LaMn掺杂钴尖晶石酸性析氧催化设计",
+    "prompt": "目标是围绕“LaMn掺杂钴尖晶石酸性析氧催化设计”完成可执行且可追溯的材料合成、酸性OER验证、失活安全核验与统计验收，仅采用关联论文可追溯事实，并在影响结论的证据缺失时标记 BLOCKED：先用 sample_matrix.py:run 的 SampleMatrixPlanner 和 TraceabilityManifest 解析 CATALYST_STRUCTURE 与 REACTION_CONDITION，按 recipe_traceability_rule（前驱体、掺杂比例、热处理气氛/温度/时间和负载方案必须由可追溯来源确认，否则 BLOCKED）、target_phase_rule（目标尖晶石相、允许杂相、粒径/形貌和电极制备规范必须确认，否则 BLOCKED）及 randomization_rule（样品随机化、独立批次、盲法对照和重复数必须预先确认）制定样品矩阵与随机化；再用 controlled_synthesis.py:run 的 ControlledSynthesisExecutor 和 BatchRecord 读取冻结方案和随机化清单，按 precursor_recipe（按方案原值执行；缺少前驱体或掺杂比例时标记 BLOCKED）、thermal_profile（气氛、温度和时间必须来自已确认方案，不得使用默认值）及 loading_scheme（负载方案和电极制备边界必须逐批记录）执行合成；继而用 material_characterization.py:run 的 MaterialCharacterizer 和 SpectraEvidenceLedger 按样品库存执行相、组成、价态和形貌表征，按 characterization_config（按声明配置执行；若采用 experiment_or_user_confirmed_simulation 仍需记录实际仪器和校准）、phase_assignment_rule（相组成结论必须由 XRD 与允许杂相规则共同支持）及 composition_valence_rule（ICP/ICP-MS、XPS/XAS 与显微证据需逐样品绑定）形成鉴定证据；随后用 acidic_oer_test.py:run 的 AcidicOERTester 和 ElectrochemicalDataReducer 核对电解液、pH、温度、参比电极和 iR 校正，按 acidic_electrolyte_and_potential_program（电解液组成、pH、温度及电位/电流程序须确认；缺失时 BLOCKED）、reference_electrode_and_ir_correction（参比电极、iR 校正和面积归一化方法须预注册并逐条记录）及 activity_selectivity_durability_thresholds（过电位、电流密度、动力学斜率、选择性/法拉第效率、寿命和溶出上限须确认）测试；接着用 deactivation_safety.py:run 的 DeactivationSafetyAnalyzer 和 MassChargeBalanceChecker 关联测试前后表征和电解液溶出数据，按 dissolution_limit（Co/La/Mn 溶出上限必须确认，缺失时 BLOCKED）、mass_charge_balance_tolerance（元素/电荷守恒误差阈值必须预先确认并记录）及 pre_post_comparison_window（测试前后相、价态、组成和表面变化必须使用一致分析窗口）核验失活与安全；最后用 statistical_acceptance.py:run 的 StatisticalAcceptanceEvaluator 和 ConclusionTraceabilityWriter 汇总结构、性能和失活证据，按 replicate_and_blinding_rule（按样品矩阵中的独立批次、重复数和盲法标识分析）、statistical_thresholds（显著性阈值、置信区间和效应判据必须确认，缺失时 BLOCKED）及 traceability_rule（每项核心结论必须绑定原始数据、处理记录、质量检查和适用范围）完成验收并确认必需交付物齐全、核心科学问题均有证据支持或明确标记无法回答、结果可追溯且无未关闭的关键 PARTIAL、REJECT 或 BLOCKED；最终输出样品矩阵与随机化文件 sample_matrix_plan.json、randomization_manifest.json，合成批次记录 synthesis_batch_records.json，材料鉴定与原始数据清单 material_characterization_report.json、characterization_raw_data_manifest.json，酸性OER结果与原始数据 acidic_oer_results.json、electrochemical_raw_data_manifest.json，失活安全、测试后表征及原始数据 deactivation_safety_report.json、post_test_characterization_report.json、deactivation_raw_data_manifest.json，以及统计验收、可追溯结论和状态文件 statistical_acceptance_report.json、traceable_conclusion_report.json、acceptance_status.json。",
+    "evaluation_script": "",
+    "stardard_dir_name": "",
+    "evaluation_execution_mode": "scnet",
+    "evaluation_backend": "local",
+    "evaluation_env": {
+        "conda_env": "onescience311",
+        "partition": "hx1hdnormal01",
+        "nodes": 1,
+        "dcu": 1,
+        "cpus_per_task": 8,
+        "memory": "16G"
+    },
+    "checks": [
+        {
+            "id": "a1805b961aa546be",
+            "type": "agent_execution",
+            "method": "None",
+            "phase": "agent_execution",
+            "depdends": [],
+            "params": {
+                "rubric": [
+                    {
+                        "check_name": "样品矩阵与合成计划",
+                        "task_understanding": "任务理解：明确本阶段目的、输入和预期输出；根据论文可追溯配方定义 La/Mn 掺杂梯度、对照样和随机化批次 | 输入：CATALYST_STRUCTURE=CIF/POSCAR/制备配方 | REACTION_CONDITION={\"target_product\":\"specified product\",\"temperature_K\":298} | traceable_recipe_details=CIF/POSCAR/制备配方 | target_spinel_and_electrode_spec=CIF/POSCAR/制备配方 | randomization_and_replicate_plan=CIF/POSCAR/制备配方 | 输出：sample_matrix_plan（sample_matrix_plan.json） | randomization_manifest（randomization_manifest.json） | pre_registered_synthesis_protocol（pre_registered_synthesis_protocol.json）",
+                        "reasoning_decision": "推理决策：依据科学目标选用下列模型、工具和固定参数，不得观察结果后改动；电化学动力学与面积归一化模型 | 误差传播、重复测量和多因素统计模型 | 溶出/质量守恒与失活判据模型 | 材料合成与热处理设备 | XRD、ICP-MS/ICP-OES、XPS/XAS及显微表征 | 酸性三电极电化学工作站、气体分析和耐久测试装置 | 实验信息管理、随机化和统计分析软件 | recipe_traceability_rule=前驱体、掺杂比例、热处理气氛/温度/时间和负载方案必须由可追溯来源确认，否则 BLOCKED | target_phase_rule=目标尖晶石相、允许杂相、粒径/形貌和电极制备规范必须确认，否则 BLOCKED | randomization_rule=样品随机化、独立批次、盲法对照和重复数必须预先确认",
+                        "execution_process": "执行过程：按顺序完成关键接口操作，调用指定入口和重要类并生成约定文件；解析 CATALYST_STRUCTURE 与 REACTION_CONDITION | sample_matrix.py:run | SampleMatrixPlanner | TraceabilityManifest | sample_matrix_plan.json | randomization_manifest.json | pre_registered_synthesis_protocol.json",
+                        "result_verification": "结果验证：检查输出文件、静态规则、运行状态、科学合理性和数据泄漏；sample_matrix_plan.json | randomization_manifest.json | pre_registered_synthesis_protocol.json；全部质量门禁满足且证据完整时判定通过（PASS），任一关键条件不满足时判定失败（FAIL）。"
+                    },
+                    {
+                        "check_name": "受控合成",
+                        "task_understanding": "任务理解：明确本阶段目的、输入和预期输出；执行来源支持的合成并记录批次条件 | 输入：sample_matrix_plan=sample_matrix_plan.json | randomization_manifest=randomization_manifest.json | pre_registered_synthesis_protocol=pre_registered_synthesis_protocol.json | 输出：synthesis_batch_records（synthesis_batch_records.json） | synthesized_sample_inventory（synthesized_sample_inventory.json）",
+                        "reasoning_decision": "推理决策：依据科学目标选用下列模型、工具和固定参数，不得观察结果后改动；电化学动力学与面积归一化模型 | 误差传播、重复测量和多因素统计模型 | 溶出/质量守恒与失活判据模型 | 材料合成与热处理设备 | XRD、ICP-MS/ICP-OES、XPS/XAS及显微表征 | 酸性三电极电化学工作站、气体分析和耐久测试装置 | 实验信息管理、随机化和统计分析软件 | precursor_recipe=按方案原值执行；缺少前驱体或掺杂比例时标记 BLOCKED | thermal_profile=气氛、温度和时间必须来自已确认方案，不得使用默认值 | loading_scheme=负载方案和电极制备边界必须逐批记录",
+                        "execution_process": "执行过程：按顺序完成关键接口操作，调用指定入口和重要类并生成约定文件；读取冻结方案和随机化清单 | controlled_synthesis.py:run | ControlledSynthesisExecutor | BatchRecord | synthesis_batch_records.json | synthesized_sample_inventory.json",
+                        "result_verification": "结果验证：检查输出文件、静态规则、运行状态、科学合理性和数据泄漏；synthesis_batch_records.json | synthesized_sample_inventory.json；全部质量门禁满足且证据完整时判定通过（PASS），任一关键条件不满足时判定失败（FAIL）。"
+                    },
+                    {
+                        "check_name": "材料鉴定",
+                        "task_understanding": "任务理解：明确本阶段目的、输入和预期输出；用 XRD、ICP/ICP-MS、XPS/XAS、电子显微等确认相组成、掺杂和价态 | 输入：synthesis_batch_records=synthesis_batch_records.json | synthesized_sample_inventory=synthesized_sample_inventory.json | sample_matrix_plan=sample_matrix_plan.json | CALCULATION_CONFIG={\"method\":\"experiment_or_user_confirmed_simulation\"} | 输出：material_characterization_report（material_characterization_report.json） | characterization_raw_data_manifest（characterization_raw_data_manifest.json） | phase_composition_valence_table（phase_composition_valence_table.json）",
+                        "reasoning_decision": "推理决策：依据科学目标选用下列模型、工具和固定参数，不得观察结果后改动；电化学动力学与面积归一化模型 | 误差传播、重复测量和多因素统计模型 | 溶出/质量守恒与失活判据模型 | 材料合成与热处理设备 | XRD、ICP-MS/ICP-OES、XPS/XAS及显微表征 | 酸性三电极电化学工作站、气体分析和耐久测试装置 | 实验信息管理、随机化和统计分析软件 | characterization_config=按声明配置执行；若采用 experiment_or_user_confirmed_simulation 仍需记录实际仪器和校准 | phase_assignment_rule=相组成结论必须由 XRD 与允许杂相规则共同支持 | composition_valence_rule=ICP/ICP-MS、XPS/XAS 与显微证据需逐样品绑定",
+                        "execution_process": "执行过程：按顺序完成关键接口操作，调用指定入口和重要类并生成约定文件；按样品库存执行相、组成、价态和形貌表征 | material_characterization.py:run | MaterialCharacterizer | SpectraEvidenceLedger | material_characterization_report.json | characterization_raw_data_manifest.json | phase_composition_valence_table.json",
+                        "result_verification": "结果验证：检查输出文件、静态规则、运行状态、科学合理性和数据泄漏；material_characterization_report.json | characterization_raw_data_manifest.json | phase_composition_valence_table.json；全部质量门禁满足且证据完整时判定通过（PASS），任一关键条件不满足时判定失败（FAIL）。"
+                    },
+                    {
+                        "check_name": "酸性OER测试",
+                        "task_understanding": "任务理解：明确本阶段目的、输入和预期输出；按预注册酸性电化学协议测试活性、动力学、选择性和耐久性 | 输入：material_characterization_report=material_characterization_report.json | s01.REACTION_CONDITION={\"target_product\":\"specified product\",\"temperature_K\":298} | s03.REACTION_CONDITION={\"target_product\":\"specified product\",\"temperature_K\":298} | acidic_oer_protocol={\"target_product\":\"specified product\",\"temperature_K\":298} | performance_acceptance_thresholds={\"target_product\":\"specified product\",\"temperature_K\":298} | reference_ir_area_normalization={\"target_product\":\"specified product\",\"temperature_K\":298} | 输出：acidic_oer_results（acidic_oer_results.json） | electrochemical_raw_data_manifest（electrochemical_raw_data_manifest.json） | durability_test_records（durability_test_records.json）",
+                        "reasoning_decision": "推理决策：依据科学目标选用下列模型、工具和固定参数，不得观察结果后改动；电化学动力学与面积归一化模型 | 误差传播、重复测量和多因素统计模型 | 溶出/质量守恒与失活判据模型 | 材料合成与热处理设备 | XRD、ICP-MS/ICP-OES、XPS/XAS及显微表征 | 酸性三电极电化学工作站、气体分析和耐久测试装置 | 实验信息管理、随机化和统计分析软件 | acidic_electrolyte_and_potential_program=电解液组成、pH、温度及电位/电流程序须确认；缺失时 BLOCKED | reference_electrode_and_ir_correction=参比电极、iR 校正和面积归一化方法须预注册并逐条记录 | activity_selectivity_durability_thresholds=过电位、电流密度、动力学斜率、选择性/法拉第效率、寿命和溶出上限须确认",
+                        "execution_process": "执行过程：按顺序完成关键接口操作，调用指定入口和重要类并生成约定文件；核对电解液、pH、温度、参比电极和 iR 校正 | acidic_oer_test.py:run | AcidicOERTester | ElectrochemicalDataReducer | acidic_oer_results.json | electrochemical_raw_data_manifest.json | durability_test_records.json",
+                        "result_verification": "结果验证：检查输出文件、静态规则、运行状态、科学合理性和数据泄漏；acidic_oer_results.json | electrochemical_raw_data_manifest.json | durability_test_records.json；全部质量门禁满足且证据完整时判定通过（PASS），任一关键条件不满足时判定失败（FAIL）。"
+                    },
+                    {
+                        "check_name": "失活与安全核验",
+                        "task_understanding": "任务理解：明确本阶段目的、输入和预期输出；测试前后进行溶出、相和表面变化表征并闭合元素/电荷守恒 | 输入：material_characterization_report=material_characterization_report.json | acidic_oer_results=acidic_oer_results.json | electrochemical_raw_data_manifest=electrochemical_raw_data_manifest.json | dissolution_limit_and_mass_balance_rule={\"target_product\":\"specified product\",\"temperature_K\":298} | 输出：deactivation_safety_report（deactivation_safety_report.json） | dissolution_mass_balance（dissolution_mass_balance.json） | post_test_characterization_report（post_test_characterization_report.json） | deactivation_raw_data_manifest（deactivation_raw_data_manifest.json）",
+                        "reasoning_decision": "推理决策：依据科学目标选用下列模型、工具和固定参数，不得观察结果后改动；电化学动力学与面积归一化模型 | 误差传播、重复测量和多因素统计模型 | 溶出/质量守恒与失活判据模型 | 材料合成与热处理设备 | XRD、ICP-MS/ICP-OES、XPS/XAS及显微表征 | 酸性三电极电化学工作站、气体分析和耐久测试装置 | 实验信息管理、随机化和统计分析软件 | dissolution_limit=Co/La/Mn 溶出上限必须确认，缺失时 BLOCKED | mass_charge_balance_tolerance=元素/电荷守恒误差阈值必须预先确认并记录 | pre_post_comparison_window=测试前后相、价态、组成和表面变化必须使用一致分析窗口",
+                        "execution_process": "执行过程：按顺序完成关键接口操作，调用指定入口和重要类并生成约定文件；关联测试前后表征和电解液溶出数据 | deactivation_safety.py:run | DeactivationSafetyAnalyzer | MassChargeBalanceChecker | deactivation_safety_report.json | dissolution_mass_balance.json | post_test_characterization_report.json | deactivation_raw_data_manifest.json",
+                        "result_verification": "结果验证：检查输出文件、静态规则、运行状态、科学合理性和数据泄漏；deactivation_safety_report.json | dissolution_mass_balance.json | post_test_characterization_report.json | deactivation_raw_data_manifest.json；全部质量门禁满足且证据完整时判定通过（PASS），任一关键条件不满足时判定失败（FAIL）。"
+                    },
+                    {
+                        "check_name": "统计验收",
+                        "task_understanding": "任务理解：明确本阶段目的、输入和预期输出；按预设统计模型比较候选与对照，形成可追溯结论 | 输入：sample_matrix_plan=sample_matrix_plan.json | material_characterization_report=material_characterization_report.json | acidic_oer_results=acidic_oer_results.json | deactivation_safety_report=deactivation_safety_report.json | statistical_acceptance_thresholds={\"target_product\":\"specified product\",\"temperature_K\":298} | 输出：statistical_acceptance_report（statistical_acceptance_report.json） | traceable_conclusion_report（traceable_conclusion_report.json） | acceptance_status（acceptance_status.json）",
+                        "reasoning_decision": "推理决策：依据科学目标选用下列模型、工具和固定参数，不得观察结果后改动；电化学动力学与面积归一化模型 | 误差传播、重复测量和多因素统计模型 | 溶出/质量守恒与失活判据模型 | 材料合成与热处理设备 | XRD、ICP-MS/ICP-OES、XPS/XAS及显微表征 | 酸性三电极电化学工作站、气体分析和耐久测试装置 | 实验信息管理、随机化和统计分析软件 | replicate_and_blinding_rule=按样品矩阵中的独立批次、重复数和盲法标识分析 | statistical_thresholds=显著性阈值、置信区间和效应判据必须确认，缺失时 BLOCKED | traceability_rule=每项核心结论必须绑定原始数据、处理记录、质量检查和适用范围",
+                        "execution_process": "执行过程：按顺序完成关键接口操作，调用指定入口和重要类并生成约定文件；汇总结构、性能和失活证据 | statistical_acceptance.py:run | StatisticalAcceptanceEvaluator | ConclusionTraceabilityWriter | statistical_acceptance_report.json | traceable_conclusion_report.json | acceptance_status.json",
+                        "result_verification": "结果验证：检查输出文件、静态规则、运行状态、科学合理性和数据泄漏；statistical_acceptance_report.json | traceable_conclusion_report.json | acceptance_status.json；全部质量门禁满足且证据完整时判定通过（PASS），任一关键条件不满足时判定失败（FAIL）。"
+                    }
+                ]
+            }
+        }
+    ]
+}

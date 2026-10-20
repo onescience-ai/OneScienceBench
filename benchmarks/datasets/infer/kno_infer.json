@@ -1,0 +1,265 @@
+{
+  "id": "kno_infer",
+  "eval_type": "infer",
+  "domain": "cfd",
+  "task": "基于 KNO 模型完成 Navier–Stokes 多步流场预测与推理验证。",
+  "prompt": "基于 KNO 模型完成 Navier–Stokes 多步流场预测与推理验证。\n    读取 /public/share/sugonhpcapp01/onestore/paper_repro/weight/best_kno_navier_stokes_v1e5.pt，检查并解析其中的模型状态字典，依据参数名称与形状还原模型结构，确保通过 strict=True 完整加载。数据集位于 /public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/ns/NavierStokes_V1e-5_N1200_T20.mat，使用最后 200 个样本作为测试集；输入前 10 个时间步，通过滑动时间窗口自回归预测后续 10 步。默认 batch_size=8、shuffle=False，评估第一个测试批次。报告全时空逐元素 MSE，以及逐样本展平后计算并取批次均值的 Relative L2：||prediction-target||₂ / ||target||₂。保存前 4 个样本的预测与真实张量，并可视化第一个样本在 t+1、t+6、t+10 的真实场、预测场和绝对误差。生成代码包含 model.py、dataset.py、utils.py、inference.py 和 config.yaml，同时生成 prediction_sample.pt、prediction_sample.png 与 inference_summary.json。\n    ",
+  "evaluation_script": "evaluate_kno_infer.py",
+  "stardard_dir_name": "kno_infer",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "069d2ee20286790a",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "model.py",
+          "dataset.py",
+          "utils.py",
+          "inference.py",
+          "config.yaml"
+        ]
+      }
+    },
+    {
+      "id": "89fe46c6fa1df650",
+      "type": "config_content",
+      "method": "check_config_content",
+      "phase": "infer_script",
+      "depends": [
+        "069d2ee20286790a"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "expected": {
+          "t_in": 10,
+          "t_out": 10,
+          "ntest": 200,
+          "batch_size": 8,
+          "shuffle": false
+        }
+      }
+    },
+    {
+      "id": "0fd4d168d6becab6",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "069d2ee20286790a"
+      ],
+      "params": {
+        "files": [
+          "model.py"
+        ],
+        "required_interfaces": [
+          "EncoderConv2D",
+          "EncoderConv2D.forward",
+          "DecoderConv2D",
+          "DecoderConv2D.forward",
+          "KoopmanOperator2D",
+          "KoopmanOperator2D.forward",
+          "KoopmanOperator2D.time_marching",
+          "KNO2D",
+          "KNO2D.forward",
+          "KNO2DNavierStokes",
+          "KNO2DNavierStokes.forward"
+        ]
+      }
+    },
+    {
+      "id": "6a94a86bb6038834",
+      "type": "data_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "069d2ee20286790a"
+      ],
+      "params": {
+        "files": [
+          "dataset.py",
+          "utils.py",
+          "inference.py"
+        ],
+        "required_interfaces": [
+          "NavierStokesDataset",
+          "NavierStokesDataset.__getitem__"
+        ]
+      }
+    },
+    {
+      "id": "264577f8ce2685e0",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "0fd4d168d6becab6"
+      ],
+      "params": {
+        "rules": [
+          {
+            "id": "encoder_count",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "EncoderConv2D"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "decoder_count",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "DecoderConv2D"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "koopman_count",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "KoopmanOperator2D"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "kno_backbone_count",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "KNO2D"
+              },
+              "count": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "51140d46d968bc54",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "0fd4d168d6becab6"
+      ],
+      "params": {}
+    },
+    {
+      "id": "1a48339c4fc78c9b",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "51140d46d968bc54",
+        "264577f8ce2685e0"
+      ],
+      "params": {}
+    },
+    {
+      "id": "1fcc40d04b68ec34",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "069d2ee20286790a"
+      ],
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_functions": [
+            "build_model",
+            "load_checkpoint",
+            "load_config"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "x",
+            "fx",
+            "pos",
+            "input",
+            "batch"
+          ],
+          "input_load_functions": [
+            "load_config",
+            "rollout"
+          ],
+          "input_load_attributes": [
+            "loadmat",
+            "load"
+          ],
+          "infer_call_functions": [
+            "rollout",
+            "main"
+          ],
+          "infer_call_attributes": [
+            "forward"
+          ],
+          "output_attributes": [
+            "save",
+            "savefig",
+            "write_text",
+            "dump"
+          ]
+        }
+      }
+    },
+    {
+      "id": "47d0fd0745c6f147",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "069d2ee20286790a",
+        "51140d46d968bc54"
+      ],
+      "params": {
+        "timeout": 300
+      }
+    },
+    {
+      "id": "8236d082eea2e339",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "47d0fd0745c6f147"
+      ],
+      "params": {}
+    },
+    {
+      "id": "62b2b663195bf46e",
+      "type": "infer_metric",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "47d0fd0745c6f147",
+        "1a48339c4fc78c9b"
+      ],
+      "params": {}
+    }
+  ]
+}

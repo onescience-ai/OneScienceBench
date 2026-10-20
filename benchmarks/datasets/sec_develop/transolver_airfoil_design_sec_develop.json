@@ -1,0 +1,767 @@
+{
+    "id": "transolver_airfoil_design_sec_develop",
+    "eval_type": "sec_develop",
+    "domain": "cfd",
+    "task": "基于 Transolver 模型开展二维翼型气动场训推二次开发。",
+    "prompt": "基于 Transolver 模型开展二维翼型气动场训推二次开发。\n    原始训练任务：\n    1. 模型脚本命名为 `transolver.py`，默认配置为 `space_dim=7`、`hidden_dim=256`、`layers=8`、`heads=8`、`mlp_ratio=2`、`out_dim=4`、`slice_num=32`、`ref=8`、`unified_pos=True`、`dropout=0`，激活函数为 GELU。`forward(x, pos)` 输入节点特征 `x`（N×7）和坐标 `pos`（N×2），输出 N×4。启用位置编码后，计算节点到 x∈[-2,4]、y∈[-1.5,1.5] 的 8×8 参考网格的 64 维距离特征，并与原始输入拼接。模型经输入 MLP 和 8 个含 Physics-Attention、LayerNorm、残差及 MLP 的 Transolver Block，最终输出 4 维气动场变量。\n    2. 数据集类命名为dataset.py，负责 AirfRANS 数据读取与预处理，读取 .vtu/.vtp 文件并构造 7 维输入（坐标、来流速度、SDF、表面法向量）和 4 维标签（ux、uy、p、νt）。根据 manifest.json 划分数据，取训练集后 10% 作为验证集，并用训练集统计量进行标准化；训练和验证时每个 CFD 样本随机采样 32,000 个网格点。配套数据路径在/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset\n    3. 通过 python train.py config.yaml 启动训练，配置文件统一管理数据路径、任务类型及 Transolver 超参数。默认训练 398 epochs，batch size=1，学习率 1e-3，每个 CFD 样本随机采样 32,000 点，使用 Adam + OneCycleLR，并以 volume MSE + surface MSE 作为损失；每 10 个 epoch 进行 20 次随机重采样验证，最终保存训练记录和模型 checkpoint。\n\n    然后基于原始代码进行二次开发：\n    1. Loss 二次开发：将统一 4 通道 MSE 改为 surface/volume + field-wise weighted MSE，分别计算 velocity(ux,uy)、pressure(p)、viscosity(νt) 的 MSE，并从 config.yaml 读取各项权重。\n    2. 模型二次开发：保持 Transolver backbone 不变，将单一 4 维输出 Head 改为 velocity / pressure / viscosity 三个多任务 Head。\n    3. 保持模型输入输出接口不变：输入 x(N×7)、pos(N×2)，最终输出仍为 N×4=[ux,uy,p,νt]。\n    4. 仅修改 transolver.py、train.py 和 config.yaml，不修改 dataset.py，并保持现有训练流程和训练命令不变。",
+    "evaluation_script": "evaluate_transolver_airfoil_sec_develop.py",
+    "stardard_dir_name": "transolver_airfoil_design_sec_develop",
+    "evaluation_execution_mode": "scnet",
+    "evaluation_backend": "ssh",
+    "evaluation_env": {
+        "conda_env": "onescience311"
+    },
+    "checks": [
+        {
+            "id": "1f36f1dbb2d9af1f",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "config.yaml",
+                    "dataset.py"
+                ]
+            }
+        },
+        {
+            "id": "483781aa31c68c06",
+            "type": "data_config_content",
+            "method": "check_config_content",
+            "phase": "data_analysis",
+            "depends": [
+                "1f36f1dbb2d9af1f"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "data_root",
+                        "value": "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset"
+                    }
+                ],
+                "config_paths": {
+                    "data_root": [
+                        "data.root",
+                        "data.data_root",
+                        "data.data_path",
+                        "dataset.root",
+                        "data_root",
+                        "data.data_dir"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "f29f4a7b1c4a1f4e",
+            "type": "dataset_pipeline",
+            "method": "check_dataset_pipeline",
+            "phase": "data_analysis",
+            "depends": [
+                "1f36f1dbb2d9af1f"
+            ],
+            "params": {
+                "dataset_file": "dataset.py",
+                "baseline_dir": "benchmarks/standard/transolver_airfoil_train"
+            }
+        },
+        {
+            "id": "845f430d351a1990",
+            "type": "model_file",
+            "method": "check_files",
+            "phase": "model_structure",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "transolver.py"
+                ]
+            }
+        },
+        {
+            "id": "bd5c9c0cfd629cc3",
+            "type": "model_config_content",
+            "method": "check_config_content",
+            "phase": "model_structure",
+            "depends": [
+                "1f36f1dbb2d9af1f"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "space_dim",
+                        "value": 7
+                    },
+                    {
+                        "key": "hidden_dim",
+                        "value": 256
+                    },
+                    {
+                        "key": "layers",
+                        "value": 8
+                    },
+                    {
+                        "key": "heads",
+                        "value": 8
+                    },
+                    {
+                        "key": "mlp_ratio",
+                        "value": 2
+                    },
+                    {
+                        "key": "out_dim",
+                        "value": 4
+                    },
+                    {
+                        "key": "slice_num",
+                        "value": 32
+                    },
+                    {
+                        "key": "ref",
+                        "value": 8
+                    },
+                    {
+                        "key": "unified_pos",
+                        "value": true
+                    },
+                    {
+                        "key": "dropout",
+                        "value": 0.0
+                    }
+                ],
+                "config_paths": {
+                    "space_dim": [
+                        "model.space_dim"
+                    ],
+                    "hidden_dim": [
+                        "model.hidden_dim",
+                        "model.n_hidden"
+                    ],
+                    "layers": [
+                        "model.layers",
+                        "model.n_layers"
+                    ],
+                    "heads": [
+                        "model.heads",
+                        "model.n_heads",
+                        "model.n_head"
+                    ],
+                    "mlp_ratio": [
+                        "model.mlp_ratio"
+                    ],
+                    "out_dim": [
+                        "model.out_dim"
+                    ],
+                    "slice_num": [
+                        "model.slice_num"
+                    ],
+                    "ref": [
+                        "model.ref"
+                    ],
+                    "unified_pos": [
+                        "model.unified_pos"
+                    ],
+                    "dropout": [
+                        "model.dropout"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "8327a3fb844bd1af",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": [
+                "845f430d351a1990"
+            ],
+            "params": {
+                "files": [
+                    "transolver.py"
+                ],
+                "required_interfaces": [
+                    "Transolver",
+                    "Transolver.forward"
+                ]
+            }
+        },
+        {
+            "id": "c9b4b2a458c3f5eb",
+            "type": "model_structure",
+            "method": "check_model_structure",
+            "phase": "model_structure",
+            "depends": [
+                "1f36f1dbb2d9af1f",
+                "8327a3fb844bd1af"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "model_file": "transolver.py",
+                "model_class": "Transolver",
+                "model_args": {
+                    "space_dim": 7,
+                    "hidden_dim": 256,
+                    "layers": 8,
+                    "heads": 8,
+                    "mlp_ratio": 2,
+                    "out_dim": 4,
+                    "slice_num": 32,
+                    "ref": 8,
+                    "unified_pos": true,
+                    "dropout": 0.0
+                },
+                "rules": [
+                    {
+                        "id": "backbone_blocks",
+                        "type": "children_count",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$blocks",
+                            "count": 8
+                        }
+                    },
+                    {
+                        "id": "input_projection",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$input_linear",
+                            "in_features": 71
+                        }
+                    },
+                    {
+                        "id": "velocity_projection",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$velocity_linear",
+                            "out_features": 2
+                        }
+                    },
+                    {
+                        "id": "pressure_projection",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$pressure_linear",
+                            "out_features": 1
+                        }
+                    },
+                    {
+                        "id": "viscosity_projection",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$viscosity_linear",
+                            "out_features": 1
+                        }
+                    }
+                ],
+                "role_paths": {
+                    "input": [
+                        "preprocess",
+                        "input_mlp",
+                        "input_proj"
+                    ],
+                    "blocks": [
+                        "blocks",
+                        "transformer",
+                        "layers"
+                    ],
+                    "velocity": [
+                        "velocity_head",
+                        "head_velocity",
+                        "heads.velocity",
+                        "velocity",
+                        "head.velocity_head"
+                    ],
+                    "pressure": [
+                        "pressure_head",
+                        "head_pressure",
+                        "heads.pressure",
+                        "pressure",
+                        "head.pressure_head"
+                    ],
+                    "viscosity": [
+                        "viscosity_head",
+                        "head_viscosity",
+                        "heads.viscosity",
+                        "viscosity",
+                        "head.viscosity_head"
+                    ]
+                },
+                "backbone_reference": {
+                    "directory": "benchmarks/standard/transolver_airfoil_train",
+                    "role_paths": {
+                        "input": [
+                            "preprocess",
+                            "input_mlp",
+                            "input_proj"
+                        ],
+                        "blocks": [
+                            "blocks",
+                            "transformer",
+                            "layers"
+                        ]
+                    },
+                    "replaceable_output_tail": {
+                        "block_index": 7,
+                        "children": [
+                            "ln_3",
+                            "out"
+                        ]
+                    },
+                    "model_class": "Transolver",
+                    "model_args": {
+                        "space_dim": 7,
+                        "hidden_dim": 256,
+                        "layers": 8,
+                        "heads": 8,
+                        "mlp_ratio": 2,
+                        "out_dim": 4,
+                        "slice_num": 32,
+                        "ref": 8,
+                        "unified_pos": true,
+                        "dropout": 0.0
+                    }
+                }
+            }
+        },
+        {
+            "id": "5a06953a147cf89c",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": [
+                "1f36f1dbb2d9af1f",
+                "8327a3fb844bd1af"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "model_file": "transolver.py",
+                "model_class": "Transolver",
+                "model_args": {
+                    "space_dim": 7,
+                    "hidden_dim": 256,
+                    "layers": 8,
+                    "heads": 8,
+                    "mlp_ratio": 2,
+                    "out_dim": 4,
+                    "slice_num": 32,
+                    "ref": 8,
+                    "unified_pos": true,
+                    "dropout": 0.0
+                },
+                "forward_args": {
+                    "x": "$x",
+                    "pos": "$pos"
+                },
+                "out_shape": [
+                    32,
+                    4
+                ],
+                "pre_forward_hooks": [
+                    {
+                        "function": "airfoil_tensor",
+                        "args": {
+                            "part": "x"
+                        },
+                        "save_as": "x"
+                    },
+                    {
+                        "function": "airfoil_tensor",
+                        "args": {
+                            "part": "pos"
+                        },
+                        "save_as": "pos"
+                    }
+                ],
+                "role_paths": {
+                    "input": [
+                        "preprocess",
+                        "input_mlp",
+                        "input_proj"
+                    ],
+                    "blocks": [
+                        "blocks",
+                        "transformer",
+                        "layers"
+                    ],
+                    "velocity": [
+                        "velocity_head",
+                        "head_velocity",
+                        "heads.velocity",
+                        "velocity",
+                        "head.velocity_head"
+                    ],
+                    "pressure": [
+                        "pressure_head",
+                        "head_pressure",
+                        "heads.pressure",
+                        "pressure",
+                        "head.pressure_head"
+                    ],
+                    "viscosity": [
+                        "viscosity_head",
+                        "head_viscosity",
+                        "heads.viscosity",
+                        "viscosity",
+                        "head.viscosity_head"
+                    ]
+                },
+                "check_nan_inf": true
+            }
+        },
+        {
+            "id": "fa82510f5157cce5",
+            "type": "train_file",
+            "method": "check_files",
+            "phase": "train_script",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "train.py"
+                ]
+            }
+        },
+        {
+            "id": "8e0fca92afea3cc2",
+            "type": "train_config_content",
+            "method": "check_config_content",
+            "phase": "train_script",
+            "depends": [
+                "1f36f1dbb2d9af1f"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "epochs",
+                        "value": 398
+                    },
+                    {
+                        "key": "batch_size",
+                        "value": 1
+                    },
+                    {
+                        "key": "learning_rate",
+                        "value": 0.001
+                    },
+                    {
+                        "key": "sample_points",
+                        "value": 32000
+                    },
+                    {
+                        "key": "validation_interval",
+                        "value": 10
+                    },
+                    {
+                        "key": "validation_repeats",
+                        "value": 20
+                    },
+                    {
+                        "key": "velocity_weight",
+                        "type": "int|float"
+                    },
+                    {
+                        "key": "pressure_weight",
+                        "type": "int|float"
+                    },
+                    {
+                        "key": "viscosity_weight",
+                        "type": "int|float"
+                    },
+                    {
+                        "key": "surface_weight",
+                        "type": "int|float"
+                    }
+                ],
+                "config_paths": {
+                    "epochs": [
+                        "training.epochs",
+                        "train.epochs"
+                    ],
+                    "batch_size": [
+                        "training.batch_size",
+                        "train.batch_size"
+                    ],
+                    "learning_rate": [
+                        "training.learning_rate",
+                        "training.lr",
+                        "train.learning_rate",
+                        "train.lr"
+                    ],
+                    "sample_points": [
+                        "training.sample_points",
+                        "training.subsampling",
+                        "training.n_points",
+                        "train.sample_points",
+                        "train.subsampling",
+                        "train.n_points",
+                        "data.n_points"
+                    ],
+                    "validation_interval": [
+                        "training.validation_interval",
+                        "training.val_interval",
+                        "train.validation_interval",
+                        "train.val_interval"
+                    ],
+                    "validation_repeats": [
+                        "training.validation_repeats",
+                        "training.val_repeats",
+                        "train.validation_repeats",
+                        "train.val_repeats"
+                    ],
+                    "velocity_weight": [
+                        "loss.field_weights.velocity",
+                        "loss.fields.velocity",
+                        "loss.velocity",
+                        "loss.velocity_weight"
+                    ],
+                    "pressure_weight": [
+                        "loss.field_weights.pressure",
+                        "loss.fields.pressure",
+                        "loss.pressure",
+                        "loss.pressure_weight"
+                    ],
+                    "viscosity_weight": [
+                        "loss.field_weights.viscosity",
+                        "loss.fields.viscosity",
+                        "loss.viscosity",
+                        "loss.viscosity_weight"
+                    ],
+                    "surface_weight": [
+                        "loss.surface_weight",
+                        "loss.region_weights.surface"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "0881057cf3bf99aa",
+            "type": "train_structure",
+            "method": "check_train_structure",
+            "phase": "train_script",
+            "depends": [
+                "fa82510f5157cce5"
+            ],
+            "params": {
+                "files": [
+                    "train.py"
+                ],
+                "check_config": {
+                    "entry_names": [
+                        "main",
+                        "train",
+                        "run_training"
+                    ],
+                    "model_names": [
+                        "transolver",
+                        "model",
+                        "transolver2d",
+                        "build_model"
+                    ],
+                    "dataloader_names": [
+                        "DataLoader"
+                    ],
+                    "optimizer_names": [
+                        "Adam"
+                    ],
+                    "loss_names": [
+                        "MSELoss",
+                        "compute_loss",
+                        "weighted_loss"
+                    ],
+                    "history_variables": [
+                        "records"
+                    ]
+                },
+                "airfoil_contract": true
+            }
+        },
+        {
+            "id": "4305f4dda74dee72",
+            "type": "parameter_update",
+            "method": "check_parameter_update",
+            "phase": "train_script",
+            "depends": [
+                "fa82510f5157cce5"
+            ],
+            "params": {
+                "files": [
+                    "train.py"
+                ]
+            }
+        },
+        {
+            "id": "767385c4f6ce8a4c",
+            "type": "smoke_training",
+            "method": "check_smoke_training",
+            "phase": "smoke_train",
+            "depends": [
+                "1f36f1dbb2d9af1f",
+                "8327a3fb844bd1af",
+                "fa82510f5157cce5"
+            ],
+            "params": {
+                "run_file": "train.py",
+                "config_name": "config.yaml",
+                "train_fn_name": "train_epoch",
+                "smoke_config": {},
+                "pre_train_hooks": [
+                    {
+                        "function": "prepare_airfoil_smoke",
+                        "args": {
+                            "config": "$config",
+                            "model_file": "transolver.py",
+                            "model_class": "Transolver",
+                            "model_args": {
+                                "space_dim": 7,
+                                "hidden_dim": 256,
+                                "layers": 8,
+                                "heads": 8,
+                                "mlp_ratio": 2,
+                                "out_dim": 4,
+                                "slice_num": 32,
+                                "ref": 8,
+                                "unified_pos": true,
+                                "dropout": 0.0
+                            },
+                            "dataset_file": "dataset.py",
+                            "sample_class": "Data",
+                            "weight_paths": {
+                                "velocity": [
+                                    "loss.field_weights.velocity",
+                                    "loss.fields.velocity",
+                                    "loss.velocity",
+                                    "loss.velocity_weight"
+                                ],
+                                "pressure": [
+                                    "loss.field_weights.pressure",
+                                    "loss.fields.pressure",
+                                    "loss.pressure",
+                                    "loss.pressure_weight"
+                                ],
+                                "viscosity": [
+                                    "loss.field_weights.viscosity",
+                                    "loss.fields.viscosity",
+                                    "loss.viscosity",
+                                    "loss.viscosity_weight"
+                                ],
+                                "surface": [
+                                    "loss.surface_weight",
+                                    "loss.region_weights.surface"
+                                ],
+                                "volume": [
+                                    "loss.volume_weight",
+                                    "loss.region_weights.volume"
+                                ]
+                            },
+                            "points": 32
+                        },
+                        "save_as": "airfoil_smoke"
+                    }
+                ],
+                "train_args": {
+                    "model": "$config.airfoil_smoke.model",
+                    "dataset": "$config.airfoil_smoke.dataset",
+                    "optimizer": "$config.airfoil_smoke.optimizer",
+                    "scheduler": "$config.airfoil_smoke.scheduler",
+                    "device": "$device",
+                    "sample_size": 32,
+                    "batch_size": 1,
+                    "loss_cfg": "$config.airfoil_smoke.training_config.loss"
+                },
+                "airfoil_probe": "airfoil_smoke",
+                "loss_function": "compute_loss",
+                "loss_args": {
+                    "prediction": "$prediction",
+                    "target": "$target",
+                    "surface": "$surface",
+                    "loss_config": "$config.loss"
+                },
+                "loss_args_as_positional": true,
+                "loss_result_index": 0,
+                "entry_adapters": {
+                    "train": {
+                        "pre_train_hooks": [
+                            {
+                                "function": "prepare_airfoil_smoke",
+                                "args": {
+                                    "config": "$config",
+                                    "model_file": "transolver.py",
+                                    "model_class": "Transolver",
+                                    "model_args": {
+                                        "space_dim": 7,
+                                        "hidden_dim": 256,
+                                        "layers": 8,
+                                        "heads": 8,
+                                        "mlp_ratio": 2,
+                                        "out_dim": 4,
+                                        "slice_num": 32,
+                                        "ref": 8,
+                                        "unified_pos": true,
+                                        "dropout": 0.0
+                                    },
+                                    "dataset_file": "dataset.py",
+                                    "sample_class": null,
+                                    "weight_paths": {
+                                        "velocity": [
+                                            "loss.field_weights.velocity",
+                                            "loss.fields.velocity",
+                                            "loss.velocity",
+                                            "loss.velocity_weight"
+                                        ],
+                                        "pressure": [
+                                            "loss.field_weights.pressure",
+                                            "loss.fields.pressure",
+                                            "loss.pressure",
+                                            "loss.pressure_weight"
+                                        ],
+                                        "viscosity": [
+                                            "loss.field_weights.viscosity",
+                                            "loss.fields.viscosity",
+                                            "loss.viscosity",
+                                            "loss.viscosity_weight"
+                                        ],
+                                        "surface": [
+                                            "loss.surface_weight",
+                                            "loss.region_weights.surface"
+                                        ],
+                                        "volume": [
+                                            "loss.volume_weight",
+                                            "loss.region_weights.volume"
+                                        ]
+                                    },
+                                    "points": 32,
+                                    "runtime_dir": "$results_dir",
+                                    "runtime_overrides": {
+                                        "train.epochs": 1,
+                                        "train.batch_size": 1,
+                                        "train.val_interval": 1,
+                                        "train.val_repeats": 1,
+                                        "train.checkpoint_interval": 1,
+                                        "data.n_points": 32,
+                                        "data.num_workers": 0,
+                                        "output.results_dir": "$results_dir",
+                                        "output.checkpoint_dir": "$checkpoint_dir"
+                                    }
+                                },
+                                "save_as": "airfoil_smoke"
+                            }
+                        ],
+                        "train_args": {
+                            "config_path": "$config.airfoil_smoke.config_path"
+                        },
+                        "loss_function": "field_weighted_mse",
+                        "native_entry": {
+                            "dataset_class": "AirfRANSDataset",
+                            "model_factory": "build_model"
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,336 @@
+{
+  "id": "autoregressive_rollout_infer",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现一个基于 Vision Transformer 架构，并采用 AFNO 作为其核心 Token 混合器的数据驱动全球天气预报模型，使该模型能够进行自回归序列推理",
+  "prompt": "请完成以下任务：实现一个基于 Vision Transformer 架构、以 AFNO 为核心 token 混合器的数据驱动全球天气预报模型，并支持自回归序列推理。模型文件命名为 autoregressive_rollout_infer.py，模型类命名为 FourCastNetRollout；构造函数必须支持 img_size、patch_size、in_chans、out_chans、embed_dim、depth 和 num_blocks，并以 img_size=(32,64)、patch_size=(4,4)、in_chans=20、out_chans=20、embed_dim=256、depth=4、num_blocks=4 为默认配置。模型需包含卷积 patch embedding、可学习位置编码、4 层 pre-norm 残差 block、AFNO 的 rFFT2/逆 rFFT2 频域混合、MLP 通道混合及 patch recovery head。forward(x) 接收 (B,20,32,64) 并返回同空间尺寸的有限张量。autoregressive_rollout(initial_state,num_steps) 必须将每步预测作为下一步输入，在不修改 initial_state 且不构建梯度图的情况下返回 (num_steps,B,20,32,64)；num_steps 必须为正整数，错误通道数或空间尺寸必须被拒绝。",
+  "evaluation_script": "evaluate_autoregressive_rollout_infer.py",
+  "stardard_dir_name": "autoregressive_rollout_infer",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "a472620928ad0345",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "autoregressive_rollout_infer.py"
+        ],
+        "require_regular_file": true,
+        "require_nonempty_content": false
+      }
+    },
+    {
+      "id": "1be214805c9de8fa",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "a472620928ad0345"
+      ],
+      "params": {
+        "checkpoint_required": false,
+        "result_name": "checkpoint:not_required",
+        "detail": "not applicable: this task defines a model from scratch with no pre-trained checkpoint"
+      }
+    },
+    {
+      "id": "b710683af7ace498",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "1be214805c9de8fa"
+      ],
+      "params": {
+        "model_file": "autoregressive_rollout_infer.py",
+        "model_class": "FourCastNetRollout",
+        "model_config": {
+          "img_size": [
+            32,
+            64
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 20,
+          "out_chans": 20,
+          "embed_dim": 256,
+          "depth": 4,
+          "num_blocks": 4
+        },
+        "instantiate_on": "cpu",
+        "eval_mode": true,
+        "required_interfaces": {
+          "forward": {
+            "callable": true,
+            "required_parameters": [
+              "x"
+            ]
+          },
+          "autoregressive_rollout": {
+            "callable": true,
+            "required_parameters": [
+              "initial_state",
+              "num_steps"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "1dc233803e8ac120",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "b710683af7ace498"
+      ],
+      "params": {
+        "model_file": "autoregressive_rollout_infer.py",
+        "model_class": "FourCastNetRollout",
+        "model_config": {
+          "img_size": [
+            32,
+            64
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 20,
+          "out_chans": 20,
+          "embed_dim": 256,
+          "depth": 4,
+          "num_blocks": 4
+        },
+        "constructor_required_keys": [
+          "img_size",
+          "patch_size",
+          "in_chans",
+          "out_chans",
+          "embed_dim",
+          "depth",
+          "num_blocks"
+        ],
+        "requires_nn_module": true,
+        "requires_trainable_parameters": true,
+        "patch_embedding": {
+          "module": "Conv2d",
+          "in_channels": 20,
+          "out_channels": 256,
+          "kernel_size": [
+            4,
+            4
+          ],
+          "stride": [
+            4,
+            4
+          ]
+        },
+        "position_embedding_shape": [
+          1,
+          128,
+          256
+        ],
+        "block_stack": {
+          "allowed_types": [
+            "ModuleList",
+            "Sequential"
+          ],
+          "length": 4,
+          "probe_shape": [
+            2,
+            8,
+            16,
+            256
+          ],
+          "required_shape_preserving_blocks": 4
+        },
+        "execution_order": {
+          "forward_input_shape": [
+            1,
+            20,
+            32,
+            64
+          ],
+          "patch_before_blocks": true,
+          "required_block_invocations": 4
+        },
+        "patch_recovery_head": {
+          "module": "Linear",
+          "in_features": 256,
+          "out_features": 320
+        },
+        "frequency_source_tokens": [
+          "rfft2(",
+          "irfft2("
+        ],
+        "min_layer_norm_count": 8
+      }
+    },
+    {
+      "id": "c973fd012dac6ed2",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "1dc233803e8ac120"
+      ],
+      "params": {
+        "model_file": "autoregressive_rollout_infer.py",
+        "model_class": "FourCastNetRollout",
+        "model_config": {
+          "img_size": [
+            32,
+            64
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 20,
+          "out_chans": 20,
+          "embed_dim": 256,
+          "depth": 4,
+          "num_blocks": 4
+        },
+        "eval_mode": true,
+        "no_grad": true,
+        "forward_cases": [
+          {
+            "batch_size": 1,
+            "seed": 123
+          },
+          {
+            "batch_size": 2,
+            "seed": 456
+          }
+        ],
+        "input_shape_template": [
+          "B",
+          20,
+          32,
+          64
+        ],
+        "expected_output_shape_template": [
+          "B",
+          20,
+          32,
+          64
+        ],
+        "assertions": [
+          "returns_tensor",
+          "all_finite",
+          "bitwise_deterministic",
+          "input_unchanged"
+        ]
+      }
+    },
+    {
+      "id": "f4ce3f943a197e98",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "c973fd012dac6ed2"
+      ],
+      "params": {
+        "model_file": "autoregressive_rollout_infer.py",
+        "model_class": "FourCastNetRollout",
+        "model_config": {
+          "img_size": [
+            32,
+            64
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 20,
+          "out_chans": 20,
+          "embed_dim": 256,
+          "depth": 4,
+          "num_blocks": 4
+        },
+        "eval_mode": true,
+        "rollout_case": {
+          "initial_state_seed": 789,
+          "batch_size": 1,
+          "num_steps": 3,
+          "expected_shape": [
+            3,
+            1,
+            20,
+            32,
+            64
+          ],
+          "no_grad_required": true,
+          "assertions": [
+            "returns_tensor",
+            "all_finite",
+            "requires_grad_false",
+            "grad_fn_is_none",
+            "bitwise_deterministic",
+            "matches_iterative_forward",
+            "states_evolve",
+            "input_unchanged"
+          ],
+          "iterative_compare_atol": 1e-05,
+          "iterative_compare_rtol": 1e-05,
+          "one_step": {
+            "num_steps": 1,
+            "matches_forward_unsqueeze_dim": 0,
+            "atol": 1e-05,
+            "rtol": 1e-05
+          }
+        },
+        "invalid_num_steps": [
+          {
+            "label": "zero",
+            "value": 0
+          },
+          {
+            "label": "negative",
+            "value": -1
+          },
+          {
+            "label": "float",
+            "value": 1.5
+          },
+          {
+            "label": "bool",
+            "value": true
+          }
+        ],
+        "invalid_num_steps_exception": "ValueError",
+        "invalid_forward_inputs": {
+          "wrong_channels": [
+            1,
+            19,
+            32,
+            64
+          ],
+          "wrong_spatial_size": [
+            1,
+            20,
+            28,
+            64
+          ]
+        },
+        "invalid_forward_input_seed": 101,
+        "invalid_forward_exception": "any"
+      }
+    }
+  ]
+}

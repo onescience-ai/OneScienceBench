@@ -1,0 +1,358 @@
+{
+  "id": "spectral_refiner_table2",
+  "eval_type": "paper_repro",
+  "domain": "cfd",
+  "task": "复现 Spectral-Refiner 论文 Table 2 的 forced-turbulence 实验：先训练 SFNO，再使用 H^-1 PDE residual 微调输出层",
+  "prompt": "复现论文《Spectral-Refiner: Accurate Fine-Tuning of Spatiotemporal Fourier Neural Operator for Turbulent Flows》（https://arxiv.org/abs/2405.17211）Table 2 中 original example from Li et al. (2021) 的 forced-turbulence 实验，以论文描述为准，仅在论文未明确说明时参考官方 Git 仓库代码补充细节，禁止直接下载或复制官方 Git 仓库代码。训练数据使用 /public/share/sugonhpcapp01/onestore/onedatasets/spectral_refiner_table2/fnodata_extra_64x64_N1280_v1e-3_T50_steps100_alpha2.5_tau7.pt，测试数据使用 /public/share/sugonhpcapp01/onestore/onedatasets/spectral_refiner_table2/fnodata_extra_fp64_256x256_N16_v1e-3_T50_steps100_alpha2.5_tau7.pt；实现 model.py（主类 SFNO，并包含 OutConvFT 和 SobolevLoss）、train.py、eval.py 和 config.yaml，train.py 对外提供 load_config、load_trajectory_file 和 build_model；train.py 支持 python train.py --config config.yaml 和 --smoke，eval.py 支持 python eval.py --config config.yaml 和 --smoke；基础模型与微调模型分别保存为 checkpoints/sfno_base.pt 和 checkpoints/spectral_refiner_best.pt，指标保存到 results/metrics.json，并通过 print 输出 train_loss、val_loss、relative_l2_error 和 residual_hminus1。",
+  "evaluation_script": "evaluate_spectral_refiner_table2.py",
+  "stardard_dir_name": "spectral_refiner_table2",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "cpus_per_task": 4,
+    "memory": "8G",
+    "dcu": 1
+  },
+  "checks": [
+    {
+      "id": "9680994dee7d47a8",
+      "type": "model_file",
+      "phase": "model_structure",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "model.py",
+          "config.yaml"
+        ]
+      },
+      "depends": []
+    },
+    {
+      "id": "fe24601db5ce4206",
+      "type": "model_interface",
+      "phase": "model_structure",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "model.py"
+        ],
+        "required_interfaces": [
+          "SFNO",
+          "OutConvFT",
+          "SobolevLoss"
+        ]
+      },
+      "depends": [
+        "9680994dee7d47a8"
+      ]
+    },
+    {
+      "id": "7880b2846963488b",
+      "type": "model_structure",
+      "phase": "model_structure",
+      "method": "check_model_structure",
+      "params": {
+        "model_file": "model.py",
+        "model_class": "SFNO",
+        "config_name": "config.yaml",
+        "builder_file": "train.py",
+        "builder_method": "build_model",
+        "builder_args": {
+          "config": "$config"
+        },
+        "rules": [
+          {
+            "id": "sfno_public_class",
+            "name": "Public SFNO root",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "SFNO"
+              },
+              "expected": {
+                "class_name": "SFNO"
+              }
+            }
+          },
+          {
+            "id": "sfno_single_model",
+            "name": "One public SFNO model",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "SFNO"
+              },
+              "count": 1
+            }
+          }
+        ]
+      },
+      "depends": [
+        "fe24601db5ce4206"
+      ]
+    },
+    {
+      "id": "f546a7b022504c9d",
+      "type": "model_forward",
+      "phase": "model_structure",
+      "method": "check_model_forward_executable",
+      "params": {
+        "model_file": "model.py",
+        "model_class": "SFNO",
+        "config_name": "config.yaml",
+        "builder_file": "train.py",
+        "builder_method": "build_model",
+        "builder_args": {
+          "config": "$config"
+        },
+        "input_shape": [
+          1,
+          32,
+          32,
+          10
+        ],
+        "forward_args": {},
+        "out_shape": [
+          1,
+          32,
+          32,
+          null
+        ]
+      },
+      "depends": [
+        "7880b2846963488b"
+      ]
+    },
+    {
+      "id": "64aa064e35a34293",
+      "type": "train_file",
+      "phase": "train_script",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "train.py",
+          "config.yaml"
+        ]
+      },
+      "depends": []
+    },
+    {
+      "id": "c1cb72a4ce1048eb",
+      "type": "train_interface",
+      "phase": "train_script",
+      "method": "check_interface",
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "load_trajectory_file",
+          "build_model"
+        ]
+      },
+      "depends": [
+        "64aa064e35a34293"
+      ]
+    },
+    {
+      "id": "4ce2e1e4f71948c8",
+      "type": "train_structure",
+      "phase": "train_script",
+      "method": "check_train_structure",
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "check_config": {
+          "model_names": [
+            "SFNO",
+            "build_model",
+            "model"
+          ],
+          "loss_names": [
+            "SobolevLoss",
+            "relative_l2",
+            "MSELoss",
+            "mse_loss",
+            "loss",
+            "criterion",
+            "loss_fn"
+          ]
+        }
+      },
+      "depends": [
+        "64aa064e35a34293"
+      ]
+    },
+    {
+      "id": "f50719b448f94e77",
+      "type": "parameter_update",
+      "phase": "train_script",
+      "method": "check_parameter_update",
+      "params": {
+        "files": [
+          "train.py"
+        ]
+      },
+      "depends": [
+        "64aa064e35a34293"
+      ]
+    },
+    {
+      "id": "d8859b8e313b467c",
+      "type": "smoke_training",
+      "phase": "smoke_train",
+      "method": "check_smoke_training",
+      "params": {
+        "run_file": "train.py",
+        "config_name": "config.yaml",
+        "timeout_seconds": 600,
+        "printed_metrics": [
+          "train_loss",
+          "val_loss"
+        ]
+      },
+      "depends": [
+        "64aa064e35a34293",
+        "c1cb72a4ce1048eb"
+      ]
+    },
+    {
+      "id": "ffb66321f4d24f68",
+      "type": "smoke_artifacts",
+      "phase": "smoke_train",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "checkpoints/sfno_base.pt",
+          "checkpoints/spectral_refiner_best.pt"
+        ]
+      },
+      "depends": [
+        "d8859b8e313b467c"
+      ]
+    },
+    {
+      "id": "cd79023a9dd7485c",
+      "type": "infer_file",
+      "phase": "infer_script",
+      "method": "check_files",
+      "params": {
+        "required_files": [
+          "eval.py",
+          "config.yaml"
+        ]
+      },
+      "depends": []
+    },
+    {
+      "id": "232272fdef7c4b18",
+      "type": "infer_structure",
+      "phase": "infer_script",
+      "method": "check_infer_structure",
+      "params": {
+        "files": [
+          "eval.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main",
+            "evaluate",
+            "infer",
+            "inference",
+            "eval"
+          ],
+          "model_load_functions": [
+            "load_model_state",
+            "load_model",
+            "load_checkpoint",
+            "load_weights"
+          ],
+          "input_load_functions": [
+            "load_test_data",
+            "load_trajectory_file",
+            "load_data"
+          ],
+          "infer_call_functions": [
+            "model",
+            "refiner",
+            "predict",
+            "inference",
+            "infer"
+          ],
+          "output_attributes": [
+            "write_text",
+            "save",
+            "savez",
+            "dump",
+            "write",
+            "to_csv",
+            "to_json"
+          ]
+        }
+      },
+      "depends": [
+        "cd79023a9dd7485c"
+      ]
+    },
+    {
+      "id": "899cfaa844f542bc",
+      "type": "infer_execution",
+      "phase": "infer_execution",
+      "method": "check_infer_execution",
+      "params": {
+        "run_file": "eval.py",
+        "config_name": "config.yaml",
+        "timeout_seconds": 600,
+        "checkpoint_files": [
+          "checkpoints/sfno_base.pt",
+          "checkpoints/spectral_refiner_best.pt"
+        ],
+        "output_path": "results/metrics.json",
+        "printed_metrics": [
+          "relative_l2_error",
+          "residual_hminus1"
+        ]
+      },
+      "depends": [
+        "ffb66321f4d24f68",
+        "cd79023a9dd7485c"
+      ]
+    },
+    {
+      "id": "83db9bfffec442c2",
+      "type": "infer_output_schema",
+      "phase": "infer_execution",
+      "method": "check_infer_output_schema",
+      "params": {
+        "output_path": "results/metrics.json",
+        "check_nan_inf": true
+      },
+      "depends": [
+        "899cfaa844f542bc"
+      ]
+    },
+    {
+      "id": "6990473685bd415f",
+      "type": "infer_output_validity",
+      "phase": "infer_execution",
+      "method": "check_infer_output_validity",
+      "params": {
+        "output_path": "results/metrics.json",
+        "required_metrics": [
+          "relative_l2_error",
+          "residual_hminus1"
+        ]
+      },
+      "depends": [
+        "83db9bfffec442c2"
+      ]
+    }
+  ]
+}

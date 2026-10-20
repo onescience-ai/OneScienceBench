@@ -1,0 +1,354 @@
+{
+  "id": "gencast_regional_inference",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "基于官方 GenCast 全球推理入口实现 xarray 集合输出区域查询适配器",
+  "prompt": "请完成以下任务：基于官方 GenCast 全球推理入口实现 xarray 集合输出区域查询适配器，代码保存为 gencast_regional_inference.py。适配器面向官方 GenCast 全球 predictor 的 xarray.Dataset 输出：输入和输出都必须是带命名维度和坐标的 Dataset，不能退化为无名 NumPy 数组或只返回空间切片。每个预测变量必须保留 sample（集合成员）、time、lat、lon 四个维度，变量名称、变量属性、Dataset 属性以及 sample/time/lat/lon 坐标属性都必须原样保留；官方输出中与 sample/time 对齐的非空间辅助坐标及其属性也必须保留。定义 GenCastRegionalInference 类和不可变的 RegionSpec 辅助结构。构造函数接收全球 latitudes、longitudes、variables、times 和可选 predictor，这些全球轴、变量列表与时间轴都是严格契约：Dataset 的变量名称及顺序必须与 variables 完全一致且预测场必须为数值类型；经度轴允许 Dataset 使用与构造轴不同但按位置模 360 等价的表示，并保留 Dataset 原表示。infer 必须把完整全球 Dataset 原对象传给官方风格 predictor(inputs, targets_template=None, forcings=None, rng=None)，并兼容只接收一个 inputs 参数的轻量 predictor，区域裁剪只能发生在 predictor 返回之后，predictor 返回的非 Dataset 或不符合全局契约的 Dataset 必须被拒绝。regional_predict 支持闭区间纬度/经度范围和目标纬度/经度网格，region=None 时返回完整全球 Dataset；目标网格两个坐标必须同时提供并落在区域内，执行坐标范围内的二维线性重采样。正确处理纬度升降序、[0,360) 与 [-180,180) 经度表示以及日期变更线的东侧再西侧顺序，保持 sample、time 和所有变量值不被聚合或重排。不得修改输入 Dataset，不得下载真实权重或真实数据；对缺失坐标/维度、非法纬度、空区域、单侧目标网格、预报时间不一致和空间 shape 不匹配抛出明确异常。",
+  "evaluation_script": "evaluate_gencast_regional_inference.py",
+  "stardard_dir_name": "gencast_regional_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "84c3f1f2bd1222f5",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "gencast_regional_inference.py"
+        ]
+      }
+    },
+    {
+      "id": "00090869202395ff",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "84c3f1f2bd1222f5"
+      ],
+      "params": {
+        "applicability": "not_applicable",
+        "reason": "GenCast adapter uses synthetic predictor, no checkpoint"
+      }
+    },
+    {
+      "id": "430de984fde3fc1d",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "84c3f1f2bd1222f5"
+      ],
+      "params": {
+        "source_file": "gencast_regional_inference.py",
+        "class_name": "GenCastRegionalInference",
+        "required_methods": [
+          "__init__",
+          "infer",
+          "regional_predict"
+        ],
+        "constructor_required_parameters": [
+          "latitudes",
+          "longitudes",
+          "variables",
+          "times"
+        ],
+        "required_module_class": "RegionSpec",
+        "required_callable_methods": [
+          "GenCastRegionalInference.infer",
+          "GenCastRegionalInference.regional_predict"
+        ]
+      }
+    },
+    {
+      "id": "8c0356a994da2029",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "430de984fde3fc1d"
+      ],
+      "params": {
+        "source_file": "gencast_regional_inference.py",
+        "class_name": "GenCastRegionalInference",
+        "constructor_required_parameters": [
+          "latitudes",
+          "longitudes",
+          "variables",
+          "times"
+        ],
+        "region_spec_class": "RegionSpec",
+        "region_spec_probe": {
+          "lat_min": 0.0,
+          "lat_max": 1.0,
+          "lon_min": 0.0,
+          "lon_max": 1.0
+        },
+        "constructor_probe": {
+          "latitudes": [
+            60.0,
+            0.0,
+            -60.0
+          ],
+          "longitudes": [
+            0.0,
+            90.0,
+            180.0,
+            270.0
+          ],
+          "variables": [
+            "2m_temperature",
+            "10m_u_component_of_wind"
+          ],
+          "times": [
+            "2024-01-01T00:00",
+            "2024-01-01T06:00",
+            "2024-01-01T12:00"
+          ]
+        },
+        "required_stored_attributes": [
+          "latitudes",
+          "longitudes",
+          "variables",
+          "times"
+        ],
+        "require_frozen_region_spec": true
+      }
+    },
+    {
+      "id": "22eedc66d0eb75e2",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "8c0356a994da2029"
+      ],
+      "params": {
+        "source_file": "gencast_regional_inference.py",
+        "class_name": "GenCastRegionalInference",
+        "fixture_builder": "_make_fixture",
+        "fixture": {
+          "latitudes": [
+            60.0,
+            0.0,
+            -60.0
+          ],
+          "longitudes": [
+            0.0,
+            90.0,
+            180.0,
+            270.0
+          ],
+          "variables": [
+            "2m_temperature",
+            "10m_u_component_of_wind"
+          ],
+          "times": [
+            "2024-01-01T00:00",
+            "2024-01-01T06:00",
+            "2024-01-01T12:00"
+          ]
+        },
+        "call": {
+          "method": "regional_predict",
+          "region": {
+            "lat_min": 0.0,
+            "lat_max": 60.0,
+            "lon_min": 0.0,
+            "lon_max": 180.0
+          }
+        },
+        "dataset_signature_helper": "_dataset_signature",
+        "assertions": {
+          "xarray_compatible_dataset": true,
+          "variable_order": [
+            "2m_temperature",
+            "10m_u_component_of_wind"
+          ],
+          "variable_dims": [
+            "sample",
+            "time",
+            "lat",
+            "lon"
+          ],
+          "finite_values": true,
+          "spatial_shape": [
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "c5995b2e07c8095c",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "22eedc66d0eb75e2"
+      ],
+      "params": {
+        "source_file": "gencast_regional_inference.py",
+        "class_name": "GenCastRegionalInference",
+        "region_spec_class": "RegionSpec",
+        "fixture_builder": "_make_fixture",
+        "expected_region_builder": "_expected_region",
+        "dataset_comparator": "_assert_dataset",
+        "dataset_comparison": {
+          "atol": 1e-06,
+          "rtol": 1e-06,
+          "preserve_dataset_attrs": true,
+          "preserve_coordinate_names_values_dims_and_attrs": true,
+          "preserve_variable_order_values_shapes_and_attrs": true
+        },
+        "global_fixture": {
+          "latitudes": [
+            60.0,
+            30.0,
+            0.0,
+            -30.0
+          ],
+          "longitudes": [
+            0.0,
+            90.0,
+            180.0,
+            270.0
+          ],
+          "variables": [
+            "2m_temperature",
+            "10m_u_component_of_wind"
+          ],
+          "times": [
+            "2024-01-01T00:00",
+            "2024-01-01T06:00",
+            "2024-01-01T12:00"
+          ]
+        },
+        "constructor_rejections": [
+          {
+            "label": "non_monotonic_lat",
+            "latitudes": [
+              60.0,
+              0.0,
+              30.0,
+              -30.0
+            ]
+          },
+          {
+            "label": "duplicate_lon",
+            "longitudes": [
+              0.0,
+              90.0,
+              180.0,
+              360.0
+            ]
+          },
+          {
+            "label": "non_increasing_time",
+            "times": [
+              "2024-01-01T12:00",
+              "2024-01-01T06:00",
+              "2024-01-01T00:00"
+            ]
+          }
+        ],
+        "require_frozen_region_spec": true,
+        "regional_cases": [
+          {
+            "label": "normal",
+            "region": {
+              "lat_min": 0,
+              "lat_max": 60,
+              "lon_min": 0,
+              "lon_max": 180
+            }
+          },
+          {
+            "label": "date_line",
+            "region": {
+              "lat_min": -30,
+              "lat_max": 30,
+              "lon_min": 270,
+              "lon_max": 30
+            }
+          },
+          {
+            "label": "descending_lat",
+            "region": {
+              "lat_min": 0,
+              "lat_max": 30,
+              "lon_min": 90,
+              "lon_max": 270
+            }
+          }
+        ],
+        "full_global": true,
+        "equivalent_longitude": {
+          "longitudes": [
+            0.0,
+            90.0,
+            -180.0,
+            -90.0
+          ],
+          "signed_fixture": true
+        },
+        "target_grid": {
+          "region": {
+            "lat_min": 0,
+            "lat_max": 60,
+            "lon_min": 0,
+            "lon_max": 180
+          },
+          "latitudes": [
+            15.0,
+            45.0
+          ],
+          "longitudes": [
+            45.0,
+            135.0
+          ]
+        },
+        "input_immutable": true,
+        "invalid_dataset_cases": [
+          "missing_coordinate",
+          "wrong_dimensions",
+          "forecast_time_mismatch",
+          "spatial_shape_mismatch",
+          "non_numeric_variable",
+          "variable_order"
+        ],
+        "official_predictor": {
+          "offset": 7.5,
+          "must_receive_original_global_input_by_identity": true,
+          "forward_identity_arguments": [
+            "targets_template",
+            "forcings",
+            "rng"
+          ],
+          "crop_only_after_predictor": true
+        },
+        "one_argument_predictor": {
+          "must_receive_original_global_input_by_identity": true
+        },
+        "invalid_predictor_cases": [
+          "non_dataset",
+          "wrong_variable"
+        ],
+        "edge_rejections": [
+          "invalid_latitude_region",
+          "one_sided_target_grid",
+          "empty_grid_region"
+        ]
+      }
+    }
+  ]
+}

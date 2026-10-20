@@ -1,0 +1,12 @@
+checkpoint: /public/share/sugonhpcapp01/onestore/onemodels/mattersim/mattersim-v1.0.0-1M.pth
+model:
+  num_blocks: 3
+  units: 128
+  max_l: 4
+  max_n: 4
+  cutoff: 5.0
+  max_z: 94
+  threebody_cutoff: 4.0
+inference:
+  device: auto
+  outputs: [energies, forces, stresses]

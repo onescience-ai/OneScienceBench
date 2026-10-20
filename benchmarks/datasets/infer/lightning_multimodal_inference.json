@@ -1,0 +1,264 @@
+{
+  "id": "lightning_multimodal_inference",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现卫星红外、NWP 和地形融合的闪电概率推理",
+  "prompt": "实现卫星红外、NWP 和地形融合的闪电概率推理模型文件命名为 lightning_multimodal_inference.py，定义 LightningMultimodalModel，默认 nwp_channels=3、hidden_dim=16。infer(batch) 必须接收 satellite_ir [B,C,H,W]、nwp [B,3,H,W]、terrain [B,1,H,W]，检查三种模态的 batch 和网格一致，融合 satellite、NWP 和 terrain 特征，输出字典 probability [B,H,W]，且每个值在 [0,1]。模型必须包含 satellite_encoder、nwp_encoder、terrain_encoder、fusion、head。实现 load_checkpoint，checkpoint 只能包含 model_state_dict，先 CPU 加载后 strict=True 恢复。请在当前工作目录生成且仅生成 lightning_multimodal_inference.py，禁止下载数据或权重。",
+  "evaluation_script": "evaluate_lightning_multimodal_inference.py",
+  "stardard_dir_name": "lightning_multimodal_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "685625136493dd9f",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "lightning_multimodal_inference.py"
+        ]
+      }
+    },
+    {
+      "id": "2731661869613bcc",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "685625136493dd9f"
+      ],
+      "params": {
+        "source_file": "lightning_multimodal_inference.py",
+        "class_name": "LightningMultimodalModel",
+        "loader": "load_checkpoint",
+        "loader_args": {
+          "device": "cpu"
+        },
+        "valid_checkpoint": {
+          "filename": "good.pt",
+          "payload": {
+            "model_state_dict": "standard.LightningMultimodalModel().state_dict()"
+          }
+        },
+        "invalid_checkpoint": {
+          "filename": "bad.pt",
+          "payload": {}
+        },
+        "assertions": {
+          "state_dict_key_order_matches_reference": true,
+          "all_state_tensors_equal_reference": true,
+          "empty_payload_rejected": true
+        }
+      }
+    },
+    {
+      "id": "2029b814b2d0ed81",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "685625136493dd9f"
+      ],
+      "params": {
+        "source_file": "lightning_multimodal_inference.py",
+        "class_name": "LightningMultimodalModel",
+        "constructor_args": {},
+        "expected_top_level_module_order": [
+          "satellite_encoder",
+          "nwp_encoder",
+          "terrain_encoder",
+          "fusion",
+          "head"
+        ],
+        "expected_input_channels": {
+          "nwp_encoder": 3,
+          "terrain_encoder": 1
+        },
+        "expected_output_channels": {
+          "head": 1
+        }
+      }
+    },
+    {
+      "id": "6f65fa2299b3a7ed",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "685625136493dd9f"
+      ],
+      "params": {
+        "source_file": "lightning_multimodal_inference.py",
+        "class_name": "LightningMultimodalModel",
+        "required_class_methods": [
+          "forward",
+          "infer"
+        ],
+        "required_module_functions": [
+          "load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "fc0fd648f641f1f4",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "2029b814b2d0ed81",
+        "6f65fa2299b3a7ed"
+      ],
+      "params": {
+        "source_file": "lightning_multimodal_inference.py",
+        "class_name": "LightningMultimodalModel",
+        "call": {
+          "method": "infer",
+          "output_key": "probability"
+        },
+        "shape_probe": {
+          "batch": {
+            "satellite_ir": [
+              2,
+              4,
+              8,
+              10
+            ],
+            "nwp": [
+              2,
+              3,
+              8,
+              10
+            ],
+            "terrain": [
+              2,
+              1,
+              8,
+              10
+            ]
+          },
+          "expected_probability_shape": [
+            2,
+            8,
+            10
+          ]
+        },
+        "probability_probe": {
+          "batch": {
+            "satellite_ir": [
+              1,
+              2,
+              4,
+              5
+            ],
+            "nwp": [
+              1,
+              3,
+              4,
+              5
+            ],
+            "terrain": [
+              1,
+              1,
+              4,
+              5
+            ]
+          },
+          "require_finite": true,
+          "inclusive_range": [
+            0,
+            1
+          ]
+        },
+        "invalid_cases": [
+          {
+            "label": "missing_terrain",
+            "batch_keys": [
+              "satellite_ir",
+              "nwp"
+            ],
+            "expected_exception": "ValueError"
+          },
+          {
+            "label": "terrain_grid_mismatch",
+            "batch": {
+              "satellite_ir": [
+                1,
+                2,
+                4,
+                5
+              ],
+              "nwp": [
+                1,
+                3,
+                4,
+                5
+              ],
+              "terrain": [
+                1,
+                1,
+                3,
+                5
+              ]
+            },
+            "expected_exception": "ValueError"
+          }
+        ]
+      }
+    },
+    {
+      "id": "82072bf651094922",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "fc0fd648f641f1f4"
+      ],
+      "params": {
+        "source_file": "lightning_multimodal_inference.py",
+        "class_name": "LightningMultimodalModel",
+        "reference_source": "benchmarks/standard/lightning_multimodal_inference/lightning_multimodal_inference.py",
+        "state_transfer": {
+          "reference_to_candidate": true,
+          "strict": true
+        },
+        "inference_batch": {
+          "satellite_ir": {
+            "generator": "torch.linspace(-1,1,336).reshape(2,4,6,7)"
+          },
+          "nwp": {
+            "generator": "torch.zeros(2,3,6,7)"
+          },
+          "terrain": {
+            "generator": "torch.ones(2,1,6,7)"
+          }
+        },
+        "output_key": "probability",
+        "target": {
+          "generator": "(torch.arange(reference_probability.numel(),device=reference_probability.device).reshape_as(reference_probability)%2).to(reference_probability.dtype)"
+        },
+        "metrics": [
+          {
+            "name": "brier_score",
+            "formula": "torch.mean((probability.detach()-target)**2)",
+            "reference_formula": "torch.mean((reference_probability.detach()-target)**2)",
+            "tolerance": 1e-06
+          },
+          {
+            "name": "accuracy",
+            "formula": "torch.mean(((probability.detach()>=0.5)==(target>=0.5)).to(torch.float32))",
+            "reference_formula": "torch.mean(((reference_probability.detach()>=0.5)==(target>=0.5)).to(torch.float32))",
+            "tolerance": 1e-06
+          }
+        ]
+      }
+    }
+  ]
+}

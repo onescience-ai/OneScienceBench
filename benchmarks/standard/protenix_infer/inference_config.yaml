@@ -1,0 +1,142 @@
+# Protenix 推理评测基准配置
+#
+# 这里只保留决定推理网络结构、采样算法和输出解释方式的配置。评测脚本负责
+# checkpoint、设备、输入、随机种子及受控的 cycle/sample/step 运行预算。
+
+inference:
+  # 主干特征宽度
+  c_s: 384
+  c_z: 128
+  c_s_inputs: 449
+
+  # 推理 attention 后端
+  use_memory_efficient_kernel: false
+  use_deepspeed_evo_attention: false
+  use_lma: false
+
+  # 推理路径的数值精度开关
+  skip_amp:
+    sample_diffusion: true
+    confidence_head: true
+
+  # 推理过程的分块策略
+  infer_setting:
+    chunk_size: 64
+    sample_diffusion_chunk_size: 1
+
+  # 扩散噪声调度器
+  inference_noise_scheduler:
+    s_max: 160.0
+    s_min: 0.0004
+    rho: 7
+    sigma_data: 16.0
+
+  # 扩散采样算法参数；N_sample/N_step 由评测脚本统一设定
+  sample_diffusion:
+    gamma0: 0.8
+    gamma_min: 1.0
+    noise_scale_lambda: 1.003
+    step_scale_eta: 1.5
+
+  # 网络结构参数；N_cycle/N_model_seed 由评测脚本统一设定
+  model:
+    input_embedder:
+      c_atom: 128
+      c_atompair: 16
+      c_token: 384
+    relative_position_encoding:
+      r_max: 32
+      s_max: 2
+      c_z: 128
+    template_embedder:
+      c: 64
+      c_z: 128
+      n_blocks: 0
+      dropout: 0.25
+      blocks_per_ckpt: 1
+    msa_module:
+      c_m: 64
+      c_z: 128
+      c_s_inputs: 449
+      n_blocks: 4
+      msa_dropout: 0.15
+      pair_dropout: 0.25
+      blocks_per_ckpt: 1
+      msa_chunk_size: 2048
+    pairformer:
+      n_blocks: 48
+      c_z: 128
+      c_s: 384
+      n_heads: 16
+      dropout: 0.25
+      blocks_per_ckpt: 1
+    diffusion_module:
+      use_fine_grained_checkpoint: true
+      sigma_data: 16.0
+      c_token: 768
+      c_atom: 128
+      c_atompair: 16
+      c_z: 128
+      c_s: 384
+      c_s_inputs: 449
+      blocks_per_ckpt: 1
+      atom_encoder:
+        n_blocks: 3
+        n_heads: 4
+      transformer:
+        n_blocks: 24
+        n_heads: 16
+      atom_decoder:
+        n_blocks: 3
+        n_heads: 4
+    confidence_head:
+      c_z: 128
+      c_s: 384
+      c_s_inputs: 449
+      n_blocks: 4
+      max_atoms_per_token: 24
+      pairformer_dropout: 0.0
+      blocks_per_ckpt: 1
+      distance_bin_start: 3.25
+      distance_bin_end: 52.0
+      distance_bin_step: 1.25
+      stop_gradient: true
+    distogram_head:
+      c_z: 128
+      no_bins: 64
+
+  # 推理置信度与接触概率转换所需分箱
+  loss:
+    plddt:
+      min_bin: 0
+      max_bin: 1.0
+      no_bins: 50
+    pde:
+      min_bin: 0
+      max_bin: 32
+      no_bins: 64
+    pae:
+      min_bin: 0
+      max_bin: 32
+      no_bins: 64
+    distogram:
+      min_bin: 2.3125
+      max_bin: 21.6875
+      no_bins: 64
+
+  # summary confidence 的结构冲突判定阈值
+  metrics:
+    clash:
+      af3_clash_threshold: 1.1
+
+  # MSA 模块在推理时直接读取的采样配置
+  data:
+    msa:
+      enable: true
+      strategy: random
+      min_size:
+        train: 1
+        test: 1
+      sample_cutoff:
+        train: 16384
+        test: 16384

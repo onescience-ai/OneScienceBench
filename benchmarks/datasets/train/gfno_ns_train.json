@@ -1,0 +1,410 @@
+{
+  "id": "gfno_ns_train",
+  "eval_type": "train",
+  "domain": "cfd",
+  "task": "基于 GFNO 模型实现 Navier–Stokes（NS）方程预测任务的训练",
+  "prompt": "基于 GFNO 模型实现 Navier–Stokes（NS）方程预测任务的训练。  \n    任务输入为 NS 系统前 10 个时间步的二维涡量场，输出为后续 20 个时间步的涡量场预测结果。配套的数据集路径在/public/share/sugonhpcapp01/onestore/onedatasets/FNO_data/fno/data/ns_V1e-3_N5000_T50.mat，生成的文件要求\n    1. 模型文件命名为 model.py，核心模型类命名为GFNO，模型需要包含输入 lifting、p4 group convolution、group-equivariant Fourier spectral convolution、G-MLP、1×1 group convolution 残差分支以及输出 projection，共使用 4 个 G-Fourier blocks。默认设置 modes=12、width=10，输入形状为 [B, H, W, 10, 1]，每次输出下一时间步 [B, H, W, 1, 1]，并保证模型满足 p4 的 90° 旋转等变性\n    2. dataset.py 负责 MAT 数据读取、预处理、官方 train/validation/test 划分、teacher-forcing 样本生成以及可选 normalization；normalization 的统计量必须只使用训练集计算，默认 normalization=\"none\"。其中训练集取数据前 1000 条，测试集取最后 100 条，验证集取倒数第 200 至倒数第 100 条。\n    3. utils.py 负责实验配置管理、随机种子设置、device 管理、日志记录、checkpoint 保存与加载、JSON 结果保存、模型参数量统计、LpLoss、autoregressive rollout、validation/test 通用评测以及 rotation equivariance error 等通用工具函数。\n    4. train.py 实现完整训练流程：构建 DataLoader 和 GFNO 模型，使用 Adam 优化器，默认 lr=1e-3、weight_decay=1e-4、batch_size=20、epochs=100，配合学习率调度；每训练阶段采用 teacher forcing，每个 epoch 结束后在 validation set 上进行 20 步 autoregressive rollout；保存最佳模型 best.pt 和最后一个 checkpoint last.pt，训练结束后重新加载最佳模型，在 test set 上完成 20 步 autoregressive rollout 评测，同时计算旋转等变性误差，并保存 history.json、summary.json 和 train.log 等实验结果，实验结果默认保存至 ./results/ns_gfno2d_p4_seed1/\n  \n    ",
+  "evaluation_script": "evaluate_gfno_ns_train.py",
+  "stardard_dir_name": "gfno_ns_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "61a8a60f5e33585b",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "model.py",
+          "dataset.py",
+          "utils.py",
+          "train.py"
+        ],
+        "parse_python": true,
+        "require_nonempty_source": true
+      }
+    },
+    {
+      "id": "7a2e2633eeb8ff6f",
+      "type": "data_normalization",
+      "method": "check_data_normalization",
+      "phase": "data_analysis",
+      "depends": [
+        "61a8a60f5e33585b"
+      ],
+      "params": {
+        "dataset_file": "dataset.py",
+        "mat_readers": [
+          "loadmat",
+          "h5py"
+        ],
+        "vorticity_key": "u",
+        "dtype": "float32",
+        "trajectory_layout": [
+          "N",
+          "H",
+          "W",
+          "T",
+          1
+        ],
+        "splits": {
+          "train": "[:1000]",
+          "validation": "[-200:-100]",
+          "test": "[-100:]"
+        },
+        "history_steps": 10,
+        "rollout_steps": 20,
+        "normalization_default": "none",
+        "normalization_fit_split": "train",
+        "normalization_statistics": [
+          "mean",
+          "std"
+        ],
+        "dataloader_shuffle": {
+          "train": true,
+          "validation": false,
+          "test": false
+        }
+      }
+    },
+    {
+      "id": "619d196bd7a0988b",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "61a8a60f5e33585b",
+        "7a2e2633eeb8ff6f"
+      ],
+      "params": {
+        "files": [
+          "train.py",
+          "utils.py"
+        ],
+        "model_class": "GFNO",
+        "defaults": {
+          "epochs": 100,
+          "batch_size": 20,
+          "learning_rate": 0.001,
+          "weight_decay": 0.0001
+        },
+        "optimizer": "Adam",
+        "scheduler_required": true,
+        "rollout_steps": 20,
+        "loss": "relative_l2",
+        "autoregressive": true,
+        "differentiable_feedback": true,
+        "optimization_calls": [
+          "zero_grad",
+          "backward",
+          "optimizer.step"
+        ],
+        "validation_rollout_each_epoch": true,
+        "checkpoint_files": [
+          "best.pt",
+          "last.pt"
+        ],
+        "reload_best_before_test": true,
+        "rotation_metric": "rotation_equivariance",
+        "result_files": [
+          "history.json",
+          "summary.json",
+          "train.log"
+        ]
+      }
+    },
+    {
+      "id": "63da3d3eb4dd955e",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "61a8a60f5e33585b"
+      ],
+      "params": {
+        "optional_files": [
+          "evaluate.py",
+          "eval.py",
+          "test.py"
+        ],
+        "absence_passes": true,
+        "when_present": {
+          "required_tokens": [
+            "load",
+            "checkpoint",
+            ".eval(",
+            "no_grad|inference_mode",
+            "rollout",
+            "rotation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dc4d7f9c5d7b808b",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "61a8a60f5e33585b"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "GFNO",
+        "constructor_aliases": {
+          "num_channels": 1,
+          "in_channels": 1,
+          "out_channels": 1,
+          "modes": 12,
+          "modes1": 12,
+          "modes2": 12,
+          "width": 10,
+          "initial_step": 10,
+          "history_steps": 10,
+          "t_in": 10,
+          "T_in": 10,
+          "n_blocks": 4
+        },
+        "constructor_defaults": {
+          "num_channels": 1,
+          "modes": 12,
+          "width": 10,
+          "initial_step": 10
+        },
+        "block_count": 4,
+        "required_source_groups": {
+          "p4_group_convolution": [
+            "p4",
+            "rot90",
+            "roll|group"
+          ],
+          "group_spectral": [
+            "spectral",
+            "rfft2",
+            "irfft2"
+          ],
+          "residual_1x1": [
+            "skip|residual",
+            "kernel_size=1"
+          ],
+          "lifting_projection": [
+            "lifting|self.p",
+            "projection|self.q"
+          ]
+        },
+        "required_module_name_substrings": [
+          "spectral",
+          "mlp"
+        ],
+        "activation": "gelu",
+        "requires_trainable_parameters": true
+      }
+    },
+    {
+      "id": "6370f73b9eb2b38b",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "dc4d7f9c5d7b808b"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "GFNO",
+        "constructor_aliases": {
+          "num_channels": 1,
+          "in_channels": 1,
+          "out_channels": 1,
+          "modes": 12,
+          "modes1": 12,
+          "modes2": 12,
+          "width": 10,
+          "initial_step": 10,
+          "history_steps": 10,
+          "t_in": 10,
+          "T_in": 10,
+          "n_blocks": 4
+        },
+        "seed": 20260820,
+        "device": "cpu",
+        "eval_mode": true,
+        "input_shape": [
+          1,
+          24,
+          24,
+          10,
+          1
+        ],
+        "output_shape": [
+          1,
+          24,
+          24,
+          1,
+          1
+        ],
+        "require_tensor": true,
+        "require_finite": true,
+        "rotation": {
+          "turns": 1,
+          "dims": [
+            1,
+            2
+          ],
+          "relative_l2_max": 0.0002
+        }
+      }
+    },
+    {
+      "id": "6bc571854143d75c",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "dc4d7f9c5d7b808b",
+        "6370f73b9eb2b38b"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "model.py",
+          "model_class": "GFNO"
+        },
+        "reference": {
+          "standard_dir": "gfno_ns_sec_develp|gfno_ns_train",
+          "model_file": "model.py",
+          "model_class": "GFNO"
+        },
+        "constructor_aliases": {
+          "num_channels": 1,
+          "in_channels": 1,
+          "out_channels": 1,
+          "modes": 12,
+          "modes1": 12,
+          "modes2": 12,
+          "width": 10,
+          "initial_step": 10,
+          "history_steps": 10,
+          "t_in": 10,
+          "T_in": 10,
+          "n_blocks": 4
+        },
+        "seed": 20260820,
+        "input_shape": [
+          1,
+          24,
+          24,
+          10,
+          1
+        ],
+        "output_shape": [
+          1,
+          24,
+          24,
+          1,
+          1
+        ],
+        "require_state_schema_keys_and_shapes": true,
+        "strict_state_dict": true,
+        "atol": 1e-05,
+        "rtol": 1e-05
+      }
+    },
+    {
+      "id": "d2f935d7fcccebe8",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "dc4d7f9c5d7b808b",
+        "6370f73b9eb2b38b"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "GFNO",
+        "constructor_aliases": {
+          "num_channels": 1,
+          "in_channels": 1,
+          "out_channels": 1,
+          "modes": 12,
+          "modes1": 12,
+          "modes2": 12,
+          "width": 10,
+          "initial_step": 10,
+          "history_steps": 10,
+          "t_in": 10,
+          "T_in": 10,
+          "n_blocks": 4
+        },
+        "seed": 20260820,
+        "device": "cpu",
+        "input_shape": [
+          1,
+          24,
+          24,
+          10,
+          1
+        ],
+        "rollout_test_steps": 3,
+        "target_shape": [
+          1,
+          24,
+          24,
+          3,
+          1
+        ],
+        "optimizer": {
+          "name": "Adam",
+          "lr": 0.001,
+          "weight_decay": 0.0001
+        },
+        "history_update": "torch.cat((current[...,1:,:],next_field),dim=-2)",
+        "loss": "mean_relative_l2",
+        "minimum_finite_gradient_fraction": 0.9,
+        "minimum_parameter_update_fraction": 0.9
+      }
+    },
+    {
+      "id": "e40168f77b493f37",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "619d196bd7a0988b"
+      ],
+      "params": {
+        "source_files": [
+          "train.py",
+          "utils.py"
+        ],
+        "declared_files": [
+          "best.pt",
+          "last.pt",
+          "history.json",
+          "summary.json",
+          "train.log"
+        ],
+        "default_results_dir": "results/ns_gfno2d_p4_seed1",
+        "alternate_results_glob": "results/*",
+        "materialization": {
+          "optional_when_no_results_dir": true,
+          "required_files": [
+            "best.pt",
+            "last.pt",
+            "history.json",
+            "summary.json",
+            "train.log"
+          ],
+          "json_files": [
+            "history.json",
+            "summary.json"
+          ],
+          "require_nonempty": true
+        }
+      }
+    }
+  ]
+}

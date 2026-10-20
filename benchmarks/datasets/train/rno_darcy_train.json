@@ -1,0 +1,428 @@
+{
+  "id": "rno_darcy_train",
+  "eval_type": "train",
+  "domain": "cfd",
+  "task": "基于 RNO 模型开展 Darcy 数据集的训练任务。",
+  "prompt": "基于 RNO 模型开展 Darcy 数据集的训练任务。数据位于 /public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy。使用 piececonst_r421_N1024_smooth1.mat 前 1000 个样本训练、piececonst_r421_N1024_smooth2.mat 前 200 个样本测试，读取 coeff 和 sol，将 421×421 场按步长 5 下采样至 85×85。输入、输出采用仅由训练集计算的全局标量归一化，不设置验证集，禁止使用测试集选择 checkpoint。\nmodel.py 实现核心类 RadonNeuralOperator2D，输入位置 [B,7225,2] 和渗透率场 [B,7225,1]，输出压力解 [B,7225,1]。默认使用 128 隐藏通道、8 个 attention heads、8 层 Transformer、32 个 Radon 角度和 4 个 Radon residual blocks；角度权重采用论文所示的 Conv 1→16 → GELU → Conv 16→1 → Sigmoid。论文未披露的卷积核设为 3，并允许通过配置修改。slice_num=64、参考网格 8×8 和统一位置编码参考官方实现。\ntrain.py 采用 batch size 4、500 epochs、AdamW（lr=1e-3、weight_decay=1e-5）、OneCycleLR 和最大梯度范数 0.1。训练目标为物理空间 Relative L2 加 0.1 × gradient Relative L2，预测结果施加零 Dirichlet 边界。保存 last.pt 和周期性 checkpoint，不以测试集指标选择最佳模型。\nevaluate.py 使用 strict=True 加载 checkpoint，在测试集上报告论文主指标 Relative L2，并独立报告 gradient Relative L2、MSE 和 MAE，将数据配置、checkpoint 轮次、参数量和指标保存为 evaluation.json。\n生成代码包含 config.yaml、dataset.py、model.py、utils.py、train.py 和 evaluate.py；实验产物统一保存至产物目录的 `results/rno_darcy_paper_rep_seed0` 路径下，至少包含 checkpoint、history.json、summary.json、evaluation.json 和 train.log。",
+  "evaluation_script": "evaluate_rno_darcy_train.py",
+  "stardard_dir_name": "rno_darcy_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "d7c84a9e520a0001",
+      "check_type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "config.yaml",
+          "dataset.py",
+          "model.py",
+          "utils.py",
+          "train.py",
+          "evaluate.py"
+        ]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0002",
+      "check_type": "data_darcy_pipeline_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": ["d7c84a9e520a0001"],
+      "params": {
+        "contract": "darcy_data",
+        "config_name": "config.yaml",
+        "files": ["dataset.py", "utils.py"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0003",
+      "check_type": "data_availability",
+      "method": "check_data_availability",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "data_root": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy",
+        "data_files": ["piececonst_r421_N1024_smooth1.mat", "piececonst_r421_N1024_smooth2.mat"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0004",
+      "check_type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": ["d7c84a9e520a0003"],
+      "params": {
+        "data_root": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy",
+        "data_files": ["piececonst_r421_N1024_smooth1.mat", "piececonst_r421_N1024_smooth2.mat"],
+        "required_fields": ["coeff", "sol"],
+        "native_resolution": 421,
+        "train_samples": 1000,
+        "test_samples": 200
+      }
+    },
+    {
+      "id": "d7c84a9e520a0005",
+      "check_type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": ["d7c84a9e520a0001"],
+      "params": {
+        "files": ["model.py"],
+        "required_interfaces": ["RadonNeuralOperator2D", "RadonNeuralOperator2D.forward"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0006",
+      "check_type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": ["d7c84a9e520a0005"],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 9,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        },
+        "rules": [
+          {"id": "root_model_type", "type": "module_type", "severity": "error", "params": {"expected": "RadonNeuralOperator2D"}},
+          {"id": "lifting_type", "type": "module_type", "severity": "error", "params": {"target_path": "lifting", "expected": "Sequential"}},
+          {"id": "local_feature_type", "type": "module_type", "severity": "error", "params": {"target_path": "local_feature", "expected": "Sequential"}},
+          {"id": "radon_layers_type", "type": "module_type", "severity": "error", "params": {"target_path": "radon_layers", "expected": "ModuleList"}},
+          {"id": "radon_layers_count", "type": "children_count", "severity": "error", "params": {"target_path": "radon_layers", "count": 1}},
+          {"id": "fusion_type", "type": "module_type", "severity": "error", "params": {"target_path": "fusion", "expected": "Sequential"}},
+          {"id": "transformer_layers_type", "type": "module_type", "severity": "error", "params": {"target_path": "transformer_layers", "expected": "ModuleList"}},
+          {"id": "transformer_layers_count", "type": "children_count", "severity": "error", "params": {"target_path": "transformer_layers", "count": 2}},
+          {"id": "output_projection_type", "type": "module_type", "severity": "error", "params": {"target_path": "output_projection", "expected": "Linear"}}
+        ]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0007",
+      "check_type": "model_rno_structure_contract_method_correctness",
+      "method": "check_rno_structure_contract",
+      "phase": "model_structure",
+      "depends": ["d7c84a9e520a0006"],
+      "params": {
+        "model_file": "model.py", "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 9,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        }
+      }
+    },
+    {
+      "id": "d7c84a9e520a0008",
+      "check_type": "model_rno_internal_behavior_method_correctness",
+      "method": "check_rno_internal_behavior",
+      "phase": "model_structure",
+      "depends": ["d7c84a9e520a0007"],
+      "params": {
+        "model_file": "model.py", "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 13,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        }
+      }
+    },
+    {
+      "id": "d7c84a9e520a0009",
+      "check_type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": ["d7c84a9e520a0005"],
+      "params": {
+        "model_file": "model.py", "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 11,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        },
+        "spatial_sizes": [[11, 11]],
+        "check_backward": true
+      }
+    },
+    {
+      "id": "d7c84a9e520a000a",
+      "check_type": "model_rno_invalid_input_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": ["d7c84a9e520a0005"],
+      "params": {
+        "contract": "model_invalid_input",
+        "model_file": "model.py", "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 9,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        }
+      }
+    },
+    {
+      "id": "d7c84a9e520a000b",
+      "check_type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a0001"],
+      "params": {"files": ["train.py"], "required_interfaces": ["main"]}
+    },
+    {
+      "id": "d7c84a9e520a000c",
+      "check_type": "train_dataset_loading",
+      "method": "check_train_dataset_loading",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a000b"],
+      "params": {
+        "files": ["train.py", "dataset.py"],
+        "dataset_names": ["build_datasets", "DarcyFlowDataset"],
+        "dataloader_names": ["DataLoader"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a000d",
+      "check_type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a000b"],
+      "params": {
+        "files": ["train.py"],
+        "check_config": {
+          "entry_names": ["main", "train", "train_one_epoch"],
+          "model_names": ["RadonNeuralOperator2D"],
+          "model_attributes": ["train"],
+          "dataloader_names": ["DataLoader", "build_datasets"],
+          "optimizer_names": ["AdamW"],
+          "loss_names": ["RelativeL2Loss", "relative_l2", "gradient_loss"]
+        }
+      }
+    },
+    {
+      "id": "d7c84a9e520a000e",
+      "check_type": "train_rno_training_protocol_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a0001"],
+      "params": {
+        "contract": "rno_training",
+        "config_name": "config.yaml",
+        "files": ["config.yaml", "dataset.py", "utils.py", "train.py"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a000f",
+      "check_type": "train_loss",
+      "method": "check_train_loss",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a000e"],
+      "params": {
+        "files": ["utils.py", "train.py"],
+        "relative_loss_names": ["relative_l2", "RelativeL2Loss"],
+        "gradient_loss_names": ["gradient_loss", "spatial_gradient_loss", "gradient_relative_l2"],
+        "gradient_weight": 0.1
+      }
+    },
+    {
+      "id": "d7c84a9e520a0010",
+      "check_type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a000d"],
+      "params": {"files": ["train.py"]}
+    },
+    {
+      "id": "d7c84a9e520a0011",
+      "check_type": "infer_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a0001"],
+      "params": {
+        "files": ["evaluate.py", "utils.py"],
+        "required_interfaces": ["main", "relative_l2"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0012",
+      "check_type": "infer_rno_evaluation_protocol_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": ["d7c84a9e520a0011"],
+      "params": {
+        "contract": "rno_evaluation",
+        "config_name": "config.yaml",
+        "files": ["config.yaml", "dataset.py", "utils.py", "evaluate.py"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0013",
+      "check_type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": ["d7c84a9e520a0009", "d7c84a9e520a000f", "d7c84a9e520a0010"],
+      "params": {
+        "model_file": "model.py", "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 9,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        },
+        "learning_rate": 0.001,
+        "seed": 20260825
+      }
+    },
+    {
+      "id": "d7c84a9e520a0014",
+      "check_type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": ["d7c84a9e520a0011"],
+      "params": {
+        "files": [
+          "evaluate.py",
+          "utils.py"
+        ],
+        "check_config": {
+          "entry_function_names": ["main", "evaluate", "evaluate_test_split"],
+          "model_load_functions": ["load_model", "load_checkpoint", "build_model"],
+          "model_load_attributes": ["load_state_dict"],
+          "input_parameter_names": ["data", "loader", "test_loader", "batch", "positions", "coefficient"],
+          "input_load_functions": ["DataLoader", "build_datasets", "load_split"],
+          "input_load_attributes": ["load", "loadmat"],
+          "infer_call_functions": ["evaluate", "evaluate_test_split"],
+          "infer_call_attributes": ["forward"],
+          "output_attributes": ["save", "savez", "dump", "write", "write_text"]
+        }
+      }
+    },
+    {
+      "id": "d7c84a9e520a0015",
+      "check_type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": ["d7c84a9e520a0009", "d7c84a9e520a0014"],
+      "params": {
+        "run_file": "evaluate.py",
+        "model_file": "model.py",
+        "model_class": "RadonNeuralOperator2D",
+        "config_name": "config.yaml",
+        "model_args": {
+          "resolution": 9,
+          "hidden_channels": 8,
+          "heads": 2,
+          "layers": 2,
+          "angles": 4,
+          "radon_blocks": 1,
+          "angle_kernel_size": 3,
+          "slice_num": 4,
+          "reference_grid_size": 4,
+          "unified_position_encoding": true,
+          "mlp_ratio": 1,
+          "dropout": 0.0
+        },
+        "infer_functions": ["evaluate_test_split", "evaluate"],
+        "output_path": "outputs/rno_darcy_train_smoke.json"
+      }
+    },
+    {
+      "id": "d7c84a9e520a0016",
+      "check_type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": ["d7c84a9e520a0015"],
+      "params": {"output_path": "outputs/rno_darcy_train_smoke.json", "check_nan_inf": true}
+    },
+    {
+      "id": "d7c84a9e520a0017",
+      "check_type": "infer_output_validity",
+      "method": "check_infer_output_validity",
+      "phase": "infer_execution",
+      "depends": ["d7c84a9e520a0016"],
+      "params": {
+        "output_path": "outputs/rno_darcy_train_smoke.json",
+        "metric_names": ["relative_l2", "relative_l2_error", "test_relative_l2"]
+      }
+    },
+    {
+      "id": "d7c84a9e520a0018",
+      "check_type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": ["d7c84a9e520a0011"],
+      "params": {
+        "files": ["utils.py", "train.py", "evaluate.py"],
+        "functions": ["relative_l2", "RelativeL2Loss"],
+        "baseline": 0.0051,
+        "mode": "min"
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+paths:
+  checkpoint: /public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt
+  input: /public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb
+  output: nequix_predictions.json
+inference:
+  device: cpu
+  structure_index: 0
+  seed: 456

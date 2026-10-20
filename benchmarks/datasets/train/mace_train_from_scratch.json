@@ -1,0 +1,571 @@
+{
+  "id": "mace_train_from_scratch",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "实现紧凑 MACE 模型结构、PyTorch 数据模块和从零训练启动器。",
+  "prompt": "实现紧凑 MACE 模型结构、PyTorch 数据模块和从零训练启动器。\n1. 模型接口：MACEModel 必须直接基于 PyTorch 实现，不得从 onescience 导入现成 MACE 模型；__init__ 的公开参数及默认值为 atomic_numbers=(1, 8)、hidden_dim=16、num_radial=8、num_interactions=2、r_max=4.0。结构包含原子嵌入、Gaussian 径向基与余弦截断、距离感知消息传递和原子能量读出。forward(atomic_numbers, positions, atom_mask=None) 接收 (B,N)、(B,N,3) 和可选布尔 mask，严格返回 (B,) 结构总能量；masked padding 原子不得影响能量，且能量必须对 positions 可求有限梯度。\n2. 数据接口：MACEDataset 必须继承 torch.utils.data.Dataset，构造签名包含 __init__(data_path, data_format, energy_key, forces_key, atomic_numbers=None, statistics_file=None, r_max=4.0)。支持 extxyz 文件以及包含一个或多个 .h5 分片的 HDF5 目录；HDF5 配置可以位于任意嵌套 group 中，标签可以直接位于配置 group 或其 properties 子 group 中。两种格式都必须严格按调用方给定的 energy_key、forces_key 读取标签，不得回退到其他固定名称；任何配置缺少请求的能量或力标签都必须失败，禁止跳过配置或用零值代替。__getitem__ 严格返回 (atomic_numbers, positions, energy, forces)，其中原子序数为 int64、位置和力为 float32、能量为标量。提供 mace_collate_fn 或 MACEDataset.collate_fn，将变长样本零填充，并严格按顺序返回五元组 (atomic_numbers, positions, energy, forces, atom_mask)，shape 依次为 (B,N_max)、(B,N_max,3)、(B,)、(B,N_max,3)、(B,N_max)，atom_mask 必须是 bool；不得返回字典。\n3. 启动器接口：MACETrainLauncher.__init__ 必须支持 train_file、output_dir、valid_file=None、test_file=None、epochs=10、device='cpu'、seed=123、energy_key='REF_energy'、forces_key='REF_forces'、e0s='average'、data_format='extxyz'、statistics_file=None、atomic_numbers=None、r_max=4.0、batch_size=2、valid_batch_size=2、num_channels=16、max_l=1、num_interactions=2；允许增加可选参数，但不得删除或改名这些参数。必须定义公开的 run(self) 方法作为训练入口。run() 使用 MACEDataset、DataLoader、torch.optim.Adam 和 backward 执行真实的能量与力联合损失训练。数据路径只由调用方提供，禁止下载、猜测或硬编码数据集。\n4. 精确产物契约：run() 必须直接在 output_dir 下生成 train.log、metrics.jsonl 和 mace_train.model。train.log 必须包含区分大小写的文本 Training complete。metrics.jsonl 每个非空行都是包含 step、epoch、loss 的扁平 JSON 对象：第一条必须是 epoch=-1 的有限初始 loss，之后至少一条必须是 epoch>=0 的有限训练 loss，不得将 loss 嵌套在 train/valid 字段中。mace_train.model 必须是 torch.load 可读取的字典，至少包含 model_state_dict 字典和 model_config 字典。生成文件必须保存为 mace_train_from_scratch/mace_train.py，并定义 MACEModel、MACEDataset 和 MACETrainLauncher；不得直接导入 OneScience 的现成 MACE 模型，不得伪造训练日志、loss 或模型产物。",
+  "evaluation_script": "evaluate_mace_train_from_scratch.py",
+  "stardard_dir_name": "mace_train_from_scratch",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "cpus_per_task": 8,
+    "time_limit": "00:10:00",
+    "required_env_vars": []
+  },
+  "checks": [
+    {
+      "id": "7878dfb51f2e55f5",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "env_var": "MACE_TRAIN_SUBMISSION_DIR",
+        "pythonpath_env": "PYTHONPATH",
+        "submission_dir_hints": [
+          "mace_train_from_scratch",
+          "mace_train_from_scratch_V1"
+        ],
+        "submission_dir_prefix": "mace_train_from_scratch_V",
+        "target_filename": "mace_train.py",
+        "select_last_candidate": true,
+        "fallback_relative_path": "submissions/mace_train_from_scratch/mace_train.py",
+        "module_name": "mace_train_submission",
+        "require_file": true,
+        "import_with": "importlib.util.spec_from_file_location"
+      }
+    },
+    {
+      "id": "ca875be6333e66d6",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "7878dfb51f2e55f5"
+      ],
+      "params": {
+        "launcher_class": "MACETrainLauncher",
+        "launcher_required_init_parameters": [
+          "train_file",
+          "valid_file",
+          "test_file",
+          "output_dir",
+          "epochs",
+          "device",
+          "seed",
+          "energy_key",
+          "forces_key",
+          "e0s",
+          "data_format",
+          "statistics_file",
+          "atomic_numbers",
+          "r_max",
+          "batch_size",
+          "valid_batch_size",
+          "num_channels",
+          "max_l",
+          "num_interactions"
+        ],
+        "launcher_required_method": "run",
+        "launcher_defaults": {
+          "num_channels": 16,
+          "num_interactions": 2,
+          "r_max": 4.0
+        },
+        "model_class": "MACEModel",
+        "model_required_base": "torch.nn.Module",
+        "model_defaults": {
+          "atomic_numbers": [
+            1,
+            8
+          ],
+          "hidden_dim": 16,
+          "num_radial": 8,
+          "num_interactions": 2,
+          "r_max": 4.0
+        },
+        "ast_required_names_or_attributes": [
+          "Adam",
+          "backward",
+          "DataLoader"
+        ],
+        "forbidden_importfrom_module_contains_all": [
+          "onescience",
+          "mace"
+        ]
+      }
+    },
+    {
+      "id": "c8b69fca77daa2a6",
+      "type": "dataset_pipeline",
+      "method": "check_datasset_pipeline",
+      "phase": "data_analysis",
+      "depends": [
+        "7878dfb51f2e55f5"
+      ],
+      "params": {
+        "candidate_dataset_class": "MACEDataset",
+        "reference_module_relative_path": "standard/mace_train_from_scratch/mace_train.py",
+        "required_init_parameters": [
+          "data_path",
+          "data_format",
+          "energy_key",
+          "forces_key",
+          "atomic_numbers",
+          "statistics_file",
+          "r_max"
+        ],
+        "collate_resolution_order": [
+          "mace_collate_fn",
+          "MACEDataset.collate_fn"
+        ],
+        "reference_numbers": [
+          8,
+          1,
+          1
+        ],
+        "reference_positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.96,
+            0.0,
+            0.0
+          ],
+          [
+            -0.24,
+            0.93,
+            0.0
+          ]
+        ],
+        "sample_generator": {
+          "normal_mean": 0.0,
+          "normal_std": 0.035,
+          "shape": [
+            3,
+            3
+          ],
+          "energy": "0.5 * sum(displacement ** 2)",
+          "forces": "-displacement"
+        },
+        "extxyz_fixture": {
+          "split_files": [
+            "train.extxyz",
+            "valid.extxyz",
+            "test.extxyz"
+          ],
+          "sample_counts": [
+            8,
+            2,
+            2
+          ],
+          "seeds": [
+            7,
+            8,
+            9
+          ],
+          "energy_key": "fixture_energy",
+          "forces_key": "fixture_forces",
+          "cell": [
+            8.0,
+            8.0,
+            8.0
+          ],
+          "pbc": false
+        },
+        "hdf5_fixture": {
+          "directories": [
+            "hdf5_train",
+            "hdf5_valid"
+          ],
+          "sample_counts": [
+            8,
+            2
+          ],
+          "seeds": [
+            10,
+            11
+          ],
+          "file": "fixture.h5",
+          "batch_group": "config_batch_0",
+          "config_group_prefix": "config_",
+          "atomic_numbers_dataset": "atomic_numbers",
+          "positions_dataset": "positions",
+          "properties_group": "properties",
+          "energy_key": "fixture_energy",
+          "forces_key": "fixture_forces",
+          "atomic_numbers": [
+            1,
+            8
+          ]
+        },
+        "sample_comparison": {
+          "atomic_numbers": "same shape and dtype, exact equality",
+          "positions": "same shape and dtype, allclose(rtol=1e-5, atol=1e-6)",
+          "forces": "same shape and dtype, allclose(rtol=1e-5, atol=1e-6)",
+          "energy": "abs(candidate-reference) < 1e-6"
+        },
+        "batch_comparison": {
+          "shapes": [
+            "atomic_numbers",
+            "positions",
+            "energy",
+            "forces",
+            "atom_mask"
+          ],
+          "mask_dtype": [
+            "bool",
+            "uint8"
+          ],
+          "mask": "equal after bool cast",
+          "padding_fields": [
+            "atomic_numbers",
+            "positions",
+            "forces"
+          ],
+          "padding_value": 0,
+          "numbers_valid_values": "allclose default tolerances",
+          "positions_and_forces_valid_values": "allclose(rtol=1e-5, atol=1e-6)",
+          "energy": "allclose(rtol=1e-5, atol=1e-6)"
+        },
+        "missing_label_cases": [
+          {
+            "data_format": "extxyz",
+            "energy_key": "fixture_energy",
+            "missing": "fixture_forces",
+            "must_raise_on": "construction_or_item_zero"
+          },
+          {
+            "data_format": "hdf5",
+            "energy_key": "fixture_energy",
+            "missing": "fixture_energy",
+            "present": "fixture_forces",
+            "group": "nested/config_0/properties",
+            "must_raise_on": "construction_or_item_zero"
+          }
+        ]
+      }
+    },
+    {
+      "id": "67724cb9aab30943",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "7878dfb51f2e55f5",
+        "ca875be6333e66d6"
+      ],
+      "params": {
+        "model_class": "MACEModel",
+        "manual_seed": 17,
+        "eval_mode": true,
+        "require_trainable_parameter_count_gt": 0,
+        "single_structure": {
+          "atomic_numbers": [
+            [
+              8,
+              1,
+              1
+            ]
+          ],
+          "positions": [
+            [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.96,
+                0.0,
+                0.0
+              ],
+              [
+                -0.24,
+                0.93,
+                0.0
+              ]
+            ]
+          ],
+          "positions_dtype": "torch.float32",
+          "positions_requires_grad": true,
+          "atom_mask": [
+            [
+              true,
+              true,
+              true
+            ]
+          ]
+        },
+        "energy_assertions": {
+          "shape": [
+            1
+          ],
+          "floating_point": true,
+          "finite": true,
+          "requires_grad": true
+        },
+        "force_assertions": {
+          "definition": "-torch.autograd.grad(energy.sum(), positions, create_graph=False)[0]",
+          "shape": [
+            1,
+            3,
+            3
+          ],
+          "finite": true,
+          "abs_max_gt": 1e-08
+        },
+        "translation": {
+          "vector": [
+            2.0,
+            -1.0,
+            0.5
+          ],
+          "rtol": 1e-05,
+          "atol": 1e-05
+        },
+        "distance_change": {
+          "atom_index": 1,
+          "coordinate_index": 0,
+          "delta": 0.2,
+          "must_not_allclose_rtol": 1e-05,
+          "must_not_allclose_atol": 1e-06
+        },
+        "permutation": {
+          "indices": [
+            1,
+            2,
+            0
+          ],
+          "rtol": 1e-05,
+          "atol": 1e-05
+        },
+        "padding": {
+          "atomic_numbers": [
+            [
+              8,
+              1,
+              1,
+              0,
+              0
+            ]
+          ],
+          "positions": [
+            [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.96,
+                0.0,
+                0.0
+              ],
+              [
+                -0.24,
+                0.93,
+                0.0
+              ],
+              [
+                9.0,
+                8.0,
+                7.0
+              ],
+              [
+                -4.0,
+                3.0,
+                2.0
+              ]
+            ]
+          ],
+          "atom_mask": [
+            [
+              true,
+              true,
+              true,
+              false,
+              false
+            ]
+          ],
+          "energy_rtol": 1e-05,
+          "energy_atol": 1e-05,
+          "masked_gradient": "all zeros for indices 3 onward"
+        },
+        "batch": {
+          "atomic_numbers": [
+            [
+              8,
+              1,
+              1
+            ],
+            [
+              8,
+              1,
+              1
+            ]
+          ],
+          "positions": [
+            [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.96,
+                0.0,
+                0.0
+              ],
+              [
+                -0.24,
+                0.93,
+                0.0
+              ]
+            ],
+            [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.98,
+                0.0,
+                0.0
+              ],
+              [
+                -0.22,
+                0.95,
+                0.0
+              ]
+            ]
+          ],
+          "energy_shape": [
+            2
+          ],
+          "compare_to_separate_rtol": 1e-05,
+          "compare_to_separate_atol": 1e-05,
+          "force_shape": [
+            2,
+            3,
+            3
+          ],
+          "force_finite": true
+        }
+      }
+    },
+    {
+      "id": "0a252f591467fb36",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "7878dfb51f2e55f5",
+        "ca875be6333e66d6",
+        "c8b69fca77daa2a6",
+        "67724cb9aab30943"
+      ],
+      "params": {
+        "launcher_class": "MACETrainLauncher",
+        "launcher_method": "run",
+        "temporary_directory_prefix": "onescience-mace-fixture-",
+        "run_sequence": [
+          "extxyz",
+          "hdf5",
+          "extxyz",
+          "hdf5"
+        ],
+        "separate_check_runs": [
+          "extxyz",
+          "hdf5"
+        ],
+        "combined_check_runs": [
+          "extxyz",
+          "hdf5"
+        ],
+        "extxyz_launcher_args": {
+          "epochs": 1,
+          "device_env": "MACE_EVAL_DEVICE",
+          "device_default": "cpu",
+          "seed": 7,
+          "energy_key": "fixture_energy",
+          "forces_key": "fixture_forces",
+          "e0s": "average",
+          "r_max": 4.0,
+          "batch_size": 2,
+          "valid_batch_size": 2,
+          "num_channels": 16,
+          "max_l": 1,
+          "num_interactions": 2,
+          "fixture_split_files": [
+            "train.extxyz",
+            "valid.extxyz",
+            "test.extxyz"
+          ],
+          "output_subdirectory": "output"
+        },
+        "hdf5_launcher_args": {
+          "epochs": 1,
+          "device_env": "MACE_EVAL_DEVICE",
+          "device_default": "cpu",
+          "data_format": "hdf5",
+          "energy_key": "energy",
+          "forces_key": "forces",
+          "atomic_numbers": [
+            1,
+            8
+          ],
+          "e0s": {
+            "1": 0.0,
+            "8": 0.0
+          },
+          "r_max": 4.0,
+          "batch_size": 2,
+          "valid_batch_size": 2,
+          "num_channels": 16,
+          "max_l": 1,
+          "num_interactions": 2,
+          "fixture_directories": [
+            "hdf5_train",
+            "hdf5_valid"
+          ],
+          "output_subdirectory": "output"
+        },
+        "required_artifacts": [
+          "train.log",
+          "metrics.jsonl",
+          "mace_train.model"
+        ],
+        "train_log_required_text": "Training complete",
+        "metrics_jsonl": {
+          "ignore_empty_lines": true,
+          "minimum_records": 2,
+          "first_epoch": -1,
+          "require_any_epoch_gte": 0,
+          "loss_must_be_finite": true
+        },
+        "checkpoint": {
+          "filename": "mace_train.model",
+          "map_location": "cpu",
+          "weights_only": false,
+          "required_type": "dict",
+          "required_dict_keys": {
+            "model_state_dict": "dict",
+            "model_config": "dict"
+          }
+        },
+        "result_summary": {
+          "variant": "synthetic_extxyz or synthetic_hdf5",
+          "loss": "float(last metrics loss)",
+          "points": "len(metrics)"
+        }
+      }
+    }
+  ]
+}

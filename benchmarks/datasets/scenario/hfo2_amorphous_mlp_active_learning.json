@@ -1,0 +1,74 @@
+{
+    "id": "hfo2_amorphous_mlp_active_learning",
+    "eval_type": "scenario",
+    "domain": "matchem",
+    "task": "HfO2非晶液相机器学习势主动学习",
+    "prompt": "围绕“HfO2非晶液相机器学习势主动学习”，以关联论文可追溯事实明确材料对象、工况、目标指标和验证约束，并在关键输入缺失时标记BLOCKED，采用预训练通用势迁移与域内主动学习路线：先运行stage01_pretrain_audit.py:run，由PretrainedPotentialAuditor和TaskSpecificationValidator审计预训练势与对象、工况、参考级别及许可证兼容性，执行“生成可核查的BLOCKED报告”，其中model_audit_policy=“来源不可核验、无适用模型或参考级别不一致且无法校正时判定BLOCKED”，task_status=“当前输入缺少预训练势与关键任务输入，状态为BLOCKED”，产出pretrain_potential_audit.json；再运行stage02_domain_seed_sampling.py:run，由DomainSeedSampler和FailureRegionDetector按sampling_protocol=“仅使用经确认的采样窗口和初态”、MD_CONFIG=“使用声明值；若扩展或修改须重新确认”生成域内种子构型并识别失效区域，产出domain_seed_structures.extxyz；随后运行stage03_domain_reference_labeling.py:run，由ReferenceLabeler和DatasetSplitAuditor执行“生成域内参考标签”，确保reference_level=“必须与确认的参考理论和标签定义一致”、split_policy=“训练、验证、测试严格隔离；独立集不参与调参；外推构型单独标记”，产出reference_labels.extxyz和labeling_quality_report.json；接着运行stage04_transfer_learning.py:run，由TransferLearner和UncertaintyCalibrator执行“执行域内迁移学习”，产出finetuned_potential_model.pt、finetuning_config.json和finetuning_training_log.json；再运行stage05_transfer_active_learning.py:run，由ActiveLearningOrchestrator和QuerySelector执行“执行迁移式主动学习迭代”，按query_rule=“优先查询高不确定度或高域偏移构型，规则须经域内校准”选样，并按round_stop_rule=“每轮记录误差变化、覆盖率、阈值稳定性和停止依据”记录各轮，产出active_learning_rounds.json和active_learning_uncertainty_report.json；最后运行stage06_comparison_validation.py:run，由IndependentComparator、ProductionValidator和AcceptanceReporter执行“执行独立模型比较和液相验证”，按comparison_models=“预训练原模型、域内微调模型和从头训练基线三方比较”、validation_conditions=“仅使用经确认的液相工况、独立测试规则和目标阈值；缺失则BLOCKED”、acceptance_decision=“每项交付标注PASS、PARTIAL、REJECT或BLOCKED并列出证据”完成评定，输出independent_comparison_report.json、production_md_trajectories.extxyz、validation_report.json和final_conclusion_report.json，最终仅在约束满足、交付齐全、核心科学问题均有证据支持或明确标记无法回答、结果可追溯且无未关闭关键PARTIAL、REJECT或BLOCKED时签收。",
+    "evaluation_script": "",
+    "stardard_dir_name": "",
+    "evaluation_execution_mode": "scnet",
+    "evaluation_backend": "local",
+    "evaluation_env": {
+        "conda_env": "onescience311",
+        "partition": "hx1hdnormal01",
+        "nodes": 1,
+        "dcu": 1,
+        "cpus_per_task": 8,
+        "memory": "16G"
+    },
+    "checks": [
+        {
+            "id": "7e538241891943ac",
+            "type": "agent_execution",
+            "method": "None",
+            "phase": "agent_execution",
+            "depdends": [],
+            "params": {
+                "rubric": [
+                    {
+                        "check_name": "预训练势筛选与任务规范",
+                        "task_understanding": "本阶段的任务是审计预训练势与目标对象、工况、参考级别和许可证的兼容性；在关键信息缺失时输出BLOCKED，以 参考量子化学或第一性原理数据 所指定的 extxyz/npz/数据库导出、预训练势模型文件与审计元数据 所指定的 to_be_confirmed、HfO2组成、缺陷、胞大小、边界条件和液相工况 所指定的 to_be_confirmed以及域内参考标签、指标阈值、独立测试和泄漏规则 所指定的 to_be_confirmed 为输入，预期形成 预训练势版本、来源、许可证和适用域审计（保存为 pretrain_potential_audit.json）、任务规范与确认记录（保存为 task_specification.json）以及BLOCKED阻塞清单（保存为 blocked_requirements.json）；若出现“任一关键模型、体系、参考标签、阈值、独立测试或泄漏规则无法核验，或存在未关闭的BLOCKED项”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是核验模型文件、版本、训练数据来源、参考理论、许可证和适用域、核对Hf/O化学环境与液相工况覆盖证据及潜在数据泄漏以及建立缺失信息阻塞清单并冻结后续阶段，并选用 可审计的预训练通用原子势以及声明的参考电子结构模型 作为模型，并配备 模型与数据来源审计、版本控制及独立性质分析工具以及预训练势推理/微调框架 作为工具，并将 model_audit_policy 的取值或规则确定为 来源不可核验、无适用模型或参考级别不一致且无法校正时判定BLOCKED以及将 task_status 的取值或规则确定为 当前输入缺少预训练势与关键任务输入，状态为BLOCKED，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 stage01_pretrain_audit.py:run 为入口，由 PretrainedPotentialAuditor（负责 审计模型身份、来源、许可证、参考理论和适用域）以及TaskSpecificationValidator（负责 核验体系、工况、标签、阈值、独立测试及泄漏规则） 承担实现，完成 生成可核查的BLOCKED报告以及记录模型与数据来源审计、版本和确认状态，并将阶段产物写入 pretrain_potential_audit.json、task_specification.json以及blocked_requirements.json。",
+                        "result_verification": "本阶段的正确结果应包含 预训练势版本、来源、许可证和适用域审计（保存为 pretrain_potential_audit.json）、任务规范与确认记录（保存为 task_specification.json）以及BLOCKED阻塞清单（保存为 blocked_requirements.json），并且 产物结构与配置达到 模型名称保留预训练根源，不用变体名称掩盖来源以及文件名均为安全相对路径且不含阶段序号前缀、执行状态达到 入口和依赖版本、命令及审计日志可复现、科学结果达到 参考理论与目标标签定义一致以及适用域覆盖Hf/O化学环境及经确认液相工况以及数据使用不得 核查预训练训练数据与域内参考集的来源重叠和数据血缘以及训练、验证、测试及独立集的隔离规则已记录，同时 文件证据包括 pretrain_potential_audit.json、task_specification.json以及blocked_requirements.json、日志证据包括 stage-audit.log、指标证据包括 审计条目覆盖率以及缺失关键输入数量以及哈希证据包括 记录各审计文件内容哈希；只有在 所有关键输入均经确认并有可追溯证据，且无未关闭的关键BLOCKED 时才可认定为通过（PASS），若出现“任一关键模型、体系、参考标签、阈值、独立测试或泄漏规则无法核验，或存在未关闭的BLOCKED项”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "域内种子采样",
+                        "task_understanding": "本阶段的任务是用预训练势和批准的采样协议生成域内种子构型并识别明显失效区域，以 前序产物 pretrain_potential_audit.json（对应 预训练势审计）、前序产物 task_specification.json（对应 经确认的任务规范）以及MD_CONFIG 所指定的 {\"steps\":10000,\"temperature_K\":300} 为输入，预期形成 域内种子构型（保存为 domain_seed_structures.extxyz）、种子采样日志（保存为 seed_sampling_log.json）以及明显失效区域清单（保存为 seed_failure_regions.json）；若出现“体系或采样协议未确认、轨迹不可追溯，或出现未标记的明显失效区域”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是按批准体系和采样协议运行预训练势推理或短程MD、记录初态、轨迹、采样窗口及软件命令以及识别并单独标记明显失效和适用域外区域，并选用 可审计的预训练通用原子势 作为模型，并配备 预训练势推理/微调框架以及参考电子结构程序、MD引擎和主动学习编排器 作为工具，并将 sampling_protocol 的取值或规则确定为 仅使用经确认的采样窗口和初态以及将 MD_CONFIG 的取值或规则确定为 使用声明值；若扩展或修改须重新确认，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 stage02_domain_seed_sampling.py:run 为入口，由 DomainSeedSampler（负责 生成域内种子构型并保存采样元数据）以及FailureRegionDetector（负责 检测不稳定、非物理和适用域外构型） 承担实现，完成 生成域内种子构型以及记录采样过程并标记失效区域，并将阶段产物写入 domain_seed_structures.extxyz、seed_sampling_log.json以及seed_failure_regions.json。",
+                        "result_verification": "本阶段的正确结果应包含 域内种子构型（保存为 domain_seed_structures.extxyz）、种子采样日志（保存为 seed_sampling_log.json）以及明显失效区域清单（保存为 seed_failure_regions.json），并且 产物结构与配置达到 构型文件使用安全相对文件名以及输出不含阶段序号前缀、执行状态达到 软件版本、命令、随机种子和资源记录齐全以及轨迹文件可读且哈希已记录、科学结果达到 长时间或短程稳定性异常被标记以及适用域外构型不进入未标记的训练候选以及数据使用不得 种子构型与后续独立测试集的身份和来源隔离已记录，同时 文件证据包括 domain_seed_structures.extxyz、seed_sampling_log.json以及seed_failure_regions.json、日志证据包括 stage-seed_sampling.log、指标证据包括 采样构型数量、失效区域数量以及采样窗口覆盖率以及哈希证据包括 记录轨迹、构型和日志内容哈希；只有在 所有种子均来自确认范围，初态、轨迹和采样窗口完整可追溯，失效区域已标记 时才可认定为通过（PASS），若出现“体系或采样协议未确认、轨迹不可追溯，或出现未标记的明显失效区域”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "域内参考标注",
+                        "task_understanding": "本阶段的任务是对代表性种子构型计算目标参考标签并建立微调、验证和独立测试划分，以 前序产物 domain_seed_structures.extxyz（对应 域内种子构型）、前序产物 task_specification.json（对应 参考标签定义与电子结构设置）以及参考数据来源 所指定的 extxyz/npz/数据库导出 为输入，预期形成 域内参考标签（保存为 reference_labels.extxyz）、训练验证测试划分清单（保存为 dataset_split_manifest.json）以及参考标注质量报告（保存为 labeling_quality_report.json）；若出现“参考设置不可追溯、标签质量检查失败、划分泄漏或独立集参与调参”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是对代表性种子构型运行经确认的参考电子结构计算、保存全部计算设置、原始输出和质量检查以及建立训练、验证、测试及独立集的可复现划分，并选用 声明的参考电子结构模型 作为模型，并配备 参考电子结构程序以及模型与数据来源审计、版本控制及独立性质分析工具 作为工具，并将 reference_level 的取值或规则确定为 必须与确认的参考理论和标签定义一致以及将 split_policy 的取值或规则确定为 训练、验证、测试严格隔离；独立集不参与调参；外推构型单独标记，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 stage03_domain_reference_labeling.py:run 为入口，由 ReferenceLabeler（负责 调用参考电子结构程序并收集能量、力和应力标签）以及DatasetSplitAuditor（负责 审计数据血缘、划分隔离和外推标记） 承担实现，完成 生成域内参考标签以及执行质量检查和严格数据划分，并将阶段产物写入 reference_labels.extxyz、dataset_split_manifest.json以及labeling_quality_report.json。",
+                        "result_verification": "本阶段的正确结果应包含 域内参考标签（保存为 reference_labels.extxyz）、训练验证测试划分清单（保存为 dataset_split_manifest.json）以及参考标注质量报告（保存为 labeling_quality_report.json），并且 产物结构与配置达到 数据清单引用安全相对文件名以及文件命名不含阶段序号前缀、执行状态达到 参考程序版本、命令、输入和输出哈希完整以及异常和未收敛计算被记录、科学结果达到 能量、力、应力定义和单位明确以及外推构型单独标记且不被误作常规样本以及数据使用不得 构型去重和来源重叠检查以及训练、验证、测试、独立集的身份隔离审计，同时 文件证据包括 reference_labels.extxyz、dataset_split_manifest.json以及labeling_quality_report.json、日志证据包括 stage-reference_labeling.log、指标证据包括 标签构型数量、训练/验证/测试/独立集数量以及标签质量通过率以及哈希证据包括 记录原始标签输出和划分清单内容哈希；只有在 标签设置、原始输出和质量检查完整，划分可复现且无已知泄漏 时才可认定为通过（PASS），若出现“参考设置不可追溯、标签质量检查失败、划分泄漏或独立集参与调参”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "迁移学习",
+                        "task_understanding": "本阶段的任务是进行域内微调并配置集成、嵌入距离或其他不确定度估计，以 前序产物 reference_labels.extxyz（对应 域内参考标签）、前序产物 dataset_split_manifest.json（对应 训练验证测试划分清单）、前序产物 pretrain_potential_audit.json（对应 预训练势审计与任务规范）以及POTENTIAL_CONFIG 所指定的 to_be_confirmed 为输入，预期形成 域内微调势模型（保存为 finetuned_potential_model.pt）、冻结层与可训练层配置（保存为 finetuning_config.json）、微调训练日志（保存为 finetuning_training_log.json）以及域内不确定度校准（保存为 uncertainty_calibration.json）；若出现“冻结/解冻配置、微调预算或校准方案未确认，训练不可复现，或模型根源不可追溯”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是按确认配置冻结或解冻网络层并执行域内微调、记录随机种子、超参数、软件版本和完整命令以及配置集成分歧、嵌入距离或密度估计并在域内校准，并选用 可审计的预训练通用原子势以及域内微调模型和基于集成、嵌入距离或密度估计的不确定度模型 作为模型，并配备 预训练势推理/微调框架、模型与数据来源审计、版本控制及独立性质分析工具以及用于微调、集成和推理的GPU节点 作为工具，并将 freeze_unfreeze_policy 的取值或规则确定为 必须由执行者提出并经确认，未确认则BLOCKED、将 finetuning_budget 的取值或规则确定为 必须由执行者提出并经确认，未确认则BLOCKED以及将 uncertainty_calibration 的取值或规则确定为 必须由执行者提出并经确认，未确认则BLOCKED，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 stage04_transfer_learning.py:run 为入口，由 TransferLearner（负责 加载预训练势并执行可审计的冻结/解冻微调）以及UncertaintyCalibrator（负责 校准集成、嵌入距离或密度估计与实际误差关系） 承担实现，完成 执行域内迁移学习以及输出微调模型和域内校准不确定度，并将阶段产物写入 finetuned_potential_model.pt、finetuning_config.json、finetuning_training_log.json以及uncertainty_calibration.json。",
+                        "result_verification": "本阶段的正确结果应包含 域内微调势模型（保存为 finetuned_potential_model.pt）、冻结层与可训练层配置（保存为 finetuning_config.json）、微调训练日志（保存为 finetuning_training_log.json）以及域内不确定度校准（保存为 uncertainty_calibration.json），并且 产物结构与配置达到 entrypoint固定为module-or-file:callable格式以及模型名称保留预训练根源、执行状态达到 随机种子、软件版本、完整命令和GPU资源已记录以及模型文件可加载并生成版本指纹、科学结果达到 独立验证误差用于评估不确定度排序和覆盖率以及不确定度不被当作量子或实验验证以及数据使用不得 微调仅使用训练划分，验证/测试/独立集不参与参数更新以及预训练数据与域内标签的数据血缘重叠已审计，同时 文件证据包括 finetuned_potential_model.pt、finetuning_config.json、finetuning_training_log.json以及uncertainty_calibration.json、日志证据包括 stage-transfer_learning.log、指标证据包括 训练/验证误差、微调步数以及不确定度校准误差以及哈希证据包括 记录模型、配置、日志和校准结果内容哈希；只有在 模型、配置、日志和校准结果可复现且域内校准通过 时才可认定为通过（PASS），若出现“冻结/解冻配置、微调预算或校准方案未确认，训练不可复现，或模型根源不可追溯”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "迁移式主动学习",
+                        "task_understanding": "本阶段的任务是在液相探索中查询高不确定度或高域偏移构型，迭代标注和微调，以 前序产物 finetuned_potential_model.pt（对应 域内微调势模型）、前序产物 uncertainty_calibration.json（对应 域内不确定度校准）、前序产物 reference_labels.extxyz（对应 域内参考标签）以及MD_CONFIG 所指定的 {\"steps\":10000,\"temperature_K\":300} 为输入，预期形成 主动学习逐轮记录（保存为 active_learning_rounds.json）、主动学习新增标签（保存为 active_learning_labels.extxyz）、主动学习数据血缘清单（保存为 active_learning_data_manifest.json）以及主动学习不确定度报告（保存为 active_learning_uncertainty_report.json）；若出现“不确定度未在域内校准、选择规则或数据血缘缺失，或主动学习引入测试泄漏”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是在经确认液相探索中运行微调势并收集候选、依据高不确定度或高域偏移规则查询代表性构型以及逐轮参考标注、微调、误差评估并记录停止依据，并选用 域内微调模型和基于集成、嵌入距离或密度估计的不确定度模型以及声明的参考电子结构模型 作为模型，并配备 主动学习编排器、参考电子结构程序、MD引擎和主动学习编排器以及用于液相探索、对照基线和独立验证的MD资源 作为工具，并将 query_rule 的取值或规则确定为 优先查询高不确定度或高域偏移构型，规则须经域内校准以及将 round_stop_rule 的取值或规则确定为 每轮记录误差变化、覆盖率、阈值稳定性和停止依据，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 stage05_transfer_active_learning.py:run 为入口，由 ActiveLearningOrchestrator（负责 编排候选生成、查询、标注、微调和版本记录）以及QuerySelector（负责 依据校准不确定度或域偏移选择待标注构型） 承担实现，完成 执行迁移式主动学习迭代以及生成新增参考标签并更新微调模型，并将阶段产物写入 active_learning_rounds.json、active_learning_labels.extxyz、active_learning_data_manifest.json以及active_learning_uncertainty_report.json。",
+                        "result_verification": "本阶段的正确结果应包含 主动学习逐轮记录（保存为 active_learning_rounds.json）、主动学习新增标签（保存为 active_learning_labels.extxyz）、主动学习数据血缘清单（保存为 active_learning_data_manifest.json）以及主动学习不确定度报告（保存为 active_learning_uncertainty_report.json），并且 产物结构与配置达到 主动学习输出文件名唯一且为安全相对路径以及不使用阶段序号前缀、执行状态达到 每轮模型、数据和环境版本可复现以及MD轨迹和查询过程日志完整、科学结果达到 不确定度/域偏移对实际误差的排序和覆盖率被验证以及液相长时间稳定性异常被标记以及数据使用不得 新增标签与独立测试集严格隔离以及每轮候选、选择和数据版本可追溯，同时 文件证据包括 active_learning_rounds.json、active_learning_labels.extxyz、active_learning_data_manifest.json以及active_learning_uncertainty_report.json、日志证据包括 stage-transfer_active_learning.log、指标证据包括 主动学习轮数、候选数量、查询数量、每轮误差变化以及停止判据以及哈希证据包括 记录每轮候选、选择、标签和数据版本内容哈希；只有在 每轮迭代的候选、选择、标签、误差变化和停止依据齐全，且无未关闭泄漏 时才可认定为通过（PASS），若出现“不确定度未在域内校准、选择规则或数据血缘缺失，或主动学习引入测试泄漏”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "对照与验证",
+                        "task_understanding": "本阶段的任务是与预训练原模型及从头训练对照，执行独立生产和验证，以 前序产物 pretrain_potential_audit.json（对应 预训练势审计）、前序产物 finetuned_potential_model.pt（对应 域内微调势模型）、前序产物 reference_labels.extxyz（对应 域内参考标签与独立划分）、前序产物 active_learning_rounds.json（对应 主动学习记录）以及MD_CONFIG 所指定的 {\"steps\":10000,\"temperature_K\":300} 为输入，预期形成 预训练、微调和从头训练独立比较（保存为 independent_comparison_report.json）、独立生产液相轨迹（保存为 production_md_trajectories.extxyz）、独立验证报告（保存为 validation_report.json）以及最终结论报告（保存为 final_conclusion_report.json）；若出现“独立集泄漏、目标阈值或验证规则缺失、三方比较不完整，或稳定性、重复性、适用域告警未处理”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是在未用于微调或调参的域内参考集比较预训练、微调和从头训练模型、检验不确定度或域偏移对实际误差的排序、覆盖率和阈值稳定性以及执行确认工况下的独立液相轨迹、性质验证、长时间稳定性和初态重复性检查，并选用 可审计的预训练通用原子势、域内微调模型和基于集成、嵌入距离或密度估计的不确定度模型以及声明的参考电子结构模型 作为模型，并配备 模型与数据来源审计、版本控制及独立性质分析工具、参考电子结构程序、MD引擎和主动学习编排器以及用于液相探索、对照基线和独立验证的MD资源 作为工具，并将 comparison_models 的取值或规则确定为 预训练原模型、域内微调模型和从头训练基线三方比较、将 validation_conditions 的取值或规则确定为 仅使用经确认的液相工况、独立测试规则和目标阈值；缺失则BLOCKED以及将 acceptance_decision 的取值或规则确定为 每项交付标注PASS、PARTIAL、REJECT或BLOCKED并列出证据，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 stage06_comparison_validation.py:run 为入口，由 IndependentComparator（负责 在独立集上比较三类模型的能量、力和应力误差）、ProductionValidator（负责 执行独立液相生产、稳定性、重复性和适用域告警验证）以及AcceptanceReporter（负责 汇总证据并输出分项及场景签收判定） 承担实现，完成 执行独立模型比较和液相验证以及输出可追溯的最终结论或BLOCKED报告，并将阶段产物写入 independent_comparison_report.json、production_md_trajectories.extxyz、validation_report.json以及final_conclusion_report.json。",
+                        "result_verification": "本阶段的正确结果应包含 预训练、微调和从头训练独立比较（保存为 independent_comparison_report.json）、独立生产液相轨迹（保存为 production_md_trajectories.extxyz）、独立验证报告（保存为 validation_report.json）以及最终结论报告（保存为 final_conclusion_report.json），并且 产物结构与配置达到 报告明确区分已证实、探索性、限制和无法回答以及所有输出文件名唯一、安全、相对且无阶段序号前缀、执行状态达到 生产轨迹、分析脚本、软件版本和命令可复现以及所有文件、日志、数据和图表证据可链接、科学结果达到 能量、力、应力误差和不确定度排序被独立验证、长时间稳定性、不同初态重复性和适用域外告警已检查以及势函数置信度未被当作量子或实验验证以及数据使用不得 独立参考集未用于微调或调参以及比较数据血缘、模型版本和基线训练集均可审计，同时 文件证据包括 independent_comparison_report.json、production_md_trajectories.extxyz、validation_report.json以及final_conclusion_report.json、日志证据包括 stage-comparison_validation.log、指标证据包括 能量/力/应力误差、不确定度排序指标、覆盖率、阈值稳定性、轨迹稳定性以及重复初态一致性以及哈希证据包括 记录比较表、轨迹、验证和结论报告内容哈希；只有在 必需交付物齐全，核心结果有定义、单位、样本或窗口、验证证据和不确定度，且无关键PARTIAL、REJECT或BLOCKED 时才可认定为通过（PASS），若出现“独立集泄漏、目标阈值或验证规则缺失、三方比较不完整，或稳定性、重复性、适用域告警未处理”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    }
+                ]
+            }
+        }
+    ]
+}

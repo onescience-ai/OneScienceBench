@@ -1,0 +1,33 @@
+checkpoint: /public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt
+jd_path: /public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt
+train_data: /public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db
+model:
+  name: esen_backbone_dens
+  head: esen_mlp_efs_head_dens
+  max_num_elements: 100
+  sphere_channels: 128
+  lmax: 3
+  mmax: 2
+  cutoff: 6.0
+  edge_channels: 128
+  distance_function: gaussian
+  num_distance_basis: 10
+  num_layers: 10
+  hidden_channels: 128
+  norm_type: rms_norm_sh
+  act_type: gate
+  mlp_type: spectral
+  use_envelope: true
+  direct_forces: false
+  regress_forces: true
+  regress_stress: true
+training:
+  optimizer: Adam
+  lr: 1.0e-6
+  eps: 1.0e-8
+  huber_delta: 0.01
+  force_loss_ratio: 1.0
+  gradient_clip_norm: 1.0
+  max_steps: 1
+  structure_index: 0
+  seed: 20260820

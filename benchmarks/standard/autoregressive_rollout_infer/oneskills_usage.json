@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "skill": "onescience-primitives",
+  "runtime_provider": "onescience.models.fourcastnet.FourCastNet",
+  "resources": [
+    {
+      "path": "skills/onescience-primitives/assets/climate/models/fourcastnet/spec.md",
+      "sha256": "b8a433bf49d174d91dd637b7ba2c5554a188879fb69b679c5e0f1d24ea7d5718"
+    },
+    {
+      "path": "skills/onescience-primitives/assets/climate/models/fourcastnet/usage.md",
+      "sha256": "8df042b9ec2f2749e98835001c5fa53d8856aa0c0d4577d2c36e079687d921c0"
+    },
+    {
+      "path": "skills/onescience-primitives/assets/climate/components/fourcastnetembedding/spec.md",
+      "sha256": "5342934ac225dddeda1c077f4e8ae114040e25c80e92636416bb613af03d0db9"
+    },
+    {
+      "path": "skills/onescience-primitives/assets/climate/components/fourcastnetfuser/spec.md",
+      "sha256": "649d75a8c8f712b98cf17dd6fff058999f32d636d3765a173d1377da9d45cdc0"
+    },
+    {
+      "path": "skills/onescience-primitives/assets/climate/components/fourcastnetafno/spec.md",
+      "sha256": "2f0c940c718897127df40505ed9d88bfec1c3b19c0a0fa4ea1e8291d6867e0b6"
+    },
+    {
+      "path": "skills/onescience-primitives/assets/climate/components/fourcastnetfc/spec.md",
+      "sha256": "c69cb1a061681aa77fae7d1c4ae64894ed2a6f48f7d4c60eda2980a2136d2aec"
+    }
+  ]
+}

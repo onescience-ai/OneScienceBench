@@ -1,0 +1,389 @@
+{
+  "id": "scgpt_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 scGPT 风格单细胞 embedding 推理",
+  "prompt": "实现独立于 onescience Python 包的轻量 scGPT 风格单细胞 embedding 模型。ScGPTEncoder 默认 num_genes=128、hidden_size=32、num_heads=4、num_layers=2、embedding_size=16；依次包含 gene_encoder、对非负表达值执行 log1p/MLP 的 value_encoder、两层带 padding mask 的 blocks、final_norm 和 cell_projection。输入 [B,G] 的 gene_ids、values、padding_mask，经 masked mean pooling 后输出 L2 归一化 [B,16] embedding。请在当前工作目录生成且仅生成 scgpt_inference.py；模型类命名为 ScGPTEncoder；脚本必须支持 --input-npz、--checkpoint、--output、--batch-size、--device，输入 NPZ 含 gene_ids 与 values，严格加载 checkpoint，并将 embeddings 保存到 --output 指定的 NPZ 文件。",
+  "evaluation_script": "evaluate_scgpt_inference.py",
+  "stardard_dir_name": "scgpt_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_scgpt_infer"
+  },
+  "checks": [
+    {
+      "id": "0b9b88feeb27ef8c",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "scgpt_inference.py",
+          "benchmarks/standard/scgpt_inference/inference_config.json"
+        ],
+        "phase": "task_artifacts",
+        "external_assets": {
+          "mount_required": true,
+          "weights": "/public/share/sugonhpcapp01/onestore/onemodels/scGPT/scGPT_human",
+          "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/scGPT"
+        }
+      }
+    },
+    {
+      "id": "649abc0884d6bed8",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "0b9b88feeb27ef8c"
+      ],
+      "params": {
+        "model_file": "scgpt_inference.py",
+        "model_class": "ScGPTEncoder",
+        "model_args": {
+          "num_genes": 128,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2,
+          "embedding_size": 16
+        },
+        "checkpoint_file": "reference.pt",
+        "checkpoint_payload_key": "model_state_dict",
+        "strict": true,
+        "required_source_calls": [
+          "torch.load",
+          "load_state_dict"
+        ]
+      }
+    },
+    {
+      "id": "aa1ab370076264ce",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "649abc0884d6bed8"
+      ],
+      "params": {
+        "model_file": "scgpt_inference.py",
+        "reference_model_file": "benchmarks/standard/scgpt_inference/scgpt_inference.py",
+        "model_class": "ScGPTEncoder",
+        "model_args": {
+          "num_genes": 128,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2,
+          "embedding_size": 16
+        },
+        "require_nn_module": true,
+        "reference_component_types": {
+          "gene_encoder": "Embedding",
+          "value_encoder": "ContinuousValueEncoder",
+          "value_encoder.projection": "Sequential",
+          "blocks": "ModuleList",
+          "blocks.0.attention": "MultiheadAttention",
+          "cell_projection": "Linear"
+        },
+        "state_dict_contract": {
+          "ordered_keys_equal": true,
+          "parameter_shapes_equal": true
+        },
+        "named_children_contract": {
+          "ordered_names_and_types_equal": true
+        },
+        "required_constructor_parameters": [
+          "num_genes",
+          "hidden_size",
+          "num_heads",
+          "num_layers",
+          "embedding_size"
+        ]
+      }
+    },
+    {
+      "id": "9c2e4e753c39ae46",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "aa1ab370076264ce"
+      ],
+      "params": {
+        "model_file": "scgpt_inference.py",
+        "model_class": "ScGPTEncoder",
+        "model_args": {
+          "num_genes": 128,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2,
+          "embedding_size": 16
+        },
+        "forward_args": {
+          "gene_ids": {
+            "values": [
+              [
+                1,
+                2,
+                3,
+                4,
+                0
+              ],
+              [
+                4,
+                3,
+                2,
+                1,
+                5
+              ]
+            ],
+            "dtype": "int64"
+          },
+          "values": {
+            "values": [
+              [
+                1.0,
+                0.5,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.2,
+                1.2,
+                0.0,
+                3.0,
+                0.7
+              ]
+            ],
+            "dtype": "float32"
+          },
+          "padding_mask": "gene_ids.eq(0)"
+        },
+        "out_shape": [
+          2,
+          16
+        ],
+        "inference_mode": true,
+        "require_tensor": true,
+        "require_finite": true,
+        "require_repeat_equal": true,
+        "l2_norm": {
+          "target": 1.0,
+          "atol": 1e-05
+        },
+        "require_distinct_batch_rows": true
+      }
+    },
+    {
+      "id": "7b5982eb1200ee54",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "9c2e4e753c39ae46"
+      ],
+      "params": {
+        "files": [
+          "scgpt_inference.py"
+        ],
+        "phase": "infer_script",
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_functions": [
+            "load_checkpoint"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_load_attributes": [
+            "load"
+          ],
+          "infer_call_attributes": [
+            "forward"
+          ],
+          "output_attributes": [
+            "savez_compressed"
+          ]
+        },
+        "disallowed_import_root": "onescience",
+        "cli_flags": [
+          "--input-npz",
+          "--checkpoint",
+          "--output",
+          "--batch-size",
+          "--device"
+        ],
+        "input_fixture": {
+          "path": "cells.npz",
+          "keys": [
+            "gene_ids",
+            "values"
+          ],
+          "gene_ids": {
+            "values": [
+              [
+                1,
+                2,
+                3,
+                4,
+                0
+              ],
+              [
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            ],
+            "dtype": "int64"
+          },
+          "values": {
+            "values": [
+              [
+                1.0,
+                2.0,
+                0.5,
+                0.0,
+                0.0
+              ],
+              [
+                0.3,
+                0.2,
+                1.1,
+                2.2,
+                0.7
+              ]
+            ],
+            "dtype": "float32"
+          }
+        },
+        "checkpoint_file": "reference.pt",
+        "output_path": "embeddings.npz",
+        "batch_size": 1,
+        "device": "cpu",
+        "timeout_seconds": 180,
+        "partial_checkpoint": {
+          "path": "partial.pt",
+          "payload_key": "model_state_dict",
+          "omit_first_state_item": true,
+          "output_path": "invalid.npz",
+          "require_nonzero_returncode": true
+        }
+      }
+    },
+    {
+      "id": "7441160c2a7b88a8",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "649abc0884d6bed8",
+        "7b5982eb1200ee54"
+      ],
+      "params": {
+        "candidate_model": "context.model",
+        "reference_model": "context.reference_model",
+        "direct_forward_args": {
+          "gene_ids": {
+            "values": [
+              [
+                1,
+                2,
+                3,
+                4,
+                0
+              ],
+              [
+                4,
+                3,
+                2,
+                1,
+                5
+              ]
+            ],
+            "dtype": "int64"
+          },
+          "values": {
+            "values": [
+              [
+                1.0,
+                0.5,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.2,
+                1.2,
+                0.0,
+                3.0,
+                0.7
+              ]
+            ],
+            "dtype": "float32"
+          },
+          "padding_mask": "gene_ids.eq(0)"
+        },
+        "artifact_path": "embeddings.npz",
+        "artifact_key": "embeddings",
+        "artifact_reference_args": {
+          "gene_ids": {
+            "values": [
+              [
+                1,
+                2,
+                3,
+                4,
+                0
+              ],
+              [
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            ],
+            "dtype": "int64"
+          },
+          "values": {
+            "values": [
+              [
+                1.0,
+                2.0,
+                0.5,
+                0.0,
+                0.0
+              ],
+              [
+                0.3,
+                0.2,
+                1.1,
+                2.2,
+                0.7
+              ]
+            ],
+            "dtype": "float32"
+          },
+          "padding_mask": "gene_ids.eq(0)"
+        },
+        "compare_atol": 1e-06,
+        "compare_rtol": 1e-06,
+        "require_artifact_shape_equal": true
+      }
+    }
+  ]
+}

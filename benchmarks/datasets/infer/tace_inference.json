@@ -1,0 +1,218 @@
+{
+  "id": "tace_inference",
+  "eval_type": "direct-coder-codegen",
+  "domain": "matchem",
+  "task": "独立实现 TACE 等变原子间势模型并恢复 TACE-OAM-7M checkpoint 完成能量、力和应力推理",
+  "prompt": "独立实现 TACE（Tensor Atomic/Edge Cluster Expansion）等变原子间势模型并完成固定 checkpoint 推理。计分模型必须由当前目录中的本地 PyTorch/e3nn 类实现，不得主动导入 `onescience`、外部 `nequip`、`mace` 或 `mattersim`，不得读取评测器、标准答案或旧候选。TACE 是面向原子间势的 E(3) 等变模型，可预测能量、原子力和应力；力由能量对位置求梯度得到，应力由能量对晶格位移求梯度除以体积得到。\n\n固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt`，SHA256 为 `87f6b23c40a5b29c3b0d2520bca104d73c653866e82541919db94979c7f6511c`。该 .pt 是 TACE 导出包，顶层包含 `cfg`、`state_dict`、`statistics`、`target_property`、`embedding_property`；必须使用 `torch.load(..., weights_only=True)` 读取，从 `state_dict` 精确恢复 456 项、7105809 个元素的完整模型状态，再由本地模型类按 `cfg` 构造（`TensorModel(e3nnTACE(**cfg))`），并对完整状态执行 `load_state_dict(..., strict=True)`，不得只挑选部分权重或绕过严格加载。模型为 89 元素、cutoff=6.0、5 层、128 通道，target_property 为 [energy, forces, stress]，readout 模块顺序为 representation、energy_readouts、atomic_energy_layer、scale_shift、zbl。\n\n固定输入为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/TACE/BaTiO3.xyz`，SHA256 为 `688c5486100968538f6b146ab3fc69736f97124ac797e5635650e8105a6a0de9`，共 59 个周期结构。单结构接口 `evaluate_structure(model, atoms, device)` 必须返回 `energy [1]`、`forces [N,3]`、`stress [1,3,3]` 的有限 tensor，其中 N 为该结构原子数。CLI 必须支持 `--config`、`--checkpoint`、`--input`、`--output`、`--device`。\n\n请在指定目录生成 `tace_inference.py`、`run_inference.py`、`tace_inference.yaml` 和独立包 `portable_tace/`。`tace_inference.py` 必须公开 `load_checkpoint_payload`、`raw_model_state`、`build_model`、`load_model`、`evaluate_structure`；`run_inference.py` 必须公开 `load_config`、`load_structures`、`evaluate`、`save_predictions`、`main`。",
+  "evaluation_script": "evaluate_tace_inference.py",
+  "stardard_dir_name": "tace_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "32G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_tace_infer",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "3006c45da5457164",
+      "type": "data_availability",
+      "phase": "data_analysis",
+      "method": "check_data_availability",
+      "depends": [],
+      "params": {}
+    },
+    {
+      "id": "5b7fd8d5d968882b",
+      "type": "checkpoint_file",
+      "phase": "checkpoint_loading",
+      "method": "check_checkpoint_file",
+      "depends": [],
+      "params": {}
+    },
+    {
+      "id": "27871a0897cb9903",
+      "type": "checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "depends": [
+        "5b7fd8d5d968882b"
+      ],
+      "params": {}
+    },
+    {
+      "id": "0fb1f7006655eeb3",
+      "type": "model_file",
+      "phase": "model_structure",
+      "method": "check_files",
+      "depends": [],
+      "params": {
+        "phase": "model_structure",
+        "required_files": [
+          "tace_inference.py"
+        ]
+      }
+    },
+    {
+      "id": "604f48fe71d6dfec",
+      "type": "model_interface",
+      "phase": "model_structure",
+      "method": "check_interface",
+      "depends": [
+        "0fb1f7006655eeb3"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "files": [
+          "tace_inference.py"
+        ],
+        "required_interfaces": [
+          "load_checkpoint_payload",
+          "raw_model_state",
+          "build_model",
+          "load_model",
+          "evaluate_structure"
+        ]
+      }
+    },
+    {
+      "id": "db8e50aa10922e88",
+      "type": "model_structure",
+      "phase": "model_structure",
+      "method": "check_model_structure",
+      "depends": [
+        "604f48fe71d6dfec",
+        "27871a0897cb9903"
+      ],
+      "params": {}
+    },
+    {
+      "id": "a7512f0431eb1168",
+      "type": "model_forward",
+      "phase": "model_structure",
+      "method": "check_model_forward_executable",
+      "depends": [
+        "db8e50aa10922e88",
+        "3006c45da5457164"
+      ],
+      "params": {}
+    },
+    {
+      "id": "b3848640af2c8bca",
+      "type": "model_method_correctness",
+      "phase": "model_structure",
+      "method": "check_method_correctness",
+      "depends": [
+        "0fb1f7006655eeb3"
+      ],
+      "params": {
+        "task_rule": "local_source"
+      }
+    },
+    {
+      "id": "6643cb6feae87043",
+      "type": "infer_file",
+      "phase": "infer_script",
+      "method": "check_files",
+      "depends": [],
+      "params": {
+        "phase": "infer_script",
+        "required_files": [
+          "run_inference.py",
+          "tace_inference.yaml"
+        ]
+      }
+    },
+    {
+      "id": "8d9383ae28b619f8",
+      "type": "infer_config_content",
+      "phase": "infer_script",
+      "method": "check_config_content",
+      "depends": [
+        "6643cb6feae87043"
+      ],
+      "params": {
+        "config_name": "tace_inference.yaml",
+        "required_config_keys": [
+          "paths",
+          "inference"
+        ]
+      }
+    },
+    {
+      "id": "a08b5694471cb08c",
+      "type": "infer_interface",
+      "phase": "infer_script",
+      "method": "check_interface",
+      "depends": [
+        "6643cb6feae87043"
+      ],
+      "params": {
+        "phase": "infer_script",
+        "files": [
+          "run_inference.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "load_structures",
+          "evaluate",
+          "save_predictions",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "a8d96462a9e01c1e",
+      "type": "infer_execution",
+      "phase": "infer_execution",
+      "method": "check_infer_execution",
+      "depends": [
+        "a08b5694471cb08c",
+        "8d9383ae28b619f8",
+        "3006c45da5457164",
+        "27871a0897cb9903"
+      ],
+      "params": {}
+    },
+    {
+      "id": "a73e4455f4dd48be",
+      "type": "infer_output_schema",
+      "phase": "infer_execution",
+      "method": "check_infer_output_schema",
+      "depends": [
+        "a7512f0431eb1168",
+        "a8d96462a9e01c1e"
+      ],
+      "params": {}
+    },
+    {
+      "id": "408c980cdac25c40",
+      "type": "infer_output_validity",
+      "phase": "infer_execution",
+      "method": "check_infer_output_validity",
+      "depends": [
+        "a73e4455f4dd48be"
+      ],
+      "params": {}
+    },
+    {
+      "id": "d733dd8331ad895d",
+      "type": "infer_metric",
+      "phase": "infer_metric",
+      "method": "check_evaluate_oracle",
+      "depends": [
+        "408c980cdac25c40"
+      ],
+      "params": {}
+    }
+  ]
+}

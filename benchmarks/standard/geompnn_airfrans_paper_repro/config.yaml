@@ -1,0 +1,74 @@
+# GeoMPNN 2-D AirfRANS: paper-first reproduction configuration.
+#
+# Scientific priority:
+#   1. arXiv:2412.09399v2 statements and equations;
+#   2. AIRS/OpenPDE/GeoMPNN only where the paper is silent;
+#   3. engineering-only choices that preserve the numerical method.
+
+experiment:
+  paper: arXiv:2412.09399v2
+  train_simulations: 103
+  test_id_simulations: 200
+  test_ood_simulations: 496
+  repeats: 8
+  fields:
+    - x-velocity
+    - y-velocity
+    - pressure
+    - turbulent_viscosity
+
+data:
+  root: /public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset
+  manifest: manifest.json
+  # The paper discloses split sizes but not raw-manifest keys. These selections are
+  # the deterministic AirfRANS-manifest fallback that reproduces 103/200/496.
+  splits:
+    train:
+      intersection: [scarce_train, reynolds_train]
+    test:
+      key: full_test
+    test_ood:
+      key: reynolds_test
+
+training:
+  epochs: 600
+  batch_size: 1
+  supervised_points: 32000
+  optimizer: Adam
+  scheduler: OneCycleLR
+  max_lr: 0.001
+  loss: MSE
+  # AIRS fallback: its scheduler uses len(train_loader) // batch_size + 1.
+  onecycle_steps_per_epoch: official_plus_one
+  log_every_epochs: 50
+
+model:
+  # AIRS fallbacks: the paper does not disclose these architecture details.
+  hidden_dim: 64
+  target_dim: 1
+  decoder_hidden: [1024, 512]
+  norm_type: mlp_post
+  edge_norm: false
+
+  # Paper Sec. 4.2.
+  surface_layers: 4
+  surf2vol_layers: 4          # AIRS fallback (num_layers)
+  surface_radius: 0.05
+  surface_max_neighbors: 8
+  surf2vol_k: 8
+
+  # Paper Sec. 4.4; s and L are AIRS coord_spacing/coord_max fallbacks.
+  n_basis: 8
+  sine_spacing_s: 0.001
+  sine_domain_size_l: 8.0
+
+  # Paper Sec. 4.5.
+  inlet_canonicalization_fields: [pressure, turbulent_viscosity]
+  pressure_signed_log: true
+
+runtime:
+  device: cuda:0
+  output_dir: ./runs/geom_paper_first
+  base_seed: null
+  # Engineering-only control: kNN query chunking preserves exact neighbors and outputs.
+  knn_query_chunk_size: 4096

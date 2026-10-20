@@ -1,0 +1,526 @@
+{
+  "id": "equiformer_v3_inference",
+  "eval_type": "infer",
+  "domain": "matchem",
+  "task": "独立实现 EquiformerV3 等变图注意力原子间势模型并恢复 omat24-mptrj-salex checkpoint 完成能量、力和应力推理",
+  "prompt": "独立实现 EquiformerV3（SE(3) 等变图注意力原子间势）模型并完成固定 checkpoint 推理。计分模型必须由当前目录中的本地 PyTorch/e3nn 类实现，不得主动导入 `onescience`、外部 `nequip`、`mace`、`mattersim`、`nequix` 或 `equiformer`，不得读取评测器、标准答案或旧候选。EquiformerV3 可预测能量、原子力和应力；力由能量对位置求梯度得到，应力由能量对晶格应变求梯度除以体积得到。\n\n固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt`，SHA256 为 `429ccded98163122e7ba588d78e2441653f37f3e091e106c432807fe373c8f98`。该 .pt 顶层包含 `config`（其中 `config.model` 含 `name=equiformer_v3` 及全部模型超参）、`state_dict`、`normalizers`、`elementrefs`；必须读取 `config.model` 构造本地模型类（`EquiformerV3_OC`），从 `state_dict` 精确恢复 397 项、30441865 个元素的完整模型状态，并对完整状态执行 `load_state_dict(..., strict=True)`，不得只挑选部分权重或绕过严格加载。模型为 7 层、128 通道、lmax=4、max_neighbors=300、cutoff=6.0，regress_forces 与 regress_stress 均为 true，顶层模块顺序为 sphere_embedding、distance_expansion、envelope_func、so3_rotation、edge_degree_embedding、blocks、norm、energy_block，共 292 个参数张量。模型依赖 Wigner 旋转基文件 `/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt`。\n\n推理输出必须经 checkpoint 的 `normalizers`（energy/forces/stress 反归一化）和 `elementrefs`（energy 元素参考能）转换到物理单位（能量 eV、力 eV/Å、应力 eV/Å³）。单结构接口 `evaluate_structure(model, atoms, device)` 必须返回 `energy [1]`、`forces [N,3]`、`stress [3,3]` 的有限 tensor，其中 N 为该结构原子数。CLI 必须支持 `--config`、`--checkpoint`、`--input`、`--output`、`--device`。\n\n请在指定目录生成 `equiformer_v3_inference.py`、`run_inference.py`、`equiformer_v3_inference.yaml` 和独立包 `portable_equiformer_v3/`。`equiformer_v3_inference.py` 必须公开 `load_checkpoint_payload`、`raw_model_state`、`build_model`、`build_transforms`、`load_model`、`evaluate_structure`；`run_inference.py` 必须公开 `load_config`、`load_structures`、`evaluate`、`save_predictions`、`main`。",
+  "evaluation_script": "evaluate_equiformer_v3_inference.py",
+  "stardard_dir_name": "equiformer_v3_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "32G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_equiformer_v3_infer",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "6514708346e5c406",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "equiformer_v3_inference.py",
+          "run_inference.py",
+          "equiformer_v3_inference.yaml"
+        ],
+        "prohibited_import_roots": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim",
+          "nequix",
+          "equiformer"
+        ]
+      }
+    },
+    {
+      "id": "b8ad2f070865a76b",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "6514708346e5c406"
+      ],
+      "params": {
+        "model_file": "equiformer_v3_inference.py",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt",
+        "wigner_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "model_loader": "load_model",
+        "payload_function": "load_checkpoint_payload",
+        "state_function": "raw_model_state",
+        "state_load_function": "load_state_dict",
+        "device": "cpu",
+        "strict": true,
+        "state_entry_count": 397,
+        "state_tensor_numel": 30441865,
+        "prohibited_import_roots": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim",
+          "nequix",
+          "equiformer"
+        ]
+      }
+    },
+    {
+      "id": "d6c62f676adf16db",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [ ],
+      "params": {
+        "model_file": "equiformer_v3_inference.py",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt",
+        "wigner_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "model_class": "EquiformerV3_OC",
+        "model_loader": "load_model",
+        "device": "cpu",
+        "rules": [
+          {
+            "id": "top_level_module_order_matches",
+            "type": "module_order",
+            "expected": [
+              "sphere_embedding",
+              "distance_expansion",
+              "envelope_func",
+              "so3_rotation",
+              "edge_degree_embedding",
+              "blocks",
+              "norm",
+              "energy_block"
+            ]
+          },
+          {
+            "id": "parameter_tensor_count_matches",
+            "type": "parameter_tensor_count",
+            "expected": 292
+          },
+          {
+            "id": "max_neighbors_matches",
+            "type": "attribute",
+            "attribute": "max_neighbors",
+            "cast": "int",
+            "expected": 300
+          },
+          {
+            "id": "cutoff_matches",
+            "type": "attribute",
+            "attribute": "cutoff",
+            "cast": "float",
+            "expected": 6.0,
+            "absolute_tolerance_exclusive": 1e-09
+          },
+          {
+            "id": "num_layers_matches",
+            "type": "attribute",
+            "attribute": "num_layers",
+            "cast": "int",
+            "expected": 7
+          },
+          {
+            "id": "num_channels_matches",
+            "type": "attribute",
+            "attribute": "num_channels",
+            "cast": "int",
+            "expected": 128
+          },
+          {
+            "id": "lmax_matches",
+            "type": "attribute",
+            "attribute": "lmax",
+            "cast": "int",
+            "expected": 4
+          },
+          {
+            "id": "regress_forces_enabled",
+            "type": "attribute",
+            "attribute": "regress_forces",
+            "cast": "bool",
+            "expected": true
+          },
+          {
+            "id": "regress_stress_enabled",
+            "type": "attribute",
+            "attribute": "regress_stress",
+            "cast": "bool",
+            "expected": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "c469b18af70f3c2f",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [ ],
+      "params": {
+        "files": [
+          "equiformer_v3_inference.py"
+        ],
+        "phase": "infer_script",
+        "required_interfaces": [
+          "load_model",
+          "evaluate_structure",
+          "load_checkpoint_payload",
+          "raw_model_state"
+        ],
+        "model_loader": "load_model",
+        "wigner_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "signature_parameters": [
+          "model",
+          "atoms"
+        ],
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt",
+        "fixture": {
+          "factory": "ase.build.bulk",
+          "args": [
+            "Cu",
+            "fcc"
+          ],
+          "kwargs": {
+            "a": 3.6,
+            "cubic": true
+          },
+          "repeat": [
+            2,
+            2,
+            2
+          ],
+          "rattle": {
+            "stdev": 0.05,
+            "seed": 42
+          }
+        },
+        "evaluation": {
+          "function": "evaluate_structure",
+          "device": "cpu",
+          "arguments": [
+            "context.model",
+            "fixture",
+            "cpu"
+          ]
+        },
+        "output_contract": {
+          "required_keys": [
+            "energy",
+            "forces",
+            "stress"
+          ],
+          "shapes": {
+            "energy": [
+              1
+            ],
+            "forces": [
+              32,
+              3
+            ],
+            "stress": [
+              3,
+              3
+            ]
+          },
+          "finite": true
+        }
+      }
+    },
+    {
+      "id": "0a115cfbcd702f7f",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+      ],
+      "params": {
+        "model_file": "equiformer_v3_inference.py",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt",
+        "wigner_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "model_loader": "load_model",
+        "forward_args": {
+          "function": "evaluate_structure",
+          "device": "cpu",
+          "arguments": [
+            "context.model",
+            "fixture",
+            "cpu"
+          ]
+        },
+        "fixture": {
+          "factory": "ase.build.bulk",
+          "args": [
+            "Cu",
+            "fcc"
+          ],
+          "kwargs": {
+            "a": 3.6,
+            "cubic": true
+          },
+          "repeat": [
+            2,
+            2,
+            2
+          ],
+          "rattle": {
+            "stdev": 0.05,
+            "seed": 42
+          }
+        },
+        "out_shape": {
+          "energy": [
+            1
+          ],
+          "forces": [
+            32,
+            3
+          ],
+          "stress": [
+            3,
+            3
+          ]
+        },
+        "finite_outputs": true
+      }
+    },
+    {
+      "id": "3a810708c0755dae",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+      ],
+      "params": {
+        "wigner_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "candidate": {
+          "run_file": "equiformer_v3_inference.py",
+          "model_loader": "load_model",
+          "infer_function": "evaluate_structure",
+          "infer_args": {
+            "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt",
+            "device": "cpu"
+          },
+          "call_args": [
+            "context.model",
+            "fixture",
+            "cpu"
+          ]
+        },
+        "fixture": {
+          "factory": "ase.build.bulk",
+          "args": [
+            "Cu",
+            "fcc"
+          ],
+          "kwargs": {
+            "a": 3.6,
+            "cubic": true
+          },
+          "repeat": [
+            2,
+            2,
+            2
+          ],
+          "rattle": {
+            "stdev": 0.05,
+            "seed": 42
+          }
+        },
+        "reference": {
+          "energy": {
+            "reference": -130.34983825683594,
+            "maximum_absolute_error": 0.001
+          },
+          "forces": {
+            "reference": [
+              [
+                -0.19331124424934387,
+                0.24463099241256714,
+                -0.015152299776673317
+              ],
+              [
+                -0.3608473539352417,
+                0.006931990385055542,
+                -0.21239732205867767
+              ],
+              [
+                -0.52547687292099,
+                -0.6256679892539978,
+                0.019311122596263885
+              ],
+              [
+                -0.129471093416214,
+                0.3695073127746582,
+                0.18575698137283325
+              ],
+              [
+                -0.06734610348939896,
+                0.6522829532623291,
+                0.4598010778427124
+              ],
+              [
+                0.2779915928840637,
+                0.18603835999965668,
+                -0.17696014046669006
+              ],
+              [
+                0.46468567848205566,
+                0.7645382285118103,
+                -0.8435081839561462
+              ],
+              [
+                0.07517827302217484,
+                -0.3134366273880005,
+                0.6374616026878357
+              ],
+              [
+                0.18629825115203857,
+                -0.09145001322031021,
+                0.1859324425458908
+              ],
+              [
+                -0.24043963849544525,
+                0.04955342411994934,
+                -0.11510936915874481
+              ],
+              [
+                0.5275290012359619,
+                -0.45356252789497375,
+                -0.3905273973941803
+              ],
+              [
+                0.3389193117618561,
+                -0.6569764614105225,
+                0.5986464619636536
+              ],
+              [
+                -0.26042091846466064,
+                0.5728140473365784,
+                0.491788387298584
+              ],
+              [
+                -0.5119593143463135,
+                -0.3411226272583008,
+                -0.35584041476249695
+              ],
+              [
+                -0.47437402606010437,
+                -0.05960046872496605,
+                0.4686269462108612
+              ],
+              [
+                0.34125402569770813,
+                0.17829890549182892,
+                -0.39882567524909973
+              ],
+              [
+                -0.06333453953266144,
+                0.6621688008308411,
+                -0.2073957920074463
+              ],
+              [
+                0.2082565277814865,
+                0.5563886165618896,
+                -0.395247220993042
+              ],
+              [
+                -0.2618492841720581,
+                -0.14326494932174683,
+                0.4017098546028137
+              ],
+              [
+                -0.052719514816999435,
+                -0.06351784616708755,
+                -0.4761892557144165
+              ],
+              [
+                0.1946319192647934,
+                -0.06383271515369415,
+                0.6789370179176331
+              ],
+              [
+                0.3318769931793213,
+                -0.6259503364562988,
+                -0.4648114740848541
+              ],
+              [
+                -0.1575041115283966,
+                -0.3032767176628113,
+                -0.269529938697814
+              ],
+              [
+                0.07069186121225357,
+                -0.3110845685005188,
+                -0.39733582735061646
+              ],
+              [
+                -0.06751178950071335,
+                -0.3947191834449768,
+                1.1456012725830078
+              ],
+              [
+                -0.2175406515598297,
+                -0.35422515869140625,
+                0.031499918550252914
+              ],
+              [
+                -0.19465667009353638,
+                0.5407600402832031,
+                0.02155228704214096
+              ],
+              [
+                0.1675427109003067,
+                -0.5798037648200989,
+                0.21041548252105713
+              ],
+              [
+                0.2795271873474121,
+                0.19176456332206726,
+                -0.5069965124130249
+              ],
+              [
+                -0.03803979605436325,
+                0.5970248579978943,
+                -0.6837701797485352
+              ],
+              [
+                0.23999029397964478,
+                -0.21443289518356323,
+                0.05862056836485863
+              ],
+              [
+                0.11242956668138504,
+                0.023222092539072037,
+                0.3139355480670929
+              ]
+            ],
+            "maximum_absolute_error": 0.001
+          },
+          "stress": {
+            "reference": [
+              -0.026938308030366898,
+              -0.027599988505244255,
+              -0.027977917343378067,
+              0.0010659099789336324,
+              0.0005225171917118132,
+              0.0004566966090351343
+            ],
+            "maximum_absolute_error": 0.001
+          }
+        }
+      }
+    }
+  ]
+}

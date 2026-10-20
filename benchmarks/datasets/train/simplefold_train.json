@@ -1,0 +1,500 @@
+{
+  "id": "simplefold_train",
+  "eval_type": "train",
+  "domain": "bio",
+  "task": "实现 SimpleFold 风格 FoldingDiT 流匹配短训练",
+  "prompt": "基于 SimpleFold 模型、FoldingDiT 组件和数据管线的结构约定，实现一个不依赖 onescience Python 包的轻量 SimpleFold 风格 flow-matching 训练模块。模型文件命名为 simplefold_train.py，实现 FoldingDiT(nn.Module)，默认 hidden_size=32、num_heads=4、esm_dim=16、num_trunk_layers=2、output_channels=3；输入为 noised_pos [B,A,3]、t [B]、feats 和可选 self_cond，feats 至少包含 ref_pos [B,A,3]、atom_to_token [B,A,T]、atom_pad_mask [B,A]、esm_s [B,T,16]。模型必须实现坐标/参考坐标/时间条件 embedding、atom encoder、atom-to-token 聚合、ESM 条件 token trunk、token-to-atom 广播、atom decoder 和 velocity head，返回且仅返回 predict_velocity [B,A,3] 与 latent [B,T,32]。实现 validate_batch、make_synthetic_batch 和 SimpleFoldTrainer；训练使用线性 flow path 构造 noised_pos 与 target_velocity，按 atom mask 计算 velocity MSE，使用 AdamW、backward、梯度裁剪和 max_steps 做真实更新。命令行必须支持 --output-dir、--max-steps、--seed、--mock-data。训练产物为 metrics.jsonl、simplefold_train.pt、predictions.json、targets.json；checkpoint 至少包含 format=simplefold-flow-train-v1、model_state_dict、optimizer_state_dict、completed_steps，prediction/target 文件分别包含一维等长非空 predictions/targets 数组。所有指标必须有限，不得下载数据或导入 onescience。请在当前工作目录生成且仅生成 simplefold_train.py；脚本必须支持 --output-dir、--max-steps、--seed、--mock-data；metrics.jsonl、simplefold_train.pt、predictions.json 和 targets.json 必须保存到命令行指定的 --output-dir。",
+  "evaluation_script": "evaluate_simplefold_train.py",
+  "stardard_dir_name": "simplefold_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_simplefold_train"
+  },
+  "checks": [
+    {
+      "id": "cd32f3bd9eb91322",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "candidate_file": "simplefold_train.py",
+        "torch_manual_seed": 20260819,
+        "candidate_module_name": "simplefold_train_submission",
+        "reference_module_name": "simplefold_train_reference",
+        "reference_file": "benchmarks/standard/simplefold_train/simplefold_train.py",
+        "standard_assets": [
+          {
+            "file": "benchmarks/standard/simplefold_train/train_config.json",
+            "json_object_required": true,
+            "external_assets": {
+              "mount_required": true,
+              "required_path_keys": [
+                "weights",
+                "dataset"
+              ],
+              "path_prefix": "/public/share/"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "27a5e07073cf3b37",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "cd32f3bd9eb91322"
+      ],
+      "params": {
+        "factory": "make_synthetic_batch",
+        "factory_args": {
+          "batch_size": 2,
+          "atom_count": 8,
+          "token_count": 4,
+          "esm_dim": 16,
+          "seed": 23
+        },
+        "validator": "validate_batch",
+        "required_shapes": {
+          "positions": [
+            2,
+            8,
+            3
+          ],
+          "feats.ref_pos": [
+            2,
+            8,
+            3
+          ],
+          "feats.atom_to_token": [
+            2,
+            8,
+            4
+          ],
+          "feats.atom_pad_mask": [
+            2,
+            8
+          ],
+          "feats.esm_s": [
+            2,
+            4,
+            16
+          ]
+        },
+        "negative_cases": [
+          {
+            "mutation": "feats.atom_pad_mask=torch.ones(2,7,dtype=torch.bool)",
+            "expected_exception": "ValueError"
+          },
+          {
+            "mutation": "remove feats.ref_pos",
+            "expected_exception": "ValueError"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ef5dd96cd776222b",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "cd32f3bd9eb91322"
+      ],
+      "params": {
+        "file": "simplefold_train.py",
+        "forbidden_import_root": "onescience",
+        "required_attribute_names": [
+          "AdamW",
+          "backward"
+        ],
+        "required_any_attribute_names": [
+          "clip_grad_norm_",
+          "clip_grad_norm"
+        ],
+        "required_source_flags": [
+          "--output-dir",
+          "--max-steps",
+          "--seed",
+          "--mock-data"
+        ]
+      }
+    },
+    {
+      "id": "9f3928cde25f5f7c",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "cd32f3bd9eb91322"
+      ],
+      "params": {
+        "model_class": "FoldingDiT",
+        "constructor_args": {},
+        "required_modules": [
+          "coordinate_embedding",
+          "reference_embedding",
+          "self_condition_embedding",
+          "time_embedder",
+          "atom_encoder",
+          "esm_projection",
+          "trunk",
+          "atom_decoder",
+          "velocity_head"
+        ],
+        "required_attributes": {
+          "hidden_size": 32,
+          "esm_dim": 16
+        },
+        "linear_contracts": {
+          "velocity_head": {
+            "in_features": 32,
+            "out_features": 3
+          },
+          "esm_projection": {
+            "in_features": 16,
+            "out_features": 32
+          }
+        },
+        "child_dataflow_order": [
+          "coordinate_embedding",
+          "atom_encoder",
+          "trunk",
+          "atom_decoder",
+          "velocity_head"
+        ],
+        "module_probe_contract": {
+          "coordinate_embedding": {
+            "input_shape": [
+              2,
+              8,
+              3
+            ],
+            "output_shape": [
+              2,
+              8,
+              32
+            ]
+          },
+          "reference_embedding": {
+            "input_shape": [
+              2,
+              8,
+              3
+            ],
+            "output_shape": [
+              2,
+              8,
+              32
+            ]
+          },
+          "self_condition_embedding": {
+            "input_shape": [
+              2,
+              8,
+              3
+            ],
+            "output_shape": [
+              2,
+              8,
+              32
+            ]
+          },
+          "time_embedder": {
+            "input_shape": [
+              2,
+              1
+            ],
+            "output_shape": [
+              2,
+              32
+            ]
+          },
+          "esm_projection": {
+            "input_shape": [
+              2,
+              4,
+              16
+            ],
+            "output_shape": [
+              2,
+              4,
+              32
+            ]
+          },
+          "atom_encoder": {
+            "input_shape": [
+              2,
+              8,
+              32
+            ],
+            "output_shape": [
+              2,
+              8,
+              32
+            ]
+          },
+          "trunk": {
+            "input_shape": [
+              2,
+              4,
+              32
+            ],
+            "output_shape": [
+              2,
+              4,
+              32
+            ]
+          },
+          "atom_decoder": {
+            "input_shape": [
+              2,
+              8,
+              32
+            ],
+            "output_shape": [
+              2,
+              8,
+              32
+            ]
+          },
+          "velocity_head": {
+            "input_shape": [
+              2,
+              8,
+              32
+            ],
+            "output_shape": [
+              2,
+              8,
+              3
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "3d0c148779601570",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "27a5e07073cf3b37",
+        "9f3928cde25f5f7c"
+      ],
+      "params": {
+        "model_eval": true,
+        "noised_pos_expression": "batch.positions * 0.25",
+        "time": [
+          0.25,
+          0.75
+        ],
+        "forward_args": [
+          "noised_pos",
+          "t",
+          "batch.feats"
+        ],
+        "exact_output_keys": [
+          "predict_velocity",
+          "latent"
+        ],
+        "output_shapes": {
+          "predict_velocity": [
+            2,
+            8,
+            3
+          ],
+          "latent": [
+            2,
+            4,
+            32
+          ]
+        },
+        "require_finite_outputs": [
+          "predict_velocity",
+          "latent"
+        ],
+        "masked_atom_probe": {
+          "set_atom_pad_mask_columns_from_end": 2,
+          "expected_zero_output": "predict_velocity[:, -2:]",
+          "require_finite": "predict_velocity"
+        },
+        "time_sensitivity": {
+          "swapped_time": [
+            0.75,
+            0.25
+          ],
+          "output": "predict_velocity",
+          "not_allclose_atol": 1e-06,
+          "not_allclose_rtol": 1e-06
+        },
+        "self_conditioning": {
+          "self_cond": "torch.zeros_like(noised_pos)",
+          "output": "predict_velocity",
+          "not_allclose_atol": 1e-06,
+          "not_allclose_rtol": 1e-06
+        }
+      }
+    },
+    {
+      "id": "3f570958dd001f8c",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "3d0c148779601570"
+      ],
+      "params": {
+        "reference_file": "benchmarks/standard/simplefold_train/simplefold_train.py",
+        "model_class": "FoldingDiT",
+        "candidate_model_mode": "eval",
+        "reference_model_mode": "eval",
+        "state_transfer": {
+          "source": "reference_model.state_dict()",
+          "target": "candidate_model",
+          "strict": true
+        },
+        "forward_args_from": "forward_contract",
+        "compare_outputs": "all_reference_output_keys",
+        "atol": 1e-06,
+        "rtol": 1e-06
+      }
+    },
+    {
+      "id": "6886bb29195d4d72",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "27a5e07073cf3b37",
+        "9f3928cde25f5f7c"
+      ],
+      "params": {
+        "model_class": "FoldingDiT",
+        "trainer_class": "SimpleFoldTrainer",
+        "trainer_args": {
+          "learning_rate": 0.001,
+          "max_steps": 2,
+          "seed": 29
+        },
+        "fit_batches": [
+          {
+            "factory": "make_synthetic_batch",
+            "args": {
+              "seed": 29
+            }
+          }
+        ],
+        "history": {
+          "type": "list",
+          "length": 2,
+          "required_finite_keys": [
+            "train_loss",
+            "rmse",
+            "mae",
+            "grad_norm"
+          ]
+        },
+        "parameter_update": {
+          "parameter": "first_model_parameter",
+          "must_change": true
+        },
+        "cli": {
+          "script": "simplefold_train.py",
+          "cwd": "script_parent",
+          "timeout_seconds": 180,
+          "args": [
+            "--output-dir",
+            "<temporary_output_dir>/cli_run",
+            "--max-steps",
+            "2",
+            "--seed",
+            "29",
+            "--mock-data"
+          ],
+          "returncode": 0,
+          "required_files": [
+            "metrics.jsonl",
+            "simplefold_train.pt"
+          ]
+        },
+        "temporary_output_directory": true
+      }
+    },
+    {
+      "id": "6fbf4d69a3ba7e43",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "6886bb29195d4d72"
+      ],
+      "params": {
+        "output_dir": "<temporary_output_dir>",
+        "required_files": [
+          "metrics.jsonl",
+          "simplefold_train.pt",
+          "predictions.json",
+          "targets.json"
+        ],
+        "checkpoint": {
+          "file": "simplefold_train.pt",
+          "torch_load": {
+            "map_location": "cpu",
+            "weights_only": false
+          },
+          "required_type": "dict",
+          "required_values": {
+            "format": "simplefold-flow-train-v1"
+          },
+          "required_keys": [
+            "model_state_dict",
+            "optimizer_state_dict",
+            "completed_steps"
+          ]
+        },
+        "paired_json_arrays": {
+          "predictions": {
+            "file": "predictions.json",
+            "key": "predictions"
+          },
+          "targets": {
+            "file": "targets.json",
+            "key": "targets"
+          },
+          "required_type": "list",
+          "equal_length": true,
+          "non_empty": true
+        },
+        "metrics_jsonl": {
+          "file": "metrics.jsonl",
+          "nonempty_row_count": 2,
+          "required_keys": [
+            "step",
+            "train_loss",
+            "rmse",
+            "mae",
+            "grad_norm"
+          ],
+          "finite_keys": [
+            "train_loss",
+            "rmse",
+            "mae",
+            "grad_norm"
+          ]
+        }
+      }
+    }
+  ]
+}

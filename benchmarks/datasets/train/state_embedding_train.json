@@ -1,0 +1,334 @@
+{
+  "id": "state_embedding_train",
+  "eval_type": "train",
+  "domain": "bio",
+  "task": "实现 STATE 风格 masked-expression 重建短训练",
+  "prompt": "实现独立于 onescience Python 包的轻量 STATE 风格 masked-expression 重建模型与训练入口。StateEmbeddingModel 默认 num_genes=64、hidden_size=32、embedding_size=16、num_layers=3；依次包含 gene_embedding、对 log1p 表达值投影的 value_projection、三层带 gate 的 blocks、pool_gate、embedding_projection 和 decoder。输入非负 [B,64] expression；encode 输出 L2 归一化 [B,16] embedding，forward 通过 softplus decoder 输出非负 [B,64] 重建值。真实数据 NPZ 含 expression，训练随机 mask 后仅在 mask 位置计算 log1p MSE，执行 AdamW、backward 与梯度裁剪。请在当前工作目录生成且仅生成 state_embedding_train.py；模型类命名为 StateEmbeddingModel；脚本必须支持 --dataset-npz 与 --mock-data 二选一、--output-dir、--max-steps、--batch-size、--mask-ratio、--seed、--device，并将 metrics.jsonl 和 state_embedding_train.pt 保存到 --output-dir。",
+  "evaluation_script": "evaluate_state_embedding_train.py",
+  "stardard_dir_name": "state_embedding_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_state_embed_train"
+  },
+  "checks": [
+    {
+      "id": "de39d52cb68656f7",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "candidate_file": "state_embedding_train.py",
+        "candidate_module_name": "state_train_candidate",
+        "reference_file": "benchmarks/standard/state_embedding_train/state_embedding_train.py",
+        "reference_module_name": "state_train_reference",
+        "standard_assets_file": "benchmarks/standard/state_embedding_train/train_config.json",
+        "standard_assets_format": "json",
+        "external_assets": {
+          "mount_required": true,
+          "required_existing_path_keys": [
+            "weights",
+            "dataset"
+          ]
+        }
+      }
+    },
+    {
+      "id": "e682c428fc813fc8",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "de39d52cb68656f7"
+      ],
+      "params": {
+        "candidate_file": "state_embedding_train.py",
+        "mock_expression_callable": "mock_expression",
+        "mock_expression_args": {},
+        "expected_expression_shape": [
+          16,
+          64
+        ],
+        "require_all_expression_values_nonnegative": true,
+        "validation_model": {
+          "class": "StateEmbeddingModel",
+          "constructor_args": {}
+        },
+        "invalid_forward_cases": [
+          {
+            "input": {
+              "shape": [
+                1,
+                64
+              ],
+              "fill_value": -1.0
+            },
+            "expected_exception": "ValueError"
+          },
+          {
+            "input": {
+              "shape": [
+                2,
+                63
+              ],
+              "fill_value": 0.0
+            },
+            "expected_exception": "ValueError"
+          }
+        ]
+      }
+    },
+    {
+      "id": "042404d9b1c50775",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "de39d52cb68656f7"
+      ],
+      "params": {
+        "source_file": "state_embedding_train.py",
+        "source_encoding": "utf-8",
+        "parse_python_ast": true,
+        "forbidden_import_root": "onescience",
+        "required_source_substrings": [
+          "--dataset-npz",
+          "--mock-data",
+          "--output-dir",
+          "--max-steps",
+          "--mask-ratio",
+          "--seed",
+          "metrics.jsonl",
+          "model_state_dict"
+        ],
+        "required_ast_attribute_names": [
+          "AdamW",
+          "backward",
+          "clip_grad_norm_"
+        ]
+      }
+    },
+    {
+      "id": "a0bb0b1f294076e6",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "de39d52cb68656f7"
+      ],
+      "params": {
+        "candidate_file": "state_embedding_train.py",
+        "reference_file": "benchmarks/standard/state_embedding_train/state_embedding_train.py",
+        "model_class": "StateEmbeddingModel",
+        "constructor_args": {
+          "num_genes": 64,
+          "hidden_size": 32,
+          "embedding_size": 16,
+          "num_layers": 3
+        },
+        "candidate_and_reference_eval_mode": true,
+        "strict_load_reference_state_dict": true,
+        "require_torch_nn_module": true,
+        "required_component_paths": [
+          "gene_embedding",
+          "value_projection",
+          "blocks",
+          "blocks.0.up_projection",
+          "blocks.0.gate",
+          "pool_gate",
+          "embedding_projection",
+          "decoder"
+        ],
+        "require_matching_component_types": true,
+        "require_identical_state_dict_key_order": true,
+        "require_no_strict_load_missing_or_unexpected_keys": true,
+        "require_identical_top_level_named_children_order_and_types": true,
+        "constructor_required_parameter_names": [
+          "num_genes",
+          "hidden_size",
+          "embedding_size",
+          "num_layers"
+        ]
+      }
+    },
+    {
+      "id": "9c44d2d506c3f473",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "e682c428fc813fc8",
+        "a0bb0b1f294076e6"
+      ],
+      "params": {
+        "model_source": "state_embedding_model_structure_check.candidate_model",
+        "execution_mode": "torch.inference_mode",
+        "fixture": {
+          "generator_manual_seed": 97,
+          "random_shape": [
+            3,
+            64
+          ],
+          "random_scale": 4.0
+        },
+        "calls": 2,
+        "output": {
+          "require_torch_tensor": true,
+          "shape": [
+            3,
+            64
+          ],
+          "finite": true
+        },
+        "repeat_comparison": "torch.equal"
+      }
+    },
+    {
+      "id": "cc5ba3957cfaf821",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "a0bb0b1f294076e6",
+        "9c44d2d506c3f473"
+      ],
+      "params": {
+        "candidate_model_source": "state_embedding_model_structure_check.candidate_model",
+        "reference_model_source": "state_embedding_model_structure_check.reference_model",
+        "execution_mode": "torch.inference_mode",
+        "fixture": {
+          "generator_manual_seed": 97,
+          "random_shape": [
+            3,
+            64
+          ],
+          "random_scale": 4.0
+        },
+        "comparison": {
+          "operation": "torch.allclose",
+          "atol": 1e-06,
+          "rtol": 1e-06
+        }
+      }
+    },
+    {
+      "id": "e31d812d5212ed22",
+      "type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": [
+        "e682c428fc813fc8",
+        "042404d9b1c50775",
+        "a0bb0b1f294076e6"
+      ],
+      "params": {
+        "script": "state_embedding_train.py",
+        "executable": "sys.executable",
+        "temporary_directory_prefix": "state_train_",
+        "capture_output": true,
+        "text": true,
+        "timeout_seconds": 180,
+        "mock_run": {
+          "args": {
+            "mock_data": true,
+            "max_steps": 5,
+            "batch_size": 4,
+            "mask_ratio": 0.2,
+            "seed": 53,
+            "device": "cpu"
+          },
+          "returncode": 0,
+          "checkpoint": "state_embedding_train.pt"
+        },
+        "parameter_update": {
+          "checkpoint_torch_load": {
+            "map_location": "cpu",
+            "weights_only": true,
+            "fallback_on_type_error_without_weights_only": true
+          },
+          "initial_reference_manual_seed": 53,
+          "initial_reference_mock_expression_call": true,
+          "model_class": "StateEmbeddingModel",
+          "constructor_args": {
+            "num_genes": 64,
+            "hidden_size": 32,
+            "embedding_size": 16,
+            "num_layers": 3
+          },
+          "require_identical_state_key_set": true,
+          "require_any_tensor_changed": true
+        },
+        "npz_run": {
+          "dataset_filename": "expression.npz",
+          "save_compressed": true,
+          "expression_source": "reference.mock_expression().numpy()",
+          "args": {
+            "max_steps": 1,
+            "batch_size": 4,
+            "mask_ratio": 0.2,
+            "seed": 53,
+            "device": "cpu"
+          },
+          "returncode": 0,
+          "required_artifacts": [
+            "metrics.jsonl",
+            "state_embedding_train.pt"
+          ]
+        }
+      }
+    },
+    {
+      "id": "51f305cce5a01a47",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "e31d812d5212ed22"
+      ],
+      "params": {
+        "output_source": "cli_short_training_contract_check.mock_run",
+        "checkpoint_file": "state_embedding_train.pt",
+        "checkpoint_torch_load": {
+          "map_location": "cpu",
+          "weights_only": true,
+          "fallback_on_type_error_without_weights_only": true
+        },
+        "checkpoint": {
+          "require_mapping": true,
+          "required_keys": [
+            "model_state_dict",
+            "optimizer_state_dict",
+            "step",
+            "config"
+          ],
+          "required_step": 5
+        },
+        "metrics_file": "metrics.jsonl",
+        "metrics_encoding": "utf-8",
+        "metrics_format": "jsonl",
+        "ignore_blank_lines": true,
+        "required_row_count": 5,
+        "rows": {
+          "step_values": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "train_loss_coercible_to_float": true,
+          "train_loss_finite": true
+        }
+      }
+    }
+  ]
+}

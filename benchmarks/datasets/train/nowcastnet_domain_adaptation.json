@@ -1,0 +1,281 @@
+{
+  "id": "nowcastnet_domain_adaptation",
+  "eval_type": "train",
+  "domain": "earth",
+  "task": "将 NowCastNet 适配到新雷达区域",
+  "prompt": "将 NowCastNet 适配到新的雷达区域。生成目录必须包含 nowcastnet_domain_adaptation.py、train.py 和 evaluate.py；模型类命名为 NowcastNetDomainAdapter，输入为 (B,4,H,W)，输出为 (B,3,H,W)。冻结 backbone，只训练 adapter_down、adapter_up 和 head；训练使用真实 AdamW、backward、梯度更新和区域数据归一化接口，不得下载或硬编码数据路径。",
+  "evaluation_script": "evaluate_nowcastnet_domain_adaptation.py",
+  "stardard_dir_name": "nowcastnet_domain_adaptation",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "8908cce75800e123",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "nowcastnet_domain_adaptation.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "syntax_validation": {
+          "encoding": "utf-8",
+          "parser": "ast.parse"
+        }
+      }
+    },
+    {
+      "id": "8eb1372a9f42c87d",
+      "type": "data_padding_and_mask",
+      "method": "check_padding_and_mask",
+      "phase": "data_analysis",
+      "depends": [
+        "8908cce75800e123"
+      ],
+      "params": {
+        "inputs": {
+          "generator": "torch.randn",
+          "shape": [
+            2,
+            4,
+            8,
+            8
+          ]
+        },
+        "targets": {
+          "generator": "torch.randn",
+          "shape": [
+            2,
+            3,
+            8,
+            8
+          ]
+        },
+        "mask": {
+          "base": "torch.zeros_like(targets)",
+          "assignment": {
+            "index": "[..., :2, :2]",
+            "value": 1
+          },
+          "expected_shape": [
+            2,
+            3,
+            8,
+            8
+          ]
+        },
+        "assertions": {
+          "inputs_all_finite": true,
+          "targets_all_finite": true
+        }
+      }
+    },
+    {
+      "id": "9d0e91d63ba284f5",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "8908cce75800e123"
+      ],
+      "params": {
+        "file": "train.py",
+        "source_encoding": "utf-8",
+        "function": {
+          "name": "train_step",
+          "required_positional_parameters": [
+            "model",
+            "inputs",
+            "targets"
+          ]
+        },
+        "required_calls": [
+          "backward",
+          "step"
+        ],
+        "required_source_substrings": [
+          "AdamW"
+        ]
+      }
+    },
+    {
+      "id": "5e7530f295cde969",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "8908cce75800e123"
+      ],
+      "params": {
+        "file": "evaluate.py",
+        "source_encoding": "utf-8",
+        "required_source_substrings": [
+          "def evaluate",
+          "rmse",
+          "mae"
+        ]
+      }
+    },
+    {
+      "id": "e7142f0b494b5b35",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "8908cce75800e123",
+        "8eb1372a9f42c87d"
+      ],
+      "params": {
+        "model_file": "nowcastnet_domain_adaptation.py",
+        "model_class": "NowcastNetDomainAdapter",
+        "constructor_kwargs": {},
+        "inputs_shape": [
+          2,
+          4,
+          8,
+          8
+        ],
+        "execution": {
+          "no_grad": true
+        },
+        "children": {
+          "exact_order": [
+            "backbone",
+            "adapter_down",
+            "adapter_up",
+            "head"
+          ]
+        },
+        "frozen_modules": [
+          "backbone"
+        ],
+        "probes": [
+          {
+            "call": "backbone(inputs)",
+            "expected_shape": [
+              2,
+              16,
+              8,
+              8
+            ]
+          },
+          {
+            "call": "adapter_down(inputs)",
+            "save_as": "low_rank",
+            "expected_shape": [
+              2,
+              4,
+              8,
+              8
+            ]
+          },
+          {
+            "call": "adapter_up(low_rank)",
+            "save_as": "adapted",
+            "expected_shape": [
+              2,
+              16,
+              8,
+              8
+            ]
+          },
+          {
+            "call": "head(torch.relu(backbone + adapted))",
+            "expected_shape": [
+              2,
+              3,
+              8,
+              8
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2211be8e85576682",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "e7142f0b494b5b35",
+        "8eb1372a9f42c87d"
+      ],
+      "params": {
+        "model_file": "nowcastnet_domain_adaptation.py",
+        "model_class": "NowcastNetDomainAdapter",
+        "constructor_kwargs": {},
+        "inputs": {
+          "generator": "torch.randn",
+          "shape": [
+            2,
+            4,
+            8,
+            8
+          ]
+        },
+        "execution": {
+          "eval": true,
+          "no_grad": true
+        },
+        "expected_output": {
+          "shape": [
+            2,
+            3,
+            8,
+            8
+          ],
+          "must_equal_target_shape": true,
+          "all_finite": true
+        }
+      }
+    },
+    {
+      "id": "7c9539cb3d1d0e54",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "9d0e91d63ba284f5",
+        "2211be8e85576682"
+      ],
+      "params": {
+        "train_file": "train.py",
+        "train_function": "train_step",
+        "model_mode": "train",
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "requires_grad_only",
+          "lr": 0.001
+        },
+        "arguments": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "keyword_arguments": {
+          "optimizer": "optimizer"
+        },
+        "before_after_check": {
+          "clone_trainable_parameters": true,
+          "require_any_changed": true
+        },
+        "loss": {
+          "allowed_python_types": [
+            "float",
+            "int"
+          ],
+          "must_not_be_nan": true
+        }
+      }
+    }
+  ]
+}

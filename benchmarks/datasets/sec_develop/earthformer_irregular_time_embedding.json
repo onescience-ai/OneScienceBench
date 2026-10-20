@@ -1,0 +1,352 @@
+{
+  "id": "earthformer_irregular_time_embedding",
+  "eval_type": "sec_develop",
+  "domain": "earth",
+  "task": "为 Earthformer 增加非均匀时间间隔嵌入与掩码注意力",
+  "prompt": "完成 Earthformer 非均匀时间嵌入的二次开发。在输出目录 earthformer_irregular_time_embedding/ 中生成 earthformer_irregular_time_embedding.py 和 train.py。主文件定义 IrregularTimeEmbedding(embed_dim,num_frequencies=4) 与 EarthformerIrregularTimeModel(in_channels,out_channels,hidden_dim=16,num_heads=4,num_frequencies=4)。时间嵌入输入非负有限 time_deltas [B,T]，必须用 2 的幂频带构造 delta、sin(delta*frequency)、cos(delta*frequency) 特征并通过可训练 MLP 投影到 hidden_dim。模型输入 x [B,T,C,H,W]、time_deltas [B,T] 和可选布尔 time_mask [B,T]；必须包含 Conv2d spatial_encoder、IrregularTimeEmbedding、batch_first MultiheadAttention、LayerNorm 和 Conv2d decoder。空间特征池化后与时间嵌入相加，在时间轴执行带 key padding mask 的注意力，再融合回每个空间位置；输出 [B,T,out_channels,H,W] 有限张量，mask 为假的时间步严格置零，每个样本至少一个有效步。hidden_dim 必须可被 num_heads 整除。train.py 提供 build_model(config=None) 和 train_step(model,inputs,time_deltas,targets,optimizer,time_mask=None)，masked loss 仅统计有效元素并完成一次参数更新。对时间、shape、mask 或参数非法的输入抛出明确异常。",
+  "evaluation_script": "evaluate_earthformer_irregular_time_embedding.py",
+  "stardard_dir_name": "earthformer_irregular_time_embedding",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "378cd15e5de729d0",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "phase": "model_structure",
+        "required_files": [
+          "earthformer_irregular_time_embedding.py"
+        ],
+        "legacy_required_files": [
+          "earthformer_irregular_time_embedding.py",
+          "train.py"
+        ],
+        "legacy_existence_only": true
+      }
+    },
+    {
+      "id": "982e8cc47e9b9a43",
+      "type": "train_file",
+      "method": "check_files",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "phase": "train_script",
+        "required_files": [
+          "train.py"
+        ],
+        "legacy_required_files": [
+          "earthformer_irregular_time_embedding.py",
+          "train.py"
+        ],
+        "legacy_existence_only": true
+      }
+    },
+    {
+      "id": "567e8e3d6f3971a2",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "378cd15e5de729d0",
+        "982e8cc47e9b9a43"
+      ],
+      "params": {
+        "config_name": "legacy_generated_tensor_contract",
+        "schema": [
+          {
+            "name": "x",
+            "shape": {
+              "dims": [
+                2,
+                4,
+                3,
+                4,
+                5
+              ]
+            }
+          },
+          {
+            "name": "time_deltas",
+            "shape": {
+              "dims": [
+                2,
+                4
+              ]
+            }
+          },
+          {
+            "name": "time_mask",
+            "shape": {
+              "dims": [
+                2,
+                4
+              ],
+              "dtype": "torch.bool"
+            }
+          }
+        ],
+        "legacy_runtime_inputs": {
+          "x_shape": [
+            2,
+            4,
+            3,
+            4,
+            5
+          ],
+          "deltas_shape": [
+            2,
+            4
+          ],
+          "mask_shape": [
+            2,
+            4
+          ],
+          "mask_dtype": "torch.bool"
+        }
+      }
+    },
+    {
+      "id": "cb80cf226185fef2",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "982e8cc47e9b9a43"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "train.py"
+        ],
+        "required_interfaces": [
+          "build_model",
+          "train_step"
+        ],
+        "legacy_module_name": "earthformer_irregular_time_embedding_train_submission"
+      }
+    },
+    {
+      "id": "5d21780dfcb78398",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "378cd15e5de729d0",
+        "cb80cf226185fef2"
+      ],
+      "params": {
+        "model_file": "earthformer_irregular_time_embedding.py",
+        "model_class": "EarthformerIrregularTimeModel",
+        "embedding_class": "IrregularTimeEmbedding",
+        "model_args": {
+          "in_channels": 3,
+          "out_channels": 2,
+          "hidden_dim": 16,
+          "num_heads": 4,
+          "num_frequencies": 4
+        },
+        "expected_module_order": [
+          "spatial_encoder",
+          "time_embedding",
+          "temporal_attention",
+          "norm",
+          "decoder"
+        ],
+        "encoded_shape": [
+          8,
+          16,
+          4,
+          5
+        ],
+        "required_module_types": {
+          "spatial_encoder": "Conv2d",
+          "time_embedding": "IrregularTimeEmbedding",
+          "temporal_attention": "MultiheadAttention",
+          "norm": "LayerNorm",
+          "decoder": "Conv2d"
+        }
+      }
+    },
+    {
+      "id": "163ab9a43cf723ad",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "5d21780dfcb78398"
+      ],
+      "params": {
+        "model_file": "earthformer_irregular_time_embedding.py",
+        "model_class": "EarthformerIrregularTimeModel",
+        "model_args": {
+          "in_channels": 3,
+          "out_channels": 2,
+          "hidden_dim": 16,
+          "num_heads": 4,
+          "num_frequencies": 4
+        },
+        "forward_args": {
+          "x_shape": [
+            2,
+            4,
+            3,
+            4,
+            5
+          ],
+          "time_deltas_shape": [
+            2,
+            4
+          ],
+          "time_mask_shape": [
+            2,
+            4
+          ]
+        },
+        "out_shape": [
+          2,
+          4,
+          2,
+          4,
+          5
+        ],
+        "require_finite": true
+      }
+    },
+    {
+      "id": "c717330703df64a9",
+      "type": "data_padding_and_mask",
+      "method": "check_padding_and_mask",
+      "phase": "data_analysis",
+      "depends": [
+        "163ab9a43cf723ad"
+      ],
+      "params": {
+        "mask_shape": [
+          2,
+          4
+        ],
+        "mask_dtype": "torch.bool",
+        "invalid_output_index": "output[~mask]",
+        "expected_invalid_value": 0.0,
+        "atol": 1e-07
+      }
+    },
+    {
+      "id": "d437a5cfac430048",
+      "type": "model_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "5d21780dfcb78398"
+      ],
+      "params": {
+        "candidate": {
+          "file": "earthformer_irregular_time_embedding.py",
+          "function": "IrregularTimeEmbedding",
+          "args": {
+            "embed_dim": 16,
+            "num_frequencies": 4
+          }
+        },
+        "delta_inputs": [
+          [
+            0.0,
+            1.0
+          ],
+          [
+            0.0,
+            2.0
+          ]
+        ],
+        "comparison": "not torch.allclose",
+        "atol": "torch.allclose default"
+      }
+    },
+    {
+      "id": "ef114668a8d558a7",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "163ab9a43cf723ad",
+        "d437a5cfac430048"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "earthformer_irregular_time_embedding.py",
+          "model_class": "EarthformerIrregularTimeModel",
+          "forward_args": {
+            "x_shape": [
+              2,
+              4,
+              3,
+              4,
+              5
+            ],
+            "time_deltas_offset": 0.0,
+            "time_mask_shape": [
+              2,
+              4
+            ]
+          }
+        },
+        "perturbed_forward": {
+          "time_deltas_offset": 0.25
+        },
+        "comparison": "not torch.allclose"
+      }
+    },
+    {
+      "id": "5497e0168a3a07ca",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "cb80cf226185fef2",
+        "5d21780dfcb78398"
+      ],
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "optimizer": "AdamW",
+        "lr": 0.001,
+        "input_shape": [
+          2,
+          4,
+          3,
+          4,
+          5
+        ],
+        "time_deltas_shape": [
+          2,
+          4
+        ],
+        "target_shape": [
+          2,
+          4,
+          2,
+          4,
+          5
+        ],
+        "time_mask_shape": [
+          2,
+          4
+        ],
+        "require_finite_loss": true,
+        "require_parameter_change": true,
+        "legacy_check_type": "traning"
+      }
+    }
+  ]
+}

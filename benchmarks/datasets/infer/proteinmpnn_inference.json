@@ -1,0 +1,458 @@
+{
+  "id": "proteinmpnn_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 ProteinMPNN 风格的结构条件蛋白序列设计推理",
+  "prompt": "实现一个独立于 onescience Python 包的轻量 ProteinMPNN 风格结构条件序列设计入口。请在当前工作目录生成且仅生成 proteinmpnn_inference.py；脚本必须支持 --pdb-path、--checkpoint、--out-folder、--num-seq-per-target、--temperature、--seed、--device；输出 out-folder/seqs/designed.fasta，且该 FASTA 必须保存到命令行指定的 --out-folder。",
+  "evaluation_script": "evaluate_proteinmpnn_inference.py",
+  "stardard_dir_name": "proteinmpnn_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_proteinmpnn_inference"
+  },
+  "checks": [
+    {
+      "id": "6c23f9547e45307d",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_filename": "proteinmpnn_inference.py",
+        "candidate_module_name": "proteinmpnn_submission",
+        "reference_module_name": "proteinmpnn_reference",
+        "reference_path": "benchmarks/standard/proteinmpnn_inference/proteinmpnn_inference.py",
+        "torch_manual_seed": 20260819,
+        "create_temporary_work_dir": true,
+        "standard_assets": [
+          {
+            "filename": "inference_config.json",
+            "format": "json",
+            "top_level_type": "object",
+            "external_assets": {
+              "mount_required": true,
+              "required_path_keys": [
+                "weights",
+                "dataset"
+              ],
+              "required_path_prefix": "/public/share/"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "cfd309c50694414d",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "6c23f9547e45307d"
+      ],
+      "params": {
+        "candidate_class": "ProteinMPNN",
+        "reference_class": "ProteinMPNN",
+        "reference_model_eval": true,
+        "candidate_load": {
+          "state_dict_source": "reference_model.state_dict()",
+          "strict": true,
+          "candidate_eval": true
+        },
+        "fixture": {
+          "pdb_filename": "input.pdb",
+          "coordinates": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.5,
+              0.0,
+              0.0
+            ],
+            [
+              3.0,
+              0.2,
+              0.0
+            ],
+            [
+              4.5,
+              0.3,
+              0.1
+            ],
+            [
+              5.7,
+              0.6,
+              0.2
+            ]
+          ]
+        },
+        "checkpoint_probe": {
+          "filename": "reference_checkpoint.pt",
+          "payload_state_dict_key": "model_state_dict",
+          "cli": {
+            "pdb_path": "fixture/input.pdb",
+            "checkpoint": "fixture/reference_checkpoint.pt",
+            "out_folder": "fixture/cli_checkpoint_load",
+            "num_seq_per_target": 1,
+            "temperature": 0.5,
+            "seed": 9,
+            "device": "cpu",
+            "required_output": "seqs/designed.fasta"
+          }
+        },
+        "state_key_contract": {
+          "non_empty": true,
+          "key_type": "str"
+        },
+        "source_requirement": {
+          "contains": "torch.load"
+        }
+      }
+    },
+    {
+      "id": "c3742a5b7444631c",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "cfd309c50694414d"
+      ],
+      "params": {
+        "model_context_key": "model",
+        "architecture": {
+          "node_embedding": {
+            "class": "nn.Linear",
+            "in_features": 3,
+            "out_features": 32
+          },
+          "edge_embedding": {
+            "class": "nn.Linear",
+            "in_features": 19
+          },
+          "encoder_layers": {
+            "class": "nn.ModuleList",
+            "length": 2
+          },
+          "sequence_embedding": {
+            "class": "nn.Embedding",
+            "num_embeddings": 22,
+            "embedding_dim": 32
+          },
+          "decoder_layers": {
+            "class": "nn.ModuleList",
+            "length": 2
+          },
+          "output_projection": {
+            "class": "nn.Linear",
+            "in_features": 32,
+            "out_features": 21
+          },
+          "message_layer_required_attributes": [
+            "message_mlp",
+            "update_mlp",
+            "norm"
+          ],
+          "k_neighbors": 4,
+          "edge_feature_description": "16 RBF + 3 unit direction",
+          "module_order": [
+            "node_embedding",
+            "encoder_layers",
+            "sequence_embedding",
+            "decoder_layers",
+            "output_projection"
+          ]
+        },
+        "probe_coordinates": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.5,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.2,
+            0.0
+          ],
+          [
+            4.5,
+            0.3,
+            0.1
+          ],
+          [
+            5.7,
+            0.6,
+            0.2
+          ]
+        ],
+        "module_io_probes": [
+          {
+            "module": "node_embedding",
+            "input_shape": [
+              5,
+              3
+            ],
+            "expected_output_shape": [
+              5,
+              32
+            ]
+          },
+          {
+            "module": "edge_embedding",
+            "input_shape": [
+              5,
+              4,
+              19
+            ],
+            "expected_output_shape": [
+              5,
+              4,
+              32
+            ]
+          },
+          {
+            "module": "output_projection",
+            "input_shape": [
+              5,
+              32
+            ],
+            "expected_output_shape": [
+              5,
+              21
+            ]
+          }
+        ],
+        "message_layer_output_shape": [
+          5,
+          32
+        ]
+      }
+    },
+    {
+      "id": "c317fef54864c599",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "c3742a5b7444631c"
+      ],
+      "params": {
+        "model_context_key": "model",
+        "coordinates": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.5,
+            0.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.2,
+            0.0
+          ],
+          [
+            4.5,
+            0.3,
+            0.1
+          ],
+          [
+            5.7,
+            0.6,
+            0.2
+          ]
+        ],
+        "inference_mode": true,
+        "geometry_graph": {
+          "method": "build_geometry_graph",
+          "neighbors_shape": [
+            5,
+            4
+          ],
+          "edges_shape": [
+            5,
+            4,
+            32
+          ],
+          "exclude_self_neighbors": true
+        },
+        "forward": {
+          "kwargs": {},
+          "logits_shape": [
+            5,
+            21
+          ],
+          "require_finite": true
+        },
+        "sequence_conditioning": {
+          "sequence_ids": {
+            "fill": 0,
+            "dtype": "torch.long",
+            "shape": [
+              5
+            ]
+          },
+          "must_change_logits": true,
+          "allclose_atol": 1e-06,
+          "allclose_rtol": 1e-06
+        },
+        "translation_invariance": {
+          "offset": [
+            1.25,
+            -0.5,
+            0.75
+          ],
+          "allclose_atol": 1e-05,
+          "allclose_rtol": 1e-05
+        },
+        "invalid_input": {
+          "slice": "coordinates[:, :2]",
+          "accepted_exceptions": [
+            "ValueError",
+            "RuntimeError"
+          ]
+        },
+        "context_outputs": [
+          "coordinates",
+          "neighbors",
+          "output"
+        ]
+      }
+    },
+    {
+      "id": "f326ba61207fb968",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "6c23f9547e45307d",
+        "cfd309c50694414d"
+      ],
+      "params": {
+        "source": {
+          "forbid_import_root": "onescience",
+          "required_cli_flags": [
+            "--pdb-path",
+            "--checkpoint",
+            "--out-folder",
+            "--num-seq-per-target",
+            "--temperature",
+            "--seed",
+            "--device"
+          ],
+          "require_eval_call": true,
+          "require_inference_context_one_of": [
+            "inference_mode",
+            "no_grad"
+          ]
+        },
+        "parser": {
+          "function": "parse_ca_coordinates",
+          "input_context_key": "pdb_path",
+          "expected_tensor_shape": [
+            5,
+            3
+          ]
+        },
+        "cli": {
+          "timeout_seconds": 180,
+          "smoke": {
+            "out_folder": "cli_smoke",
+            "num_seq_per_target": 3,
+            "temperature": 0.5,
+            "seed": 9,
+            "device": "cpu",
+            "required_output": "seqs/designed.fasta",
+            "fasta": {
+              "record_count": 3,
+              "nonempty_headers": true,
+              "sequence_length": 5,
+              "allowed_alphabet": "candidate.AMINO_ACIDS or reference.AMINO_ACIDS"
+            }
+          },
+          "determinism": {
+            "second_out_folder": "cli_smoke_second",
+            "compare": "entire designed.fasta text equality"
+          },
+          "raw_checkpoint": {
+            "filename": "raw_state.pt",
+            "payload": "reference_model.state_dict()",
+            "out_folder": "cli_raw_checkpoint",
+            "num_seq_per_target": 1,
+            "temperature": 0.5,
+            "seed": 9,
+            "device": "cpu",
+            "required_output": "seqs/designed.fasta"
+          },
+          "invalid_temperature": {
+            "value": "0",
+            "expect_nonzero_returncode": true
+          }
+        }
+      }
+    },
+    {
+      "id": "75565aa4e3b20680",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "cfd309c50694414d",
+        "c317fef54864c599"
+      ],
+      "params": {
+        "reference_forward": {
+          "candidate_output_context_key": "output",
+          "reference_model_context_key": "reference_model",
+          "coordinates_context_key": "coordinates",
+          "inference_mode": true,
+          "compare": "torch.allclose",
+          "atol": 1e-06,
+          "rtol": 1e-06,
+          "record_metric": "logits_mae"
+        },
+        "sampling": {
+          "method": "model.sample",
+          "num_sequences": 3,
+          "temperature": 0.5,
+          "seed": 9,
+          "expected": {
+            "container_type": "list",
+            "item_type": "str",
+            "sequence_length": 5,
+            "allowed_alphabet": "candidate.AMINO_ACIDS or reference.AMINO_ACIDS"
+          },
+          "seed_sensitivity": {
+            "other_seed": 10,
+            "must_differ": true
+          },
+          "standard_token_range": {
+            "alphabet_prefix_length": 20
+          },
+          "determinism": {
+            "repeat_seed": 9,
+            "must_equal_first_result": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,420 @@
+{
+  "id": "mattergen_train",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "从头实现 MatterGen base 并完成一次真实晶体去噪训练更新",
+  "prompt": "独立实现 MatterGen base 的 GemNetTDenoiser/GemNet-T，并在固定的双晶体合成 batch 上完成一次真实的从头训练更新。模型必须由本地 PyTorch 类实现，不得主动导入 `onescience` 或外部 `mattergen`，不得读取评测器、标准实现或旧候选；为保证 DCU/CPU 可移植性，还不得依赖 `torch_scatter`、`torch_sparse` 或 `torch_geometric`，scatter、segment、triplet 构造和 GaussianSmearing 必须使用本地可微 PyTorch 实现。固定模型配置为 hidden_dim=512、denoise_atom_types=true、atom_type_diffusion=mask；GemNet-T 使用 num_targets=1、cutoff=7.0、emb_size_atom=512、emb_size_edge=512、max_neighbors=50、max_cell_images_per_dim=5、num_blocks=4、regress_stress=true、otf_graph=true。实现必须包含周期图构建、径向/球面基、4 个 interaction block、5 个 output block、5 个 lattice output block、坐标更新、晶格应力更新和 101 类原子类型头；完整 state_dict 应有 281 个 entry、53,737,595 个元素。\n\n训练数据必须由 `build_synthetic_batch(seed=20260818)` 在内存中确定性构造：两个晶体共 7 个原子，`num_atoms=[4,3]`，输入包含 float32 `pos [7,3]`、float32 `cell [2,3,3]`、int64 `atomic_numbers [7]`、int64 `num_atoms [2]` 和 float32 `timesteps [2]`；第 1、5 号（从 0 开始）原子必须用 101 作为 mask 类。函数必须返回且仅返回 `batch`、`timesteps`、`targets`、`atom_loss_mask`，其中 targets 包含位置噪声、晶格噪声和 0-based 原子类型标签。模型训练态前向必须提供 `pos [7,3]`、`cell [2,3,3]`、`atomic_numbers [7,101]` 三个有限且可求梯度的输出。\n\n损失必须由 `compute_materials_loss` 计算：位置与晶格使用 sum reduction 的 MSE，原子类型仅在两个 mask 原子上使用 sum reduction 的 cross entropy，总损失权重固定为 pos=0.1、cell=1.0、atomic_numbers=1.0。训练固定使用 Adam、learning_rate=1e-4、steps=1、gradient_clip_val=0.5；`train_step` 必须执行 zero_grad、前向、loss.backward、梯度裁剪和 optimizer.step，GemNet 主干与原子类型头都必须发生真实参数更新。不得用预计算常量、伪造 metrics 或仅保存未更新的初始权重来替代训练。\n\n请在当前工作目录生成 `mattergen_train/mattergen_denoiser.py`、`mattergen_train/train_mattergen.py`、`mattergen_train/mattergen_train.yaml`、`mattergen_train/portable_mattergen/__init__.py` 和 `mattergen_train/portable_mattergen/gemnet/gemnet-dT.json`；其余本地包文件可按 GemNet-T 实现需要自行组织。`mattergen_denoiser.py` 必须公开 `load_config`、`build_model`；`train_mattergen.py` 必须公开 `build_synthetic_batch`、`compute_materials_loss`、`train_step`、`train`、`main`，并提供 `--config`、`--output-dir`、`--device auto|cpu|cuda` 命令行参数。一次训练必须在 output 目录生成且仅以这些固定名称提供核心产物：`checkpoint.pt`、`metrics.json`、`train.log`。checkpoint 必须包含 `step=1`、完整 `model_state_dict`、非空 `optimizer_state_dict`、解析后的 `config` 和 `metrics`；metrics 与单行 JSON 日志必须一致并记录 step、loss、pos_loss、cell_loss、atomic_numbers_loss、gradient_norm、parameters_with_grad。",
+  "evaluation_script": "evaluate_mattergen_train.py",
+  "stardard_dir_name": "mattergen_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "24G",
+    "time_limit": "00:20:00",
+    "job_name": "eval_mattergen_train",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "b02185ccfe5a86ae",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "mattergen_denoiser.py",
+          "train_mattergen.py",
+          "mattergen_train.yaml",
+          "portable_mattergen/__init__.py",
+          "portable_mattergen/gemnet/gemnet-dT.json"
+        ]
+      }
+    },
+    {
+      "id": "2546e29b54a102db",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "b02185ccfe5a86ae"
+      ],
+      "params": {
+        "candidate": {
+          "file": "train_mattergen.py",
+          "function": "build_synthetic_batch",
+          "args": {
+            "seed": 20260818
+          }
+        },
+        "required_keys": [
+          "batch",
+          "timesteps",
+          "targets",
+          "atom_loss_mask"
+        ],
+        "batch_shapes": {
+          "pos": [
+            7,
+            3
+          ],
+          "cell": [
+            2,
+            3,
+            3
+          ],
+          "atomic_numbers": [
+            7
+          ],
+          "num_atoms": [
+            2
+          ]
+        },
+        "target_shapes": {
+          "pos": [
+            7,
+            3
+          ],
+          "cell": [
+            2,
+            3,
+            3
+          ],
+          "atomic_numbers": [
+            7
+          ]
+        },
+        "dtypes": {
+          "pos": "float32",
+          "cell": "float32",
+          "atomic_numbers": "int64",
+          "num_atoms": "int64",
+          "timesteps": "float32",
+          "atom_loss_mask": "bool"
+        },
+        "num_atoms": [
+          4,
+          3
+        ],
+        "atom_loss_mask": [
+          false,
+          true,
+          false,
+          false,
+          false,
+          true,
+          false
+        ],
+        "masked_atomic_numbers": [
+          101,
+          101
+        ],
+        "finite_batch_fields": [
+          "pos",
+          "cell"
+        ],
+        "positive_cell_determinants": true,
+        "deterministic_for_seed": 20260818
+      }
+    },
+    {
+      "id": "0be88e36ee4bd221",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "b02185ccfe5a86ae"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "mattergen_denoiser.py",
+          "train_mattergen.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "build_model",
+          "build_synthetic_batch",
+          "compute_materials_loss",
+          "train_step",
+          "train",
+          "main"
+        ],
+        "required_cli_flags": [
+          "--config",
+          "--output-dir",
+          "--device"
+        ],
+        "required_calls": [
+          "Adam",
+          "backward",
+          "step"
+        ],
+        "forbidden_import_roots": [
+          "onescience",
+          "mattergen",
+          "torch_geometric",
+          "torch_scatter",
+          "torch_sparse"
+        ],
+        "model": {
+          "hidden_dim": 512,
+          "denoise_atom_types": true,
+          "atom_type_diffusion": "mask"
+        },
+        "gemnet": {
+          "num_targets": 1,
+          "cutoff": 7.0,
+          "emb_size_atom": 512,
+          "emb_size_edge": 512,
+          "max_neighbors": 50,
+          "max_cell_images_per_dim": 5,
+          "num_blocks": 4,
+          "regress_stress": true,
+          "otf_graph": true
+        },
+        "training": {
+          "seed": 20260818,
+          "optimizer": "Adam",
+          "learning_rate": 0.0001,
+          "steps": 1,
+          "gradient_clip_val": 0.5,
+          "loss_weights": {
+            "pos": 0.1,
+            "cell": 1.0,
+            "atomic_numbers": 1.0
+          }
+        }
+      }
+    },
+    {
+      "id": "d872aca5953e12a5",
+      "type": "optional_not_required",
+      "method": "check_eval_script_contract",
+      "phase": "eval_script",
+      "depends": [
+        "b02185ccfe5a86ae"
+      ],
+      "params": {
+        "glob": "eval*.py",
+        "exclude": "evaluate_mattergen_train.py",
+        "required": false,
+        "status": "not required; training artifacts are inspected directly"
+      }
+    },
+    {
+      "id": "d9f48de518df394a",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "0be88e36ee4bd221"
+      ],
+      "params": {
+        "model_file": "mattergen_denoiser.py",
+        "model_class": "GemNetTDenoiser",
+        "config_name": "mattergen_train.yaml",
+        "builder": "build_model",
+        "forward_parameters": [
+          "batch",
+          "timesteps"
+        ],
+        "top_level_order": [
+          "gemnet",
+          "noise_level_encoding",
+          "property_embeddings",
+          "fc_atom"
+        ],
+        "hidden_dim": 512,
+        "property_embeddings": "ModuleDict",
+        "gemnet_components": [
+          "radial_basis",
+          "cbf_basis3",
+          "mlp_rbf_lattice",
+          "mlp_rbf3",
+          "mlp_cbf3",
+          "mlp_rbf_h",
+          "mlp_rbf_out",
+          "atom_emb",
+          "atom_latent_emb",
+          "edge_emb",
+          "int_blocks",
+          "out_blocks",
+          "lattice_out_blocks"
+        ],
+        "block_counts": {
+          "interaction": 4,
+          "output": 5,
+          "lattice": 5
+        },
+        "shape_probes": {
+          "atom": [
+            4,
+            512
+          ],
+          "time": [
+            2,
+            512
+          ],
+          "atom_head": [
+            3,
+            101
+          ]
+        },
+        "state_entries": 281,
+        "state_numel": 53737595
+      }
+    },
+    {
+      "id": "10ed1a79224cd8df",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "2546e29b54a102db",
+        "d9f48de518df394a"
+      ],
+      "params": {
+        "model_file": "mattergen_denoiser.py",
+        "model_class": "GemNetTDenoiser",
+        "config_name": "mattergen_train.yaml",
+        "builder": "build_model",
+        "forward_args": {
+          "batch": "synthetic_fixture.batch",
+          "timesteps": "synthetic_fixture.timesteps"
+        },
+        "out_shapes": {
+          "pos": [
+            7,
+            3
+          ],
+          "cell": [
+            2,
+            3,
+            3
+          ],
+          "atomic_numbers": [
+            7,
+            101
+          ]
+        },
+        "training_mode": true,
+        "floating_outputs": true,
+        "finite_outputs": true,
+        "requires_grad": true
+      }
+    },
+    {
+      "id": "81a859df69d32c46",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "2546e29b54a102db",
+        "d9f48de518df394a",
+        "10ed1a79224cd8df"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "mattergen_denoiser.py",
+          "model_class": "GemNetTDenoiser",
+          "config_name": "mattergen_train.yaml"
+        },
+        "reference": {
+          "model_file": "benchmarks/standard/mattergen_train/mattergen_denoiser.py",
+          "config_name": "benchmarks/standard/mattergen_train/mattergen_train.yaml"
+        },
+        "initializer": "initialize_parameters_with_constants",
+        "build_seed": 20260818,
+        "forward_seed": 20260818,
+        "outputs": [
+          "pos",
+          "cell",
+          "atomic_numbers"
+        ],
+        "compare_atol": 1e-06,
+        "loss_components": [
+          "pos",
+          "cell",
+          "atomic_numbers"
+        ],
+        "loss_rtol": 1e-06,
+        "loss_atol": 1e-06
+      }
+    },
+    {
+      "id": "eb5b41dbb1684336",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "0be88e36ee4bd221",
+        "d9f48de518df394a",
+        "2546e29b54a102db"
+      ],
+      "params": {
+        "run_train_file": "train_mattergen.py",
+        "train_config_name": "mattergen_train.yaml",
+        "train_function": "train",
+        "train_args": {
+          "config_path": "mattergen_train.yaml",
+          "output_dir_prefix": "mattergen-train-eval-",
+          "device": "auto"
+        },
+        "expected_step": 1,
+        "optimizer": "Adam",
+        "learning_rate": 0.0001,
+        "gradient_clip_val": 0.5,
+        "required_nonempty_optimizer_state": true,
+        "changed_parameter_groups": [
+          "gemnet",
+          "fc_atom"
+        ],
+        "required_metrics": [
+          "step",
+          "loss",
+          "pos_loss",
+          "cell_loss",
+          "atomic_numbers_loss",
+          "gradient_norm",
+          "parameters_with_grad"
+        ],
+        "state_entries": 281,
+        "state_numel": 53737595
+      }
+    },
+    {
+      "id": "1f6ea9158f8cab2c",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "eb5b41dbb1684336"
+      ],
+      "params": {
+        "artifacts": {
+          "files": [
+            "checkpoint.pt",
+            "metrics.json",
+            "train.log"
+          ]
+        },
+        "non_empty": true,
+        "train_log_nonempty_lines": 1,
+        "metrics_equal_checkpoint": true,
+        "checkpoint_config_mapping": true,
+        "checkpoint_state_entries": 281,
+        "checkpoint_state_numel": 53737595
+      }
+    }
+  ]
+}

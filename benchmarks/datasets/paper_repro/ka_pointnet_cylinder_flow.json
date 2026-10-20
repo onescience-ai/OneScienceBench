@@ -1,0 +1,372 @@
+{
+  "id": "ka_pointnet_cylinder_flow",
+  "eval_type": "paper-repro",
+  "domain": "cfd",
+  "task": "复现 KA-PointNet 论文中不同截面圆柱二维稳态绕流点云代理模型实验",
+  "prompt": "复现 Kolmogorov-Arnold PointNet: Deep learning for prediction of fluid fields on irregular geometries（https://arxiv.org/abs/2408.02950）论文中的不同截面圆柱二维不可压缩稳态绕流实验，以论文描述为准，仅在论文未明确说明的细节处参考官方 Git 仓库代码补充，禁止直接下载或复制官方 Git 仓库代码。实验数据路径为 /public/share/sugonhpcapp01/onestore/onedatasets/PointNetCFD_data/data，数据文件为 CFDdata.npy、training_idx.npy、validation_idx.npy 和 test_idx.npy；CFDdata.npy 的通道顺序为 [x, y, p, u, v]，模型输入为点云坐标 [x, y]，输出为 [u, v, p]。生成代码的输出目录为 ka_pointnet_cylinder_flow，模型文件为 models/KAPointNet.py，主类为 KAPointNet，模型需包含 JacobiKANLayer、10 个共享 Jacobi KAN 层、BatchNorm1d、PointNet 风格全局 max pooling 和逐点回归头；配置文件为 config/config.yaml，训练脚本为 scripts/train.py，推理脚本为 scripts/inference.py，可视化脚本为 scripts/result.py。训练过程使用 Adam、learning_rate=5e-4、默认 poly_degree=5、alpha=1、beta=1、network_scaling=1、num_points=1024，训练 checkpoint 保存至 weight/best_model.pth，训练历史和测试指标保存至 results 目录，并通过 print 实时输出 train_loss、val_loss 和相对 L2 指标。",
+  "evaluation_script": "evaluate_ka_pointnet_cylinder_flow.py",
+  "stardard_dir_name": "ka_pointnet_cylinder_flow",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "cpus_per_task": 4,
+    "memory": "8G",
+    "dcu": 1
+  },
+  "checks": [
+    {
+      "id": "917f25d19ae1305c",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "models/KAPointNet.py",
+          "config/config.yaml",
+          "scripts/train.py",
+          "scripts/inference.py",
+          "scripts/result.py"
+        ]
+      }
+    },
+    {
+      "id": "838c75acc81f765e",
+      "type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "917f25d19ae1305c"
+      ],
+      "params": {
+        "phase": "data_analysis",
+        "config_name": "config/config.yaml",
+        "data": {
+          "root": "/public/share/sugonhpcapp01/onestore/onedatasets/PointNetCFD_data/data",
+          "cfd_file": "CFDdata.npy",
+          "input_columns": {
+            "x": 0,
+            "y": 1
+          },
+          "output_columns": {
+            "p": 2,
+            "u": 3,
+            "v": 4
+          },
+          "num_points": 1024,
+          "split_files": {
+            "training_idx.npy": "training_idx.npy",
+            "validation_idx.npy": "validation_idx.npy",
+            "test_idx.npy": "test_idx.npy"
+          }
+        },
+        "expected_raw_shape": [
+          2215,
+          1024,
+          5
+        ],
+        "expected_raw_dtype_prefix": "float",
+        "expected_split_lengths": {
+          "training_idx.npy": 1772,
+          "validation_idx.npy": 221,
+          "test_idx.npy": 222
+        },
+        "expected_split_dtype_prefix": "int"
+      }
+    },
+    {
+      "id": "a360e0435f9b93de",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "917f25d19ae1305c",
+        "838c75acc81f765e"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "scripts/train.py"
+        ],
+        "required_interfaces": [
+          "main",
+          "parse_args"
+        ],
+        "source_tokens": {
+          "required": [
+            "Adam",
+            "train_loss",
+            "val_loss",
+            "torch.save"
+          ],
+          "checkpoint_token": "best_model.pth"
+        },
+        "config_values": {
+          "experiment.checkpoint_path": "weight/best_model.pth",
+          "experiment.results_dir": "results",
+          "training.learning_rate": 0.0005
+        }
+      }
+    },
+    {
+      "id": "13b1a1835cc757cf",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "917f25d19ae1305c",
+        "a360e0435f9b93de"
+      ],
+      "params": {
+        "phase": "infer_script",
+        "files": [
+          "scripts/inference.py",
+          "scripts/result.py"
+        ],
+        "required_interfaces": {
+          "scripts/inference.py": [
+            "main"
+          ],
+          "scripts/result.py": [
+            "main"
+          ]
+        },
+        "source_tokens": {
+          "scripts/inference.py": [
+            "load_state_dict",
+            "torch.load",
+            "metrics",
+            "json.dump",
+            "np.savez"
+          ],
+          "scripts/result.py": [
+            "save_field",
+            "save_field_triptych"
+          ]
+        },
+        "config_values": {
+          "inference.split": "test"
+        }
+      }
+    },
+    {
+      "id": "49cacb0ba8093a68",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "917f25d19ae1305c",
+        "838c75acc81f765e"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "model_file": "models/KAPointNet.py",
+        "model_class": "KAPointNet",
+        "config_name": "config/config.yaml",
+        "model_args": {
+          "input_channels": 2,
+          "output_channels": 3,
+          "network_scaling": 1.0,
+          "poly_degree": 5,
+          "alpha": 1.0,
+          "beta": 1.0,
+          "num_points": 1024
+        },
+        "required_module_exports": [
+          "JacobiKANLayer",
+          "KAPointNet"
+        ],
+        "module_counts": {
+          "JacobiKANLayer": 10,
+          "BatchNorm1d": 9
+        },
+        "required_source_tokens": [
+          "max_pool1d"
+        ],
+        "required_parameters": {
+          "suffix": ".jacobi_coeffs"
+        },
+        "expected_parameter_count": 5316224
+      }
+    },
+    {
+      "id": "7d8b4416add0f837",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "49cacb0ba8093a68"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "model_file": "models/KAPointNet.py",
+        "model_class": "KAPointNet",
+        "config_name": "config/config.yaml",
+        "model_args": {
+          "input_channels": 2,
+          "output_channels": 3,
+          "network_scaling": 1.0,
+          "poly_degree": 5,
+          "alpha": 1.0,
+          "beta": 1.0,
+          "num_points": 1024
+        },
+        "seed": 20260818,
+        "input": {
+          "dtype": "float32",
+          "linspace": [
+            -1.0,
+            1.0
+          ],
+          "steps": 2048,
+          "shape": [
+            1,
+            2,
+            1024
+          ]
+        },
+        "no_grad": true,
+        "expected_output": {
+          "type": "torch.Tensor",
+          "shape": [
+            1,
+            3,
+            1024
+          ],
+          "finite": true
+        }
+      }
+    },
+    {
+      "id": "5f774698b3e80bf6",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "49cacb0ba8093a68",
+        "7d8b4416add0f837"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "candidate": {
+          "model_file": "models/KAPointNet.py",
+          "model_class": "KAPointNet",
+          "config_name": "config/config.yaml",
+          "model_args": {
+            "input_channels": 2,
+            "output_channels": 3,
+            "network_scaling": 1.0,
+            "poly_degree": 5,
+            "alpha": 1.0,
+            "beta": 1.0,
+            "num_points": 1024
+          },
+          "seed": 20260818
+        },
+        "reference": {
+          "model_file": "benchmarks/standard/ka_pointnet_cylinder_flow/models/KAPointNet.py",
+          "model_class": "KAPointNet",
+          "seed": 20260818
+        },
+        "input": {
+          "linspace": [
+            -0.75,
+            0.75
+          ],
+          "steps": 2048,
+          "shape": [
+            1,
+            2,
+            1024
+          ]
+        },
+        "state_dict_keys_order": true,
+        "state_dict_shapes": true,
+        "strict_load": true,
+        "no_grad": true,
+        "compare_atol": 1e-06
+      }
+    },
+    {
+      "id": "44e5aa2ebd8899fb",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "49cacb0ba8093a68",
+        "7d8b4416add0f837"
+      ],
+      "params": {
+        "phase": "train_script",
+        "model_file": "models/KAPointNet.py",
+        "model_class": "KAPointNet",
+        "model_args": {
+          "input_channels": 2,
+          "output_channels": 3,
+          "network_scaling": 1.0,
+          "poly_degree": 5,
+          "alpha": 1.0,
+          "beta": 1.0,
+          "num_points": 1024
+        },
+        "seed": 20260818,
+        "input_shape": [
+          1,
+          2,
+          1024
+        ],
+        "target_shape": [
+          1,
+          3,
+          1024
+        ],
+        "optimizer": {
+          "name": "Adam",
+          "learning_rate": 0.0001
+        },
+        "loss": "mean((y-target)**2)",
+        "operations": [
+          "zero_grad",
+          "forward",
+          "loss",
+          "backward",
+          "step"
+        ],
+        "finite_loss": true,
+        "at_least_one_finite_gradient": true
+      }
+    },
+    {
+      "id": "de9c1fb9068642b2",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "a360e0435f9b93de",
+        "13b1a1835cc757cf"
+      ],
+      "params": {
+        "phase": "smoke_train",
+        "artifacts": {
+          "files": [
+            "weight/best_model.pth",
+            "weight",
+            "results"
+          ]
+        },
+        "experiment": {
+          "checkpoint_path": "weight/best_model.pth",
+          "results_dir": "results"
+        },
+        "directories": [
+          "weight",
+          "results"
+        ]
+      }
+    }
+  ]
+}

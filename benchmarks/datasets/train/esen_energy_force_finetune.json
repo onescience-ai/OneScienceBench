@@ -1,0 +1,399 @@
+{
+  "id": "esen_energy_force_finetune",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "使用固定 eSEN MPTrj 权重在 OneScience oxide ASE DB 上进行 energy-force 全量微调",
+  "prompt": "独立实现 OneScience eSEN DeNS 模型在固定 oxide ASE 数据上的 energy-force 微调。候选不得主动导入 onescience、fairchem 或其他外部 eSEN 实现；模型、周期图、loss、反向和更新都必须由候选本地 PyTorch 类执行。固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt`，SHA256 为 `f44aecdfbdb74575f8861c08ee6aa86939cce4571e73ac508666190cb67f064b`；Jd 为 `/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt`，SHA256 为 `b4059c45be246dcb6c49c545670b65c56550eb0c2e7a9c92b4b50a92d370dbe2`；训练数据为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db`，应读取 ASE DB 的 238 个周期结构及 energy、forces 标签，不得下载、替换或伪造数据。checkpoint 使用 `torch.load(..., weights_only=True)`，完整 `state_dict` 有 394 个 tensor entry、30,087,404 个参数，必须只去掉 `module.` 包装前缀后用 `load_state_dict(..., strict=True)` 完整恢复。模型结构固定为 eSEN_DeNS_Backbone + MLP_EFS_Head，参数为 max_num_elements=100、sphere_channels=128、lmax=3、mmax=2、cutoff=6.0、edge_channels=128、Gaussian distance basis=10、num_layers=10、hidden_channels=128、rms_norm_sh、gate、spectral、use_envelope=true、direct_forces=false、regress_forces=true、regress_stress=true。周期图必须采用 `[neighbor, center]` edge_index 和整数 cell offsets。checkpoint 中的 energy/forces/stress normalizers 和 energy element references 必须用于训练目标的反归一化/归一化。`build_finetune_batch` 必须返回结构图、energy `[1]`、forces `[N,3]`、natoms 和 structure index；固定最小 batch 为 train.db 的 structure_index=0（6 个原子）。模型输出 energy `[1]`、forces `[6,3]`、stress `[1,3,3]`，forces/stress 保持 create_graph 所需的自动微分路径。loss 必须是 energy 每原子归一化 Huber(delta=0.01) + 1.0 * forces Huber(delta=0.01)。使用 Adam、lr=1e-6、eps=1e-8、gradient clip=1.0、seed=20260820、max_steps=1。训练参数集合应覆盖参与 energy-force 监督路径的 backbone 和 energy head；checkpoint 中仅用于 denoising 的辅助 head 可保留但冻结，不能声称它被更新。不得读取评测器、标准实现或旧候选。\n\n请在当前工作目录生成指定的本地实现文件。\n\n必须生成以下相对路径文件：`esen_energy_force_finetune/esen_energy_force_finetune.py`、`esen_energy_force_finetune/train_esen_finetune.py`、`esen_energy_force_finetune/esen_finetune.yaml`、`esen_energy_force_finetune/portable_esen/__init__.py`、`esen_energy_force_finetune/portable_esen/model.py`、`esen_energy_force_finetune/portable_esen/esen_dens.py`、`esen_energy_force_finetune/portable_esen/graph.py`、`esen_energy_force_finetune/portable_esen/layer/esen/esen_block.py`、`esen_energy_force_finetune/portable_esen/layer/esen/common/rotation.py`、`esen_energy_force_finetune/portable_esen/layer/esen/common/so3.py`、`esen_energy_force_finetune/portable_esen/layer/esen/nn/embedding.py`、`esen_energy_force_finetune/portable_esen/layer/esen/nn/layer_norm.py`、`esen_energy_force_finetune/portable_esen/layer/esen/nn/radial.py`、`esen_energy_force_finetune/portable_esen/layer/esen/nn/so2_layers.py`、`esen_energy_force_finetune/portable_esen/layer/esen/nn/so3_layers.py`、`esen_energy_force_finetune/portable_esen/layer/esen/nn/activation.py`；可增加必要本地辅助文件，但不能导入或复制外部 OneScience/FairChem 运行实现。`esen_energy_force_finetune.py` 必须公开 `ESENModel`、`load_checkpoint_payload`、`build_model`、`load_model`、`load_training_structures`、`build_finetune_batch`、`predict_energy_forces`、`compute_energy_force_loss`；`train_esen_finetune.py` 必须公开 `load_config`、`build_model`、`build_trainer`、`train_step`、`train`、`main`，并提供 `--config`、`--output-dir`、`--device auto|cpu|cuda`。配置顶层必须含 `checkpoint`、`jd_path`、`train_data`、`model`、`training`，training 必须含 optimizer、lr、eps、huber_delta、force_loss_ratio、gradient_clip_norm、max_steps、structure_index、seed。最小训练必须产生 `esen_finetuned.pt`、`metrics.jsonl`、`train.log`；产物 checkpoint 必须含 format、model_name、model、model_args、optimizer、completed_steps、trainable_parameter_names、config、history，并能严格重载。",
+  "evaluation_script": "evaluate_esen_energy_force_finetune.py",
+  "stardard_dir_name": "esen_energy_force_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 16,
+    "memory": "16G",
+    "time_limit": "00:45:00",
+    "job_name": "eval_esen_energy_force_finetune",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "55a17dd05238364c",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "esen_energy_force_finetune.py",
+          "train_esen_finetune.py",
+          "esen_finetune.yaml",
+          "portable_esen/__init__.py",
+          "portable_esen/model.py",
+          "portable_esen/esen_dens.py",
+          "portable_esen/graph.py",
+          "portable_esen/layer/esen/esen_block.py",
+          "portable_esen/layer/esen/common/rotation.py",
+          "portable_esen/layer/esen/common/so3.py",
+          "portable_esen/layer/esen/nn/embedding.py",
+          "portable_esen/layer/esen/nn/layer_norm.py",
+          "portable_esen/layer/esen/nn/radial.py",
+          "portable_esen/layer/esen/nn/so2_layers.py",
+          "portable_esen/layer/esen/nn/so3_layers.py",
+          "portable_esen/layer/esen/nn/activation.py"
+        ],
+        "legacy_predicate": "submission_path.joinpath(relative).is_file()"
+      }
+    },
+    {
+      "id": "2169cb529e66268a",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "55a17dd05238364c"
+      ],
+      "params": {
+        "candidate": {
+          "file": "esen_energy_force_finetune.py",
+          "calls": [
+            {
+              "function": "load_training_structures",
+              "args": {
+                "path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db"
+              },
+              "expected": {
+                "count": 238,
+                "first_length": 6,
+                "first_positions_finite": true
+              }
+            },
+            {
+              "function": "build_finetune_batch",
+              "args": {
+                "path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db",
+                "structure_index": 0,
+                "device": "cpu"
+              },
+              "expected": {
+                "shapes": {
+                  "energy": [
+                    1
+                  ],
+                  "forces": [
+                    6,
+                    3
+                  ],
+                  "atomic_numbers": [
+                    6
+                  ],
+                  "pos": [
+                    6,
+                    3
+                  ],
+                  "cell": [
+                    1,
+                    3,
+                    3
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1139dae5e71d7afc",
+      "type": "train_config_content",
+      "method": "check_config_content",
+      "phase": "train_script",
+      "depends": [
+        "55a17dd05238364c"
+      ],
+      "params": {
+        "config_name": "esen_finetune.yaml",
+        "required_config_keys": [
+          "optimizer",
+          "lr",
+          "eps",
+          "huber_delta",
+          "force_loss_ratio",
+          "gradient_clip_norm",
+          "max_steps",
+          "structure_index",
+          "seed"
+        ],
+        "expected_values": {
+          "optimizer": "Adam",
+          "lr": 1e-06,
+          "max_steps": 1
+        },
+        "required_interfaces": [
+          "load_config",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ],
+        "interface_file": "train_esen_finetune.py",
+        "loader": "load_config"
+      }
+    },
+    {
+      "id": "858460f3300654ff",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "55a17dd05238364c"
+      ],
+      "params": {
+        "seed": 20260820,
+        "checkpoint": {
+          "path": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+          "sha256": "f44aecdfbdb74575f8861c08ee6aa86939cce4571e73ac508666190cb67f064b",
+          "state_count": 394,
+          "state_numel": 30087404,
+          "strip_prefix": "module.",
+          "same_keys": true,
+          "same_shapes": true,
+          "same_values": true
+        },
+        "jd": {
+          "path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+          "sha256": "b4059c45be246dcb6c49c545670b65c56550eb0c2e7a9c92b4b50a92d370dbe2"
+        },
+        "ast_rules": {
+          "prohibited_import_roots": [
+            "onescience",
+            "fairchem",
+            "mattersim",
+            "mace"
+          ],
+          "require_weights_only_true": true,
+          "require_strict_true": true
+        },
+        "model_loader": {
+          "function": "load_model",
+          "device": "cpu",
+          "jd_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt"
+        },
+        "backbone": {
+          "class": "eSEN_DeNS_Backbone",
+          "lmax": 3,
+          "mmax": 2,
+          "sphere_channels": 128,
+          "cutoff": 6.0,
+          "direct_forces": false,
+          "regress_stress": true,
+          "required_module_order": [
+            "SO3_grid",
+            "sphere_embedding",
+            "distance_expansion",
+            "source_embedding",
+            "target_embedding",
+            "edge_degree_embedding",
+            "blocks",
+            "norm",
+            "force_embedding"
+          ],
+          "blocks": 10,
+          "block_child_order": [
+            "norm_1",
+            "edge_wise",
+            "norm_2",
+            "atom_wise"
+          ],
+          "sphere_embedding_shape": [
+            2,
+            128
+          ],
+          "distance_expansion_shape": [
+            3,
+            10
+          ]
+        },
+        "head": {
+          "class": "MLP_EFS_Head",
+          "module_order": [
+            "energy_block",
+            "denoising_linear"
+          ],
+          "energy_shape": [
+            2,
+            1
+          ]
+        },
+        "top_level_module_order": [
+          "backbone",
+          "output_heads"
+        ]
+      }
+    },
+    {
+      "id": "8f523daa1a57e9b7",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "858460f3300654ff"
+      ],
+      "params": {
+        "seed": 20260820,
+        "model_loader": {
+          "function": "load_model",
+          "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+          "device": "cpu"
+        },
+        "batch": {
+          "function": "build_finetune_batch",
+          "data": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db",
+          "structure_index": 0,
+          "device": "cpu"
+        },
+        "prediction_function": "predict_energy_forces",
+        "expected_shapes": {
+          "energy": [
+            1
+          ],
+          "forces": [
+            6,
+            3
+          ],
+          "stress": [
+            1,
+            3,
+            3
+          ]
+        },
+        "require_finite": true
+      }
+    },
+    {
+      "id": "dab1491607ce66bb",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "8f523daa1a57e9b7"
+      ],
+      "params": {
+        "candidate": {
+          "loader": "load_model",
+          "prediction": "predict_energy_forces"
+        },
+        "reference": {
+          "module": "benchmarks/standard/esen_energy_force_finetune/esen_energy_force_finetune.py",
+          "loader": "load_model",
+          "prediction": "predict_energy_forces"
+        },
+        "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+        "data": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db",
+        "structure_index": 0,
+        "device": "cpu",
+        "seed_sequence": [
+          20260820,
+          20260820,
+          20260820,
+          20260820
+        ],
+        "state_requirements": {
+          "same_keys": true,
+          "same_shapes": true,
+          "same_values": true
+        },
+        "max_abs_error": {
+          "energy": 0.0001,
+          "forces": 0.0001,
+          "stress": 0.0001
+        }
+      }
+    },
+    {
+      "id": "ea4639c0d899feab",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "1139dae5e71d7afc",
+        "858460f3300654ff"
+      ],
+      "params": {
+        "config_name": "esen_finetune.yaml",
+        "device": "cpu",
+        "seed_source": "training.seed",
+        "batch": {
+          "function": "build_finetune_batch",
+          "data": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/esen/oxides/train.db",
+          "structure_index": 0
+        },
+        "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+        "trainer": {
+          "function": "build_trainer",
+          "trainable_selector": "trainable_named_parameters",
+          "fallback_exclude_name": "denoising_linear",
+          "step_function": "train_step"
+        },
+        "assertions": {
+          "record_values_finite": true,
+          "optimizer_parameter_ids_equal_trainable_ids": true,
+          "minimum_changed_fraction": 0.95,
+          "require_frozen_parameters": true,
+          "frozen_requires_grad_false": true,
+          "no_frozen_parameter_changes": true
+        }
+      }
+    },
+    {
+      "id": "746c5bc14c9064c1",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "ea4639c0d899feab",
+        "1139dae5e71d7afc"
+      ],
+      "params": {
+        "train_config": "esen_finetune.yaml",
+        "device": "cpu",
+        "output_directory": {
+          "kind": "TemporaryDirectory",
+          "prefix": "esen_finetune_eval_"
+        },
+        "required_files": [
+          "esen_finetuned.pt",
+          "metrics.jsonl",
+          "train.log"
+        ],
+        "checkpoint_load": {
+          "map_location": "cpu",
+          "weights_only": true
+        },
+        "expected_checkpoint_keys": [
+          "format",
+          "model_name",
+          "model",
+          "model_args",
+          "optimizer",
+          "completed_steps",
+          "trainable_parameter_names",
+          "config",
+          "history"
+        ],
+        "format": "esen-energy-force-finetune-v1",
+        "optimizer_nonempty": true,
+        "completed_steps": 1,
+        "history_nonempty": true,
+        "strict_reload": true
+      }
+    }
+  ]
+}

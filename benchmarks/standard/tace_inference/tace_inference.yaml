@@ -1,0 +1,8 @@
+paths:
+  checkpoint: /public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt
+  input: /public/share/sugonhpcapp01/onestore/onedatasets/matchem/TACE/BaTiO3.xyz
+  output: tace_predictions.json
+inference:
+  device: cpu
+  structure_index: 0
+  seed: 456

@@ -1,0 +1,1009 @@
+{
+    "id": "rno_darcy_sec_develop",
+    "eval_type": "sec_develop",
+    "domain": "cfd",
+    "task": "基于 RNO 模型开展 Darcy Flow 预测训练的二次开发。",
+    "prompt": "基于 RNO 模型开展 Darcy Flow 预测训练的二次开发。\n   数据位于 /public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy。\n    原始任务：\n    使用 piececonst_r421_N1024_smooth1.mat 前 1000 个样本训练、piececonst_r421_N1024_smooth2.mat 前 200 个样本测试，读取 coeff 和 sol，将 421×421 场按步长 5 下采样至 85×85。输入、输出采用仅由训练集计算的全局标量归一化，不设置验证集，禁止使用测试集选择 checkpoint。\nmodel.py 实现核心类 RadonNeuralOperator2D，输入位置 [B,7225,2] 和渗透率场 [B,7225,1]，输出压力解 [B,7225,1]。默认使用 128 隐藏通道、8 个 attention heads、8 层 Transformer、32 个 Radon 角度和 4 个 Radon residual blocks；角度权重采用论文所示的 Conv 1→16 → GELU → Conv 16→1 → Sigmoid。论文未披露的卷积核设为 3，并允许通过配置修改。slice_num=64、参考网格 8×8 和统一位置编码参考官方实现。\ntrain.py 采用 batch size 4、500 epochs、AdamW（lr=1e-3、weight_decay=1e-5）、OneCycleLR 和最大梯度范数 0.1。训练目标为物理空间 Relative L2 加 0.1 × gradient Relative L2，预测结果施加零 Dirichlet 边界。保存 last.pt 和周期性 checkpoint，不以测试集指标选择最佳模型。\nevaluate.py 使用 strict=True 加载 checkpoint，在测试集上报告论文主指标 Relative L2，并独立报告 gradient Relative L2、MSE 和 MAE，将数据配置、checkpoint 轮次、参数量和指标保存为 evaluation.json。\n，包含 config.yaml、dataset.py、model.py、utils.py、train.py 和 evaluate.py；实验产物统一保存至指定目录下的 results/rno_darcy_paper_rep_seed0/ 目录，至少包含 checkpoint、history.json、summary.json、evaluation.json 和 train.log。\n二次开发：\n1. 多尺度 Radon Processor：保留原 RNO 编码器与 Transformer 解码器，将 Processor 改为 `85×85` 细尺度和 `43×43` 粗尺度并行分支。细分支采用 2 个、32 投影角的 Radon 残差块提取局部界面特征；粗分支融合下采样隐特征与粗网格渗透率，经 2 个、16 投影角的 Radon 块建模全局压力传播。粗特征双线性上采样后，通过逐通道可学习门控与细特征融合，并结合局部卷积特征进行残差修正。Pipeline 缓存粗尺度输入和界面权重，模型按分辨率、角度、设备及数据类型缓存 Radon 采样网格。\n\n2. 物理约束复合 Loss：总损失由压力场 Relative L2、梯度 Relative L2、Darcy PDE 残差和零 Dirichlet 边界 MSE 组成，梯度项权重为 `0.1`。PDE 项采用有限体积离散，以调和平均计算网格面渗透率，并对 `-∇·(a∇u)-f` 的内部残差加权；边界项直接约束预测压力为零。PDE 和边界权重分别由 `0` 线性增至 `0.01` 和 `0.05`，课程区间为训练进度的 `5%～40%`。界面权重由渗透率梯度生成，默认放大系数为 `2`、最大截断为 `8`，重点强化突变和高梯度区域。\n    ",
+    "evaluation_script": "evaluate_rno_darcy_sec_develop.py",
+    "stardard_dir_name": "rno_darcy_sec_develop",
+    "evaluation_execution_mode": "scnet",
+    "evaluation_backend": "ssh",
+    "evaluation_env": {
+        "conda_env": "onescience311"
+    },
+    "checks": [
+        {
+            "id": "f7cda7ae641f0b4d",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "config.yaml"
+                ]
+            }
+        },
+        {
+            "id": "4ad22759cbbc9acb",
+            "type": "data_config_content",
+            "method": "check_config_content",
+            "phase": "data_analysis",
+            "depends": [
+                "f7cda7ae641f0b4d"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "data_root",
+                        "value": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy"
+                    },
+                    {
+                        "key": "train_file",
+                        "value": "piececonst_r421_N1024_smooth1.mat"
+                    },
+                    {
+                        "key": "test_file",
+                        "value": "piececonst_r421_N1024_smooth2.mat"
+                    },
+                    {
+                        "key": "train_samples",
+                        "value": 1000
+                    },
+                    {
+                        "key": "test_samples",
+                        "value": 200
+                    },
+                    {
+                        "key": "subsample_step",
+                        "value": 5
+                    },
+                    {
+                        "key": "resolution",
+                        "value": 85
+                    },
+                    {
+                        "key": "coarse_resolution",
+                        "value": 43
+                    },
+                    {
+                        "key": "interface_amplification",
+                        "value": 2
+                    },
+                    {
+                        "key": "interface_max",
+                        "value": 8
+                    }
+                ],
+                "config_paths": {
+                    "data_root": [
+                        "data.root",
+                        "data.data_root",
+                        "data_root",
+                        "data.data_dir"
+                    ],
+                    "train_file": [
+                        "data.train_file",
+                        "train_file"
+                    ],
+                    "test_file": [
+                        "data.test_file",
+                        "test_file"
+                    ],
+                    "train_samples": [
+                        "data.train_samples",
+                        "train_samples",
+                        "data.n_train"
+                    ],
+                    "test_samples": [
+                        "data.test_samples",
+                        "test_samples",
+                        "data.n_test"
+                    ],
+                    "subsample_step": [
+                        "data.subsample_step",
+                        "subsample_step",
+                        "data.downsample",
+                        "data.stride"
+                    ],
+                    "resolution": [
+                        "data.resolution",
+                        "resolution"
+                    ],
+                    "coarse_resolution": [
+                        "data.coarse_resolution",
+                        "coarse_resolution"
+                    ],
+                    "interface_amplification": [
+                        "data.interface_amplification",
+                        "interface_amplification",
+                        "data.importance_alpha",
+                        "model.interface_amplification"
+                    ],
+                    "interface_max": [
+                        "data.interface_max",
+                        "interface_max",
+                        "data.importance_max",
+                        "model.interface_max_truncation"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "25bbb71e1256cea8",
+            "type": "dataset_pipeline",
+            "method": "check_dataset_pipeline",
+            "phase": "data_analysis",
+            "depends": [
+                "f7cda7ae641f0b4d"
+            ],
+            "params": {
+                "dataset_file": "dataset.py",
+                "config_name": "config.yaml",
+                "runtime_probe": {
+                    "dataset_file": "dataset.py",
+                    "dataset_builders": [
+                        {
+                            "function": "build_darcy_datasets",
+                            "normalizers": "objects",
+                            "aux_indices": [
+                                2,
+                                4
+                            ],
+                            "input_index": 1,
+                            "target_index": 3,
+                            "test_target_normalized": false
+                        },
+                        {
+                            "function": "build_datasets",
+                            "normalizers": "stats",
+                            "aux_indices": null,
+                            "input_index": 1,
+                            "target_index": 2,
+                            "test_target_normalized": true
+                        }
+                    ],
+                    "overrides": {
+                        "data_root": [
+                            "data.root",
+                            "data.data_dir"
+                        ],
+                        "train_samples": [
+                            "data.n_train",
+                            "data.train_samples"
+                        ],
+                        "test_samples": [
+                            "data.n_test",
+                            "data.test_samples"
+                        ],
+                        "batch_size": [
+                            "training.batch_size",
+                            "train.batch_size"
+                        ],
+                        "eval_batch_size": [
+                            "eval.batch_size"
+                        ],
+                        "epochs": [
+                            "training.epochs",
+                            "train.epochs"
+                        ],
+                        "num_workers": [
+                            "data.num_workers",
+                            "train.num_workers"
+                        ],
+                        "output_dir": [
+                            "experiment.output_dir",
+                            "output.results_dir"
+                        ],
+                        "checkpoint_dir": [
+                            "output.checkpoint_dir"
+                        ],
+                        "cache_dir": [
+                            "data.cache_dir"
+                        ],
+                        "device": [
+                            "experiment.device"
+                        ],
+                        "amp": [
+                            "training.amp"
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "id": "acfec39e60ca825a",
+            "type": "model_file",
+            "method": "check_files",
+            "phase": "model_structure",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "model.py"
+                ]
+            }
+        },
+        {
+            "id": "aea7b1f93008c66a",
+            "type": "model_config_content",
+            "method": "check_config_content",
+            "phase": "model_structure",
+            "depends": [
+                "f7cda7ae641f0b4d"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "hidden_channels",
+                        "value": 128
+                    },
+                    {
+                        "key": "attention_heads",
+                        "value": 8
+                    },
+                    {
+                        "key": "transformer_layers",
+                        "value": 8
+                    },
+                    {
+                        "key": "slice_num",
+                        "value": 64
+                    },
+                    {
+                        "key": "reference_grid_size",
+                        "value": 8
+                    },
+                    {
+                        "key": "fine_radon_blocks",
+                        "value": 2
+                    },
+                    {
+                        "key": "fine_radon_angles",
+                        "value": 32
+                    },
+                    {
+                        "key": "coarse_radon_blocks",
+                        "value": 2
+                    },
+                    {
+                        "key": "coarse_radon_angles",
+                        "value": 16
+                    },
+                    {
+                        "key": "convolution_kernel_size",
+                        "value": 3
+                    }
+                ],
+                "config_paths": {
+                    "hidden_channels": [
+                        "model.hidden_channels",
+                        "hidden_channels",
+                        "model.hidden_dim",
+                        "model.n_hidden"
+                    ],
+                    "attention_heads": [
+                        "model.attention_heads",
+                        "attention_heads",
+                        "model.num_heads",
+                        "model.n_heads"
+                    ],
+                    "transformer_layers": [
+                        "model.transformer_layers",
+                        "transformer_layers",
+                        "model.num_layers",
+                        "model.n_layers"
+                    ],
+                    "slice_num": [
+                        "model.slice_num",
+                        "slice_num"
+                    ],
+                    "reference_grid_size": [
+                        "model.reference_grid_size",
+                        "reference_grid_size",
+                        "model.ref_grid_size",
+                        "model.ref"
+                    ],
+                    "fine_radon_blocks": [
+                        "model.fine_radon_blocks",
+                        "fine_radon_blocks",
+                        "model.fine_blocks"
+                    ],
+                    "fine_radon_angles": [
+                        "model.fine_radon_angles",
+                        "fine_radon_angles",
+                        "model.num_angles",
+                        "model.fine_angles"
+                    ],
+                    "coarse_radon_blocks": [
+                        "model.coarse_radon_blocks",
+                        "coarse_radon_blocks",
+                        "model.coarse_blocks"
+                    ],
+                    "coarse_radon_angles": [
+                        "model.coarse_radon_angles",
+                        "coarse_radon_angles",
+                        "model.coarse_num_angles",
+                        "model.coarse_angles"
+                    ],
+                    "convolution_kernel_size": [
+                        "model.convolution_kernel_size",
+                        "convolution_kernel_size",
+                        "model.angle_conv_kernel_size",
+                        "model.conv_kernel"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "bc61293b18c02be8",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": [
+                "acfec39e60ca825a"
+            ],
+            "params": {
+                "files": [
+                    "model.py"
+                ],
+                "required_interfaces": [
+                    "RadonNeuralOperator2D"
+                ]
+            }
+        },
+        {
+            "id": "44208fb461b56ef8",
+            "type": "model_structure",
+            "method": "check_model_structure",
+            "phase": "model_structure",
+            "depends": [
+                "f7cda7ae641f0b4d",
+                "bc61293b18c02be8"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "model_file": "model.py",
+                "model_class": "RadonNeuralOperator2D",
+                "model_args": {},
+                "rules": [
+                    {
+                        "id": "rno_root",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "expected": "RadonNeuralOperator2D"
+                        }
+                    },
+                    {
+                        "id": "fine_block_count",
+                        "type": "children_count",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$fine_branch",
+                            "count": 2
+                        }
+                    },
+                    {
+                        "id": "coarse_block_count",
+                        "type": "children_count",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$coarse_branch",
+                            "count": 2
+                        }
+                    },
+                    {
+                        "id": "angle_conv_in",
+                        "type": "conv_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$angle_conv_in",
+                            "in_channels": 1,
+                            "out_channels": 16,
+                            "kernel_size": 3
+                        }
+                    },
+                    {
+                        "id": "angle_conv_out",
+                        "type": "conv_shape",
+                        "severity": "error",
+                        "params": {
+                            "target_path": "$angle_conv_out",
+                            "in_channels": 16,
+                            "out_channels": 1,
+                            "kernel_size": 3
+                        }
+                    }
+                ],
+                "transformer_layers": 8,
+                "multiscale_source_evidence": true,
+                "model_config_arg": "config",
+                "role_paths": {
+                    "fine": [
+                        "processor.fine_branch",
+                        "processor.fine_blocks"
+                    ],
+                    "coarse": [
+                        "processor.coarse_branch",
+                        "processor.coarse_blocks"
+                    ],
+                    "angle_network": [
+                        "angle_weights",
+                        "angle_weight"
+                    ],
+                    "angle_count": [
+                        "radon.num_angles",
+                        "n_angles"
+                    ]
+                },
+                "branch_angles": {
+                    "fine": 32,
+                    "coarse": 16
+                }
+            }
+        },
+        {
+            "id": "3063f6b46b588e39",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": [
+                "f7cda7ae641f0b4d",
+                "bc61293b18c02be8"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "model_file": "model.py",
+                "model_class": "RadonNeuralOperator2D",
+                "model_args": {},
+                "forward_args": {
+                    "positions": "$positions",
+                    "permeability": "$permeability"
+                },
+                "out_shape": [
+                    1,
+                    7225,
+                    1
+                ],
+                "pre_forward_hooks": [
+                    {
+                        "function": "linspace",
+                        "args": {
+                            "start": 0.0,
+                            "end": 1.0,
+                            "steps": 85
+                        },
+                        "save_as": "axis"
+                    },
+                    {
+                        "function": "repeat_interleave",
+                        "args": {
+                            "input": "$axis",
+                            "repeats": 85,
+                            "dim": 0
+                        },
+                        "save_as": "grid_x"
+                    },
+                    {
+                        "function": "tile",
+                        "args": {
+                            "input": "$axis",
+                            "dims": [
+                                85
+                            ]
+                        },
+                        "save_as": "grid_y"
+                    },
+                    {
+                        "function": "stack",
+                        "args": {
+                            "tensors": [
+                                "$grid_x",
+                                "$grid_y"
+                            ],
+                            "dim": -1
+                        },
+                        "save_as": "grid"
+                    },
+                    {
+                        "function": "reshape",
+                        "args": {
+                            "input": "$grid",
+                            "shape": [
+                                1,
+                                7225,
+                                2
+                            ]
+                        },
+                        "save_as": "positions"
+                    },
+                    {
+                        "function": "ones",
+                        "args": {
+                            "size": [
+                                1,
+                                7225,
+                                1
+                            ]
+                        },
+                        "save_as": "permeability"
+                    }
+                ],
+                "hook_source": "torch",
+                "args_as_positional": true,
+                "check_nan_inf": true,
+                "model_config_arg": "config",
+                "role_paths": {
+                    "fine": [
+                        "processor.fine_branch",
+                        "processor.fine_blocks"
+                    ],
+                    "coarse": [
+                        "processor.coarse_branch",
+                        "processor.coarse_blocks"
+                    ],
+                    "angle_network": [
+                        "angle_weights",
+                        "angle_weight"
+                    ],
+                    "angle_count": [
+                        "radon.num_angles",
+                        "n_angles"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "182f920512f68bbb",
+            "type": "train_file",
+            "method": "check_files",
+            "phase": "train_script",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "train.py",
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "bdf66a0f29f2aa31",
+            "type": "train_config_content",
+            "method": "check_config_content",
+            "phase": "train_script",
+            "depends": [
+                "f7cda7ae641f0b4d"
+            ],
+            "params": {
+                "config_name": "config.yaml",
+                "required_config_keys": [
+                    {
+                        "key": "batch_size",
+                        "value": 4
+                    },
+                    {
+                        "key": "epochs",
+                        "value": 500
+                    },
+                    {
+                        "key": "learning_rate",
+                        "value": 0.001
+                    },
+                    {
+                        "key": "weight_decay",
+                        "value": 1e-05
+                    },
+                    {
+                        "key": "max_gradient_norm",
+                        "value": 0.1
+                    },
+                    {
+                        "key": "gradient_weight",
+                        "value": 0.1
+                    },
+                    {
+                        "key": "pde_weight_max",
+                        "value": 0.01
+                    },
+                    {
+                        "key": "boundary_weight_max",
+                        "value": 0.05
+                    },
+                    {
+                        "key": "curriculum_start",
+                        "value": 0.05
+                    },
+                    {
+                        "key": "curriculum_end",
+                        "value": 0.4
+                    },
+                    {
+                        "key": "result_dir",
+                        "value": "results/rno_darcy_paper_rep_seed0"
+                    }
+                ],
+                "config_paths": {
+                    "batch_size": [
+                        "training.batch_size",
+                        "batch_size",
+                        "train.batch_size"
+                    ],
+                    "epochs": [
+                        "training.epochs",
+                        "epochs",
+                        "train.epochs"
+                    ],
+                    "learning_rate": [
+                        "training.learning_rate",
+                        "training.lr",
+                        "learning_rate",
+                        "lr",
+                        "train.lr"
+                    ],
+                    "weight_decay": [
+                        "training.weight_decay",
+                        "weight_decay",
+                        "train.weight_decay"
+                    ],
+                    "max_gradient_norm": [
+                        "training.max_gradient_norm",
+                        "max_gradient_norm",
+                        "training.max_grad_norm",
+                        "train.max_grad_norm"
+                    ],
+                    "gradient_weight": [
+                        "loss.gradient_weight",
+                        "gradient_weight",
+                        "train.grad_loss_weight"
+                    ],
+                    "pde_weight_max": [
+                        "loss.pde_weight_max",
+                        "pde_weight_max",
+                        "train.pde_loss_weight"
+                    ],
+                    "boundary_weight_max": [
+                        "loss.boundary_weight_max",
+                        "boundary_weight_max",
+                        "train.bc_loss_weight"
+                    ],
+                    "curriculum_start": [
+                        "loss.curriculum_start",
+                        "curriculum_start",
+                        "loss.curriculum_start_fraction",
+                        "train.curriculum_start"
+                    ],
+                    "curriculum_end": [
+                        "loss.curriculum_end",
+                        "curriculum_end",
+                        "loss.curriculum_end_fraction",
+                        "train.curriculum_end"
+                    ],
+                    "result_dir": [
+                        "output.result_dir",
+                        "result_dir",
+                        "experiment.output_dir",
+                        "output.results_dir"
+                    ]
+                },
+                "path_keys": [
+                    "result_dir"
+                ]
+            }
+        },
+        {
+            "id": "5c8c2f2f4c7fbcfe",
+            "type": "train_structure",
+            "method": "check_train_structure",
+            "phase": "train_script",
+            "depends": [
+                "182f920512f68bbb"
+            ],
+            "params": {
+                "files": [
+                    "train.py",
+                    "utils.py"
+                ],
+                "check_config": {
+                    "model_names": [
+                        "radonneuraloperator2d"
+                    ],
+                    "dataloader_names": [
+                        "DataLoader"
+                    ],
+                    "optimizer_names": [
+                        "AdamW"
+                    ],
+                    "loss_names": [
+                        "loss",
+                        "composite_loss",
+                        "relative_l2",
+                        "gradient_relative_l2",
+                        "RelativeL2Loss"
+                    ]
+                },
+                "checkpoint_save_functions": [
+                    "atomic_torch_save"
+                ]
+            }
+        },
+        {
+            "id": "36cc4747e372f598",
+            "type": "parameter_update",
+            "method": "check_parameter_update",
+            "phase": "train_script",
+            "depends": [
+                "182f920512f68bbb"
+            ],
+            "params": {
+                "files": [
+                    "train.py",
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "214f10be38d47517",
+            "type": "smoke_training",
+            "method": "check_smoke_training",
+            "phase": "smoke_train",
+            "depends": [
+                "f7cda7ae641f0b4d",
+                "bc61293b18c02be8",
+                "182f920512f68bbb"
+            ],
+            "params": {
+                "run_file": "train.py",
+                "config_name": "config.yaml",
+                "entry_names": [
+                    "main",
+                    "train"
+                ],
+                "runtime_probe": {
+                    "dataset_file": "dataset.py",
+                    "dataset_builders": [
+                        {
+                            "function": "build_darcy_datasets",
+                            "normalizers": "objects",
+                            "aux_indices": [
+                                2,
+                                4
+                            ],
+                            "input_index": 1,
+                            "target_index": 3,
+                            "test_target_normalized": false
+                        },
+                        {
+                            "function": "build_datasets",
+                            "normalizers": "stats",
+                            "aux_indices": null,
+                            "input_index": 1,
+                            "target_index": 2,
+                            "test_target_normalized": true
+                        }
+                    ],
+                    "overrides": {
+                        "data_root": [
+                            "data.root",
+                            "data.data_dir"
+                        ],
+                        "train_samples": [
+                            "data.n_train",
+                            "data.train_samples"
+                        ],
+                        "test_samples": [
+                            "data.n_test",
+                            "data.test_samples"
+                        ],
+                        "batch_size": [
+                            "training.batch_size",
+                            "train.batch_size"
+                        ],
+                        "eval_batch_size": [
+                            "eval.batch_size"
+                        ],
+                        "epochs": [
+                            "training.epochs",
+                            "train.epochs"
+                        ],
+                        "num_workers": [
+                            "data.num_workers",
+                            "train.num_workers"
+                        ],
+                        "output_dir": [
+                            "experiment.output_dir",
+                            "output.results_dir"
+                        ],
+                        "checkpoint_dir": [
+                            "output.checkpoint_dir"
+                        ],
+                        "cache_dir": [
+                            "data.cache_dir"
+                        ],
+                        "device": [
+                            "experiment.device"
+                        ],
+                        "amp": [
+                            "training.amp"
+                        ]
+                    }
+                },
+                "smoke_config": {},
+                "pre_train_hooks": [],
+                "train_args": {},
+                "entry_args": {
+                    "main": {},
+                    "train": {
+                        "config_path": "$runtime_config_path"
+                    }
+                }
+            }
+        },
+        {
+            "id": "74c681dca9d0f6e9",
+            "type": "infer_file",
+            "method": "check_files",
+            "phase": "infer_script",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "evaluate.py",
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "c1b7454242762f51",
+            "type": "infer_structure",
+            "method": "check_infer_structure",
+            "phase": "infer_script",
+            "depends": [
+                "74c681dca9d0f6e9"
+            ],
+            "params": {
+                "files": [
+                    "evaluate.py",
+                    "utils.py"
+                ],
+                "check_config": {
+                    "entry_function_names": [
+                        "main",
+                        "evaluate",
+                        "run_evaluation"
+                    ],
+                    "model_load_functions": [
+                        "load_checkpoint"
+                    ],
+                    "model_load_attributes": [
+                        "load_state_dict"
+                    ],
+                    "input_load_functions": [
+                        "DataLoader",
+                        "build_test_dataset"
+                    ],
+                    "input_load_attributes": [
+                        "load",
+                        "loadmat"
+                    ],
+                    "infer_call_functions": [
+                        "evaluate",
+                        "run_evaluation",
+                        "predict"
+                    ],
+                    "infer_call_attributes": [
+                        "forward",
+                        "predict"
+                    ],
+                    "output_attributes": [
+                        "write_text",
+                        "dump",
+                        "to_json",
+                        "save"
+                    ]
+                }
+            }
+        },
+        {
+            "id": "620ec85e52a0a98a",
+            "type": "infer_execution",
+            "method": "check_infer_execution",
+            "phase": "infer_execution",
+            "depends": [
+                "f7cda7ae641f0b4d",
+                "bc61293b18c02be8",
+                "74c681dca9d0f6e9"
+            ],
+            "params": {
+                "run_file": "evaluate.py",
+                "config_name": "config.yaml",
+                "entry_names": [
+                    "main",
+                    "evaluate"
+                ],
+                "model_file": "model.py",
+                "model_class": "RadonNeuralOperator2D",
+                "model_args": {},
+                "model_config_arg": "config",
+                "runtime_probe": {
+                    "dataset_file": "dataset.py",
+                    "dataset_builders": [
+                        {
+                            "function": "build_darcy_datasets",
+                            "normalizers": "objects",
+                            "aux_indices": [
+                                2,
+                                4
+                            ],
+                            "input_index": 1,
+                            "target_index": 3,
+                            "test_target_normalized": false
+                        },
+                        {
+                            "function": "build_datasets",
+                            "normalizers": "stats",
+                            "aux_indices": null,
+                            "input_index": 1,
+                            "target_index": 2,
+                            "test_target_normalized": true
+                        }
+                    ],
+                    "overrides": {
+                        "data_root": [
+                            "data.root",
+                            "data.data_dir"
+                        ],
+                        "train_samples": [
+                            "data.n_train",
+                            "data.train_samples"
+                        ],
+                        "test_samples": [
+                            "data.n_test",
+                            "data.test_samples"
+                        ],
+                        "batch_size": [
+                            "training.batch_size",
+                            "train.batch_size"
+                        ],
+                        "eval_batch_size": [
+                            "eval.batch_size"
+                        ],
+                        "epochs": [
+                            "training.epochs",
+                            "train.epochs"
+                        ],
+                        "num_workers": [
+                            "data.num_workers",
+                            "train.num_workers"
+                        ],
+                        "output_dir": [
+                            "experiment.output_dir",
+                            "output.results_dir"
+                        ],
+                        "checkpoint_dir": [
+                            "output.checkpoint_dir"
+                        ],
+                        "cache_dir": [
+                            "data.cache_dir"
+                        ],
+                        "device": [
+                            "experiment.device"
+                        ],
+                        "amp": [
+                            "training.amp"
+                        ]
+                    }
+                },
+                "pre_infer_hooks": [],
+                "infer_args": {},
+                "entry_args": {
+                    "main": {},
+                    "evaluate": {
+                        "config_path": "$runtime_config_path",
+                        "checkpoint_path": "$runtime_checkpoint_path"
+                    }
+                }
+            }
+        }
+    ]
+}

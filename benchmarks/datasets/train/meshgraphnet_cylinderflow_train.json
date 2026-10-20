@@ -1,0 +1,373 @@
+{
+  "id": "meshgraphnet_cylinderflow_train",
+  "eval_type": "train",
+  "domain": "cfd",
+  "task": "基于 MeshGraphNet 模型实现 DeepMind CylinderFlow 二维圆柱绕流预测任务的训练",
+  "prompt": "基于 MeshGraphNet 模型实现 DeepMind CylinderFlow 二维圆柱绕流预测任务的训练。\n任务输入为当前时间步的二维速度场、节点类型以及非结构化三角网格信息，模型预测下一时间步的速度增量和压力。数据集路径为 /public/share/sugonhpcapp01/onestore/onedatasets/vortex_shedding_mgn/cylinder_flow。生成的代码要求：\n1. `model.py`：实现核心类 `MeshGraphNet`，采用 Encode–Process–Decode 架构。节点输入为 `[u_t,v_t]` 与 4 类节点类型 one-hot，共 6 维；边输入为相对坐标 `[dx,dy]` 及其 L2 距离，共 3 维；输出为 `[Δu,Δv,p_{t+1}]`，共 3 维。默认隐藏维度 128，所有 MLP 含 2 个隐藏层并使用 ReLU，除 Decoder 外均在输出端使用 LayerNorm。Processor 堆叠 15 个消息传递块：先由边、发送节点和接收节点特征更新边，再按接收节点进行 sum 聚合并更新节点，边和节点更新均使用残差连接。前向接口为 `forward(node_features, edge_features, edge_index)`，输入形状分别为 `[N,6]`、`[E,3]`、`[2,E]`，输出 `[N,3]`。\n2. `dataset.py`：读取 CylinderFlow TFRecord 中的 `cells、mesh_pos、node_type、velocity、pressure`，将三角形网格转换为去重双向边，并把 `NORMAL、INFLOW、OUTFLOW、WALL_BOUNDARY` 编码为 4 维 one-hot。默认读取 train/valid/test 前 `400/10/10` 条轨迹及每条前 300 步。采用单步 teacher forcing：输入 `velocity[t]`，目标为 `velocity[t+1]-velocity[t]` 和 `pressure[t+1]`。训练时仅向 NORMAL 节点速度添加 `std=0.02` 的高斯噪声，并从速度增量目标中减去同一噪声。归一化统计量只能来自训练集，优先读取 `stats/edge_stats.json` 和 `stats/node_stats.json`。\n3. `utils.py`：实现配置读取、随机种子、设备与分布式管理、日志、参数统计、归一化、checkpoint 和 JSON 保存；提供单步 normalized MSE 及自回归 rollout 评测。Rollout 仅更新 NORMAL/OUTFLOW 节点，其余节点使用真实边界速度，分别报告 1-step、50-step 和 full-rollout velocity RMSE，pressure MSE 单独报告。\n4. `config.yaml`：集中定义全部超参数。默认采用 OneScience 缩减配置：数据量 `400/10/10`、300 步、noise `0.02`、batch size `1`、25 epochs、Adam、初始学习率 `1e-4`、逐步乘 `0.9999991`、隐藏维度 `128`、2 层 MLP、15 个消息传递块、sum 聚合和 MSE。`loss_nodes` 默认 `all`，并支持 `normal_outflow`。\n5. `train.py`：实现 DataLoader、MeshGraphNet、Adam 和逐 step 指数调度的完整训练，支持单卡/DDP、AMP、续训、早停及单步 teacher forcing；按最低验证 normalized MSE 保存 `best.pt`，每轮保存 `last.pt`，最终加载最佳模型执行 1/50/299-step rollout，分别报告 velocity RMSE 和 pressure MSE，并在 `./results/meshgraphnet_cylinderflow_seed0/` 保存 checkpoint、日志及包含配置和指标的 `history.json、summary.json`。提供 `--config、--data、--output、--device、--epochs、--rollout`。",
+  "evaluation_script": "evaluate_meshgraphnet_cylinderflow_train.py",
+  "stardard_dir_name": "meshgraphnet_cylinderflow_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "774a7a152af48637",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "model.py",
+          "dataset.py",
+          "utils.py",
+          "config.yaml",
+          "train.py"
+        ],
+        "python_parse": "ast.parse",
+        "yaml_parse": "_load_yaml",
+        "missing_files_skip_parse": true
+      }
+    },
+    {
+      "id": "806789f0a3e46d38",
+      "type": "dataset_pipeline",
+      "method": "check_datasset_pipeline",
+      "phase": "data_analysis",
+      "depends": [
+        "774a7a152af48637"
+      ],
+      "params": {
+        "candidate_file": "dataset.py",
+        "config_file": "config.yaml",
+        "config_sections": [
+          "data",
+          "dataset"
+        ],
+        "trajectory_limits": {
+          "train_trajectories": 400,
+          "valid_trajectories": 10,
+          "test_trajectories": 10,
+          "steps": 300
+        },
+        "node_type_classes": [
+          "NORMAL",
+          "INFLOW",
+          "OUTFLOW",
+          "WALL_BOUNDARY"
+        ],
+        "node_type_one_hot_classes": 4,
+        "edge_feature_components": [
+          "dx",
+          "dy",
+          "l2_distance"
+        ],
+        "noise_std": 0.02,
+        "statistics_files": [
+          "stats/edge_stats.json",
+          "stats/node_stats.json"
+        ],
+        "statistics_scope": "training",
+        "target": {
+          "velocity": "velocity[t+1]-velocity[t]",
+          "pressure": "pressure[t+1]"
+        },
+        "samples_per_trajectory": "steps-1",
+        "collate": "edge_index+offset with torch.cat"
+      }
+    },
+    {
+      "id": "340056d2937fdcfc",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "774a7a152af48637",
+        "806789f0a3e46d38"
+      ],
+      "params": {
+        "files": [
+          "train.py",
+          "utils.py",
+          "dataset.py"
+        ],
+        "cli_flags": [
+          "config",
+          "data",
+          "output",
+          "device",
+          "epochs",
+          "rollout"
+        ],
+        "model_defaults": {
+          "node_input_dim": 6,
+          "edge_input_dim": 3,
+          "output_dim": 3,
+          "hidden_dim": 128,
+          "mlp_hidden_layers": 2,
+          "processor_steps": 15,
+          "aggregation": "sum"
+        },
+        "training_defaults": {
+          "epochs": 25,
+          "batch_size": 1,
+          "learning_rate": 0.0001,
+          "lr_decay_rate": 0.9999991
+        },
+        "scheduler": "LambdaLR or ExponentialLR with scheduler.step",
+        "loss_modes": [
+          "all",
+          "normal_outflow"
+        ],
+        "distributed_amp": [
+          "DistributedDataParallel",
+          "autocast",
+          "GradScaler"
+        ],
+        "resume_keys": [
+          "optimizer_state_dict",
+          "scheduler_state_dict",
+          "stale_epochs"
+        ],
+        "checkpoints": [
+          "best.pt",
+          "last.pt"
+        ],
+        "rollout_horizons": [
+          1,
+          50,
+          299
+        ],
+        "boundary_rule": "advance NORMAL/OUTFLOW only",
+        "metrics": [
+          "velocity_rmse",
+          "pressure_mse"
+        ],
+        "result_files": [
+          "history.json",
+          "summary.json",
+          "train.log"
+        ],
+        "default_output": "results/meshgraphnet_cylinderflow_seed0"
+      }
+    },
+    {
+      "id": "758494870fb9d134",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "774a7a152af48637",
+        "340056d2937fdcfc"
+      ],
+      "params": {
+        "candidate_names": [
+          "evaluate.py",
+          "eval.py",
+          "test.py"
+        ],
+        "absence_allowed": true,
+        "checks": {
+          "checkpoint": [
+            "load",
+            "checkpoint"
+          ],
+          "inference_mode": [
+            ".eval(",
+            "no_grad or inference_mode"
+          ],
+          "rollout_metrics": [
+            "rollout",
+            "velocity",
+            "pressure"
+          ]
+        }
+      }
+    },
+    {
+      "id": "c1e3560a0b3e8811",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "774a7a152af48637"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "MeshGraphNet",
+        "constructor_aliases": {
+          "node_input_dim": 6,
+          "edge_input_dim": 3,
+          "output_dim": 3,
+          "hidden_dim": 128,
+          "processor_steps": 15,
+          "mlp_hidden_layers": 2,
+          "aggregation": "sum",
+          "activation": "relu"
+        },
+        "structure": {
+          "encoders_decoder": true,
+          "processors": 15,
+          "mlp_linear_layers": {
+            "node_encoder": 3,
+            "edge_update": 3,
+            "node_update": 3
+          },
+          "feature_dimensions": {
+            "node_input": 6,
+            "edge_input": 3,
+            "latent": 128,
+            "edge_update_input": 384,
+            "node_update_input": 256,
+            "output": 3
+          },
+          "relu": true,
+          "layer_norm_minimum": 32,
+          "decoder_layer_norms": 0,
+          "edge_then_node_residual": true,
+          "receiver_sum_aggregation": true,
+          "trainable_parameters": true
+        }
+      }
+    },
+    {
+      "id": "1081a102f47044c3",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "c1e3560a0b3e8811"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "MeshGraphNet",
+        "device": "cpu",
+        "eval_mode": true,
+        "torch_num_threads": 1,
+        "seed": 20260821,
+        "node_shape": [
+          8,
+          6
+        ],
+        "edge_shape": [
+          16,
+          3
+        ],
+        "edge_index_shape": [
+          2,
+          16
+        ],
+        "output_shape": [
+          8,
+          3
+        ],
+        "finite_output": true
+      }
+    },
+    {
+      "id": "7a4a5a612f3dfa59",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "c1e3560a0b3e8811",
+        "1081a102f47044c3"
+      ],
+      "params": {
+        "candidate_model_file": "model.py",
+        "reference_model_file": "benchmarks/standard/meshgraphnet_cylinderflow_train/model.py",
+        "model_class": "MeshGraphNet",
+        "device": "cpu",
+        "torch_num_threads": 1,
+        "tiny_graph": {
+          "node_shape": [
+            8,
+            6
+          ],
+          "edge_shape": [
+            16,
+            3
+          ],
+          "edge_index_shape": [
+            2,
+            16
+          ]
+        },
+        "canonicalize": {
+          "linear_weights": "arange remainder 29 centered and divided by 5000",
+          "linear_bias": "(module_index modulo 7 minus 3)/1000",
+          "layer_norm_weight": 1.0,
+          "layer_norm_bias": 0.0
+        },
+        "parameter_shape_comparison": "Counter(tuple(parameter.shape))",
+        "output_shape": [
+          8,
+          3
+        ],
+        "atol": 1e-05,
+        "rtol": 1e-05
+      }
+    },
+    {
+      "id": "73edcb86bce017bc",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "c1e3560a0b3e8811",
+        "1081a102f47044c3"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "MeshGraphNet",
+        "device": "cpu",
+        "train_mode": true,
+        "seed": 20260821,
+        "optimizer": "torch.optim.Adam",
+        "learning_rate": 0.0001,
+        "target_shape": [
+          8,
+          3
+        ],
+        "loss": "torch.nn.functional.mse_loss",
+        "finite_gradient_fraction_min": 0.9,
+        "parameter_update_fraction_min": 0.8,
+        "zero_grad_set_to_none": true
+      }
+    },
+    {
+      "id": "c2562f85cb0fb6a4",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "340056d2937fdcfc",
+        "73edcb86bce017bc"
+      ],
+      "params": {
+        "source_files": [
+          "train.py",
+          "utils.py"
+        ],
+        "output_dir_config": "training.output_dir or results/meshgraphnet_cylinderflow_seed0",
+        "artifact_names": [
+          "best.pt",
+          "last.pt",
+          "history.json",
+          "summary.json",
+          "train.log"
+        ],
+        "declarations_required": true,
+        "materialized_directory_optional": true,
+        "materialized_files_nonempty": true,
+        "json_files": [
+          "history.json",
+          "summary.json"
+        ],
+        "json_parse_required": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,478 @@
+{
+  "id": "evo2_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 Evo2 风格基因组序列生成与序列似然推理入口",
+  "prompt": "实现一个独立于 onescience Python 包的轻量 Evo2 风格基因组语言模型推理入口。模型文件命名为 evo2_inference.py，模型类命名为 Evo2InferenceModel，默认 vocab_size=47（词表固定为 VOCAB='ACGTN|;:_-abcdefghijklmnopqrstuvwxyz0123456789 '，共 47 个 token）、hidden_size=32、conv_kernel=4、num_layers=2，使用 PyTorch 实现 token_embedding、两层 Evo2MambaBlock selective state-space 堆栈、final_norm 和 lm_head。Evo2MambaBlock 必须包含 norm、input_projection（输出 2*hidden 门控两路）、causal depthwise_conv、ssm_projection（输出 3*hidden 的 delta/input/output 三路）、delta_projection、A_log、D 和 output_projection，并以显式状态递推保证因果性。模型提供 generate 与 score_sequence 方法；generate 必须支持 prompt、max_new_tokens、temperature、top_k、top_p、seed；score_sequence 返回输入序列的平均 next-token log likelihood。实现严格 checkpoint 加载（load_checkpoint 或等价入口），兼容原始 state_dict 或含 model_state_dict 的 checkpoint 文件，推理必须切换 eval 并使用 no_grad/inference_mode。命令行参数必须支持 --prompt、--ckpt-dir、--max-new-tokens、--temperature、--top-k、--top-p、--seed、--output-file 和 --device auto|cpu|cuda。输出 JSON 必须包含 prompt、generated_text 和 mean_log_probability，同一 seed 重复运行结果完全一致，不得导入 onescience。\n请在当前工作目录生成且仅生成 evo2_inference.py；脚本必须支持 --prompt、--ckpt-dir、--max-new-tokens、--temperature、--top-k、--top-p、--seed、--output-file 和 --device auto|cpu|cuda；输出 JSON 必须保存到命令行指定的 --output-file。",
+  "evaluation_script": "evaluate_evo2_inference.py",
+  "stardard_dir_name": "evo2_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_evo2_inference"
+  },
+  "checks": [
+    {
+      "id": "ac0b91a7de59affe",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "candidate_filename": "evo2_inference.py",
+        "torch_manual_seed": 20260819,
+        "module_imports": {
+          "candidate": "evo2_inference_submission",
+          "reference": "evo2_inference_reference"
+        },
+        "temporary_work_directory": true,
+        "standard_assets": [
+          {
+            "path": "benchmarks/standard/evo2_inference/inference_config.json",
+            "format": "json_object",
+            "external_assets": {
+              "mount_required": true,
+              "required_keys": [
+                "weights",
+                "dataset"
+              ],
+              "required_string_prefix": "/public/share/"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "8fd68d33e94e9e0f",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "ac0b91a7de59affe"
+      ],
+      "params": {
+        "candidate_file": "evo2_inference.py",
+        "reference_file": "benchmarks/standard/evo2_inference/evo2_inference.py",
+        "model_class": "Evo2InferenceModel",
+        "constructor_args": {},
+        "reference_model_eval": true,
+        "candidate_model_eval": true,
+        "reference_state_dict": true,
+        "strict_state_dict": true,
+        "checkpoint_fixtures": [
+          {
+            "label": "raw",
+            "payload": "reference_model.state_dict"
+          },
+          {
+            "label": "wrapped",
+            "payload": {
+              "model_state_dict": "reference_model.state_dict"
+            }
+          }
+        ],
+        "load_contract": {
+          "preferred_callable": "load_checkpoint",
+          "exact_state_value_equality": true,
+          "fallback_cli": {
+            "prompt": "ACGT|",
+            "max_new_tokens": 4,
+            "temperature": 1.0,
+            "seed": 7,
+            "device": "cpu",
+            "output_required_keys": [
+              "prompt",
+              "generated_text"
+            ]
+          }
+        },
+        "source_requires": "torch.load"
+      }
+    },
+    {
+      "id": "c777066bef258c69",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "8fd68d33e94e9e0f"
+      ],
+      "params": {
+        "candidate_file": "evo2_inference.py",
+        "model_class": "Evo2InferenceModel",
+        "default_model_contract": {
+          "token_embedding": {
+            "type": "torch.nn.Embedding",
+            "num_embeddings": 47,
+            "embedding_dim": 32
+          },
+          "mamba_layers": {
+            "type": "torch.nn.ModuleList",
+            "length": 2,
+            "element_class": "Evo2MambaBlock"
+          },
+          "final_norm": {
+            "type": "torch.nn.LayerNorm",
+            "normalized_shape": [
+              32
+            ]
+          },
+          "lm_head": {
+            "type": "torch.nn.Linear",
+            "in_features": 32,
+            "out_features": 47
+          }
+        },
+        "block_contract": {
+          "required_attributes": [
+            "norm",
+            "input_projection",
+            "depthwise_conv",
+            "ssm_projection",
+            "delta_projection",
+            "A_log",
+            "D",
+            "output_projection"
+          ],
+          "depthwise_conv": {
+            "type": "torch.nn.Conv1d",
+            "groups_equals_in_channels": true,
+            "in_channels": 32
+          },
+          "probes": [
+            {
+              "name": "input_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                64
+              ]
+            },
+            {
+              "name": "depthwise_conv",
+              "input_shape": [
+                2,
+                32,
+                7
+              ],
+              "output_shape": [
+                2,
+                32,
+                4
+              ]
+            },
+            {
+              "name": "ssm_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                96
+              ]
+            },
+            {
+              "name": "delta_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                32
+              ]
+            },
+            {
+              "name": "output_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                32
+              ]
+            },
+            {
+              "name": "norm",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                32
+              ]
+            }
+          ],
+          "parameter_shapes": {
+            "A_log": [
+              32
+            ],
+            "D": [
+              32
+            ]
+          }
+        },
+        "top_level_child_prefix": [
+          "token_embedding",
+          "mamba_layers",
+          "final_norm",
+          "lm_head"
+        ],
+        "forbidden_module_types": [
+          "torch.nn.GRU",
+          "torch.nn.LSTM",
+          "torch.nn.RNN"
+        ]
+      }
+    },
+    {
+      "id": "6066d2994154a451",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "8fd68d33e94e9e0f",
+        "c777066bef258c69"
+      ],
+      "params": {
+        "model_source": "strict_checkpoint_loading_contract_check.candidate_model",
+        "execution_mode": "torch.inference_mode",
+        "input_ids": {
+          "values": [
+            [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          ],
+          "dtype": "torch.long"
+        },
+        "logit_contract": {
+          "tensor": true,
+          "shape": [
+            1,
+            5,
+            47
+          ],
+          "finite": true
+        },
+        "vocab_consistency": {
+          "token_embedding_num_embeddings": 47,
+          "lm_head_out_features": 47,
+          "must_equal": true
+        },
+        "causal_prefix": {
+          "first_input": [
+            [
+              0,
+              1,
+              2,
+              3
+            ]
+          ],
+          "second_input": [
+            [
+              0,
+              1,
+              2,
+              4
+            ]
+          ],
+          "compare_time_prefix": 3,
+          "atol": 1e-06,
+          "rtol": 1e-06
+        },
+        "batch_consistency": {
+          "input_ids": [
+            [
+              0,
+              1,
+              2,
+              3
+            ],
+            [
+              0,
+              1,
+              2,
+              3
+            ]
+          ],
+          "output_shape": [
+            2,
+            4,
+            47
+          ],
+          "identical_row_indices": [
+            0,
+            1
+          ],
+          "atol": 1e-06,
+          "rtol": 1e-06
+        }
+      }
+    },
+    {
+      "id": "b009746345dd265e",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "ac0b91a7de59affe",
+        "8fd68d33e94e9e0f"
+      ],
+      "params": {
+        "script": "evo2_inference.py",
+        "forbidden_import_root": "onescience",
+        "required_cli_flags": [
+          "--prompt",
+          "--ckpt-dir",
+          "--max-new-tokens",
+          "--temperature",
+          "--top-k",
+          "--top-p",
+          "--seed",
+          "--output-file",
+          "--device"
+        ],
+        "required_model_methods": [
+          "Evo2InferenceModel.generate",
+          "Evo2InferenceModel.score_sequence"
+        ],
+        "source_requires": {
+          "eval_literal": ".eval()",
+          "any_inference_context_literals": [
+            "inference_mode",
+            "no_grad"
+          ]
+        },
+        "cli_smoke": {
+          "executable": "sys.executable",
+          "cwd": "script.parent",
+          "capture_output": true,
+          "text": true,
+          "timeout_seconds": 180,
+          "checkpoint_fixture": "strict_checkpoint_loading_contract_check.wrapped",
+          "args": {
+            "prompt": "ACGT|",
+            "max_new_tokens": 4,
+            "temperature": 1.0,
+            "seed": 7,
+            "device": "cpu"
+          },
+          "returncode": 0,
+          "json_contract": {
+            "prompt": "ACGT|",
+            "generated_text": {
+              "type": "str",
+              "starts_with": "ACGT|",
+              "length": 9
+            },
+            "mean_log_probability": {
+              "type": "float",
+              "finite": true
+            }
+          }
+        },
+        "determinism": {
+          "runs": 2,
+          "exact_json_object_equality": true
+        },
+        "invalid_generation_args": {
+          "args": {
+            "prompt": "ACGT|",
+            "max_new_tokens": -1,
+            "temperature": 1.0,
+            "seed": 7,
+            "device": "cpu"
+          },
+          "requires_nonzero_returncode": true
+        }
+      }
+    },
+    {
+      "id": "daf346338670c4cb",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "8fd68d33e94e9e0f",
+        "6066d2994154a451"
+      ],
+      "params": {
+        "candidate_file": "evo2_inference.py",
+        "reference_file": "benchmarks/standard/evo2_inference/evo2_inference.py",
+        "model_source": "strict_checkpoint_loading_contract_check",
+        "execution_mode": "torch.inference_mode",
+        "forward_oracle": {
+          "input_ids": [
+            [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          ],
+          "compare_candidate_output": "causal_forward_execution_contract_check.output",
+          "reference_output": "reference_model(input_ids)",
+          "metric": "mean_absolute_error",
+          "metric_name": "logits_mae",
+          "atol": 1e-06,
+          "rtol": 1e-06
+        },
+        "score_oracle": {
+          "sequence": "ACGTACGTAC",
+          "candidate": "model.score_sequence(sequence)",
+          "reference": "reference_model.score_sequence(sequence)",
+          "metric": "absolute_error",
+          "metric_name": "log_probability_mae",
+          "maximum_error": 1e-06,
+          "require_candidate_finite": true
+        },
+        "generation_oracle": {
+          "prompt": "ACGT|",
+          "max_new_tokens": 4,
+          "temperature": 1.0,
+          "seed": 7,
+          "generated_text": {
+            "type": "str",
+            "starts_with": "ACGT|",
+            "length": 9
+          },
+          "score": "model.score_sequence(generated_text)",
+          "require_score_finite": true
+        },
+        "seed_sensitivity": {
+          "second_seed": 8,
+          "requires_generated_text_different_from_seed_7": true
+        }
+      }
+    }
+  ]
+}

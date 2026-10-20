@@ -1,0 +1,8 @@
+paths:
+  checkpoint: /public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt
+  input: /public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz
+  output: nequip_predictions.json
+inference:
+  device: cpu
+  structure_index: 0
+  seed: 456

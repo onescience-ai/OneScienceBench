@@ -1,0 +1,336 @@
+{
+  "id": "oneforecast_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "earth",
+  "task": "复现 OneForecast 的变量感知时空 Transformer 与自回归滚动预报",
+  "prompt": "复现 OneForecast 论文的统一多变量天气预报核心：对每个物理变量的 history 帧独立投影，加入可学习变量身份 embedding，把变量与空间 token 联合送入 pre-norm 自注意力和 MLP 残差块，再按变量恢复下一时刻场；实现 rollout，将每步预测作为下一步历史输入，并实现真实 AdamW、MSE、backward 训练步和 MAE/RMSE 评估。生成 oneforecast.py、train.py 和 evaluate.py等脚本；oneforecast.py 定义 OneForecast，构造参数至少包含 variables、history、embed_dim、depth、heads，forward 接收 (B,history,variables,H,W) 并返回 (B,variables,H,W)，rollout(history,steps) 返回 (B,steps,variables,H,W)，不得原地修改输入。",
+  "evaluation_script": "evaluate_oneforecast_paper_repro.py",
+  "stardard_dir_name": "oneforecast_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "ef920039e4a889fa",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+          "required_files": [
+            "oneforecast.py",
+            "train.py",
+            "evaluate.py"
+          ]
+      }
+    },
+    {
+      "id": "60453c5e6c4e13d0",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "seed": 20260819,
+        "device": "cuda:0 if torch.cuda.is_available() else cpu",
+        "fixture": {
+          "batch": {
+            "generator": "torch.randn",
+            "shape": [
+              2,
+              2,
+              3,
+              8,
+              8
+            ],
+            "dtype": "torch.float32"
+          },
+          "target": {
+            "generator": "torch.randn",
+            "shape": [
+              2,
+              3,
+              8,
+              8
+            ],
+            "dtype": "torch.float32"
+          }
+        },
+        "require_finite": true
+      }
+    },
+    {
+      "id": "2b9cbc7ada94ddc7",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "file": "train.py",
+        "ast_parse": true,
+        "function": "train_step",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_calls": [
+          "AdamW",
+          "backward",
+          "step"
+        ]
+      }
+    },
+    {
+      "id": "4ae027473a645847",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [],
+      "params": {
+        "file": "evaluate.py",
+        "ast_parse": true,
+        "function": "evaluate",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_metric_literals": [
+          "mae",
+          "rmse"
+        ],
+        "required_calls": [
+          "abs",
+          "mean",
+          "sqrt"
+        ]
+      }
+    },
+    {
+      "id": "0205bc615ab884bd",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "model_file": "oneforecast.py",
+        "model_class": "OneForecast",
+        "model_class_must_be_class": true,
+        "model_args": {
+          "variables": 3,
+          "history": 2,
+          "embed_dim": 16,
+          "depth": 2,
+          "heads": 4
+        },
+        "top_level_child_subsequence": [
+          "input_projection",
+          "blocks",
+          "output_projection"
+        ],
+        "input_projection": {
+          "class": "torch.nn.Conv2d",
+          "in_channels": 2,
+          "out_channels": 16
+        },
+        "variable_embeddings_shape": [
+          1,
+          3,
+          16
+        ],
+        "blocks": {
+          "class": "torch.nn.ModuleList",
+          "length": 2,
+          "child_subsequence": [
+            "norm1",
+            "attn",
+            "norm2",
+            "mlp"
+          ]
+        },
+        "output_projection": {
+          "class": "torch.nn.Linear",
+          "out_features": 1
+        },
+        "required_callable": "rollout",
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "b4acee1583f2b01d",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "fixture": {
+          "seed": 20260819,
+          "batch_shape": [
+            2,
+            2,
+            3,
+            8,
+            8
+          ],
+          "target_shape": [
+            2,
+            3,
+            8,
+            8
+          ]
+        },
+        "eval_mode": true,
+        "no_grad": true,
+        "forward": {
+          "expected_shape": [
+            2,
+            3,
+            8,
+            8
+          ],
+          "require_finite": true
+        },
+        "rollout": {
+          "steps": 3,
+          "expected_shape": [
+            2,
+            3,
+            3,
+            8,
+            8
+          ],
+          "require_finite": true
+        },
+        "require_input_unchanged": true,
+        "invalid_invocations": [
+          {
+            "name": "rank",
+            "expression": "inputs[:, 0]"
+          },
+          {
+            "name": "history",
+            "expression": "inputs[:, :1]"
+          },
+          {
+            "name": "variables",
+            "expression": "inputs[:, :, :2]"
+          },
+          {
+            "name": "steps",
+            "expression": "model.rollout(inputs, 0)"
+          }
+        ],
+        "accepted_invalid_input_exceptions": [
+          "ValueError",
+          "TypeError"
+        ],
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "897558b79a903bd3",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "fixture": {
+          "seed": 20260819,
+          "batch_shape": [
+            2,
+            2,
+            3,
+            8,
+            8
+          ]
+        },
+        "eval_mode": true,
+        "clone": "copy.deepcopy(model).eval()",
+        "state_reload": {
+          "source": "model.state_dict()",
+          "strict": true
+        },
+        "require_same_shape": true,
+        "allclose": {
+          "atol": 1e-06,
+          "rtol": 1e-05
+        },
+        "report": "max_abs_diff",
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "f70434b0d1beb046",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [],
+      "params": {
+        "fixture": {
+          "seed": 20260819,
+          "batch_shape": [
+            2,
+            2,
+            3,
+            8,
+            8
+          ],
+          "target_shape": [
+            2,
+            3,
+            8,
+            8
+          ]
+        },
+        "train_mode": true,
+        "trainable_parameters_only": true,
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "lr": 0.001
+        },
+        "zero_grad": {
+          "set_to_none": true
+        },
+        "loss": "(output - target).square().mean()",
+        "require_finite_loss": true,
+        "require_nonempty_gradients": true,
+        "require_all_gradients_finite": true,
+        "require_any_parameter_changed": true,
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "7903f655049225b2",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "imports": [
+          {
+            "module_name": "oneforecast_submission_train",
+            "file": "train.py",
+            "required_callable": "train_step"
+          },
+          {
+            "module_name": "oneforecast_submission_evaluate",
+            "file": "evaluate.py",
+            "required_callable": "evaluate"
+          }
+        ],
+        "import_behavior": {
+          "prepend_parent_to_sys_path_if_missing": true,
+          "loader": "importlib.util.spec_from_file_location",
+          "register_module_in_sys_modules": true,
+          "execute_module": true
+        }
+      }
+    }
+  ]
+}

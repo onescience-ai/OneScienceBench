@@ -1,0 +1,24 @@
+{
+  "model": {
+    "num_recycles": 2,
+    "single_dim": 32,
+    "pair_dim": 32,
+    "num_evoformer_blocks": 2,
+    "atom_types": 37,
+    "feature_dim": 22
+  },
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/OpenFold/finetuning_ptm_2.pt",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/alphafold2.3.0",
+    "mount_required": true
+  },
+  "input": {
+    "source": "/public/share/sugonhpcapp01/onestore/onedatasets/alphafold2.3.0/uniprot/uniprot.fasta",
+    "format": "fasta",
+    "selection": "one deterministic sequence from the mounted database"
+  },
+  "output": {
+    "format": "pdb",
+    "atom": "CA"
+  }
+}

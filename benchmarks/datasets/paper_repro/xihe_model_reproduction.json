@@ -1,0 +1,802 @@
+{
+  "id": "xihe_model_reproduction",
+  "eval_type": "paper-repro",
+  "domain": "earth",
+  "task": "根据论文复现 XiHe 全球海洋涡旋分辨率预报模型",
+  "prompt": "根据 XiHe 论文复现全球海洋涡旋分辨率预报模型。先从论文正文和附录提取并审计可确定的默认全球网格、输入输出变量通道和模型结构；论文未确定的实现超参数应保持可配置，不得臆造为论文规定值。实现必须覆盖论文定义的 patch partition、ocean-specific 分层 Transformer、使用海陆 mask 的局部窗口自注意力 SIE、基于可学习 group vectors 的全局 SIE、下采样与上采样、早期特征跳跃融合和 patch restoration。只允许依据论文材料和通用 PyTorch 知识实现，不得读取、复制、导入或间接依赖任何现有 XiHe 实现、XiHe 专用模型资源或代码仓库，也不得用缺少对应信息交互语义的普通卷积或 MLP 占位。最终代码必须是独立可运行的 PyTorch 实现，模型文件命名为 xihe_model.py，模型类命名为 XiheModel，构造时支持通过 img_size、patch_size、in_chans、out_chans、embed_dim 和 mask 指定空间尺寸、通道数、隐藏维度及海陆掩膜；未显式指定 img_size、in_chans 和 out_chans 时采用论文对应的全球输入输出契约 (2041,4320)、96 和 94。mask 的形状为 (H,W)，以 1 表示海洋、0 表示陆地，并必须实际影响信息交互。forward(x) 接收 (B,in_chans,H,W)，返回有限的 (B,out_chans,H,W) 张量，支持非默认的小尺寸及不能被 patch_size 整除的空间尺寸；错误的 mask、通道数或空间尺寸必须被拒绝。",
+  "evaluation_script": "evaluate_xihe_model_reproduction.py",
+  "stardard_dir_name": "xihe_model_reproduction",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "8af2d8d97c824c01",
+      "check_type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "xihe_model.py"
+        ]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c02",
+      "check_type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c01"
+      ],
+      "params": {
+        "files": [
+          "xihe_model.py"
+        ],
+        "required_interfaces": [
+          "XiheModel",
+          "XiheModel.forward",
+          "_LocalSIE",
+          "_LocalSIE.forward",
+          "_GroupMixer",
+          "_GroupMixer.forward",
+          "_GlobalSIE",
+          "_GlobalSIE.forward",
+          "_OceanSpecificBlock",
+          "_OceanSpecificBlock.forward",
+          "_PatchMerging",
+          "_PatchMerging.forward",
+          "_PatchExpansion",
+          "_PatchExpansion.forward"
+        ]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c03",
+      "check_type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c01"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_model_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [16, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          }
+        ],
+        "model_args": {
+          "img_size": [
+            16,
+            24
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 3,
+          "out_chans": 2,
+          "embed_dim": 16,
+          "mask": "$mask"
+        },
+        "rules": [
+          {
+            "id": "patch_partition_shape",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "patch_partition",
+              "structure": {
+                "class_name": "Sequential",
+                "children": [
+                  {
+                    "class_name": "Conv2d",
+                    "in_features": 3,
+                    "out_features": 16,
+                    "kernel_size": [
+                      4,
+                      4
+                    ],
+                    "stride": [
+                      4,
+                      4
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "patch_restoration_shape",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "patch_restoration",
+              "structure": {
+                "class_name": "ConvTranspose2d",
+                "in_features": 16,
+                "out_features": 2,
+                "kernel_size": [
+                  4,
+                  4
+                ],
+                "stride": [
+                  4,
+                  4
+                ]
+              }
+            }
+          },
+          {
+            "id": "ocean_blocks_length",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks",
+              "length": 5
+            }
+          },
+          {
+            "id": "ocean_blocks_pattern",
+            "type": "block_pattern",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks",
+              "pattern": [
+                "_OceanSpecificBlock",
+                "_OceanSpecificBlock",
+                "_OceanSpecificBlock",
+                "_OceanSpecificBlock",
+                "_OceanSpecificBlock"
+              ]
+            }
+          },
+          {
+            "id": "downsample_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "downsample",
+              "expected": "_PatchMerging"
+            }
+          },
+          {
+            "id": "upsample_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "upsample",
+              "expected": "_PatchExpansion"
+            }
+          },
+          {
+            "id": "skip_projection_shape",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "skip_projection",
+              "in_features": 32,
+              "out_features": 16,
+              "bias": true
+            }
+          },
+          {
+            "id": "local_sie_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.0.local_sies.0",
+              "expected": "_LocalSIE"
+            }
+          },
+          {
+            "id": "local_qkv_shape",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.0.local_sies.0.qkv",
+              "in_features": 16,
+              "out_features": 48
+            }
+          },
+          {
+            "id": "local_qkv_shape_1",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.1.local_sies.0.qkv",
+              "in_features": 32,
+              "out_features": 96
+            }
+          },
+          {
+            "id": "local_qkv_shape_2",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.2.local_sies.0.qkv",
+              "in_features": 32,
+              "out_features": 96
+            }
+          },
+          {
+            "id": "local_qkv_shape_3",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.3.local_sies.0.qkv",
+              "in_features": 32,
+              "out_features": 96
+            }
+          },
+          {
+            "id": "local_qkv_shape_4",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.4.local_sies.0.qkv",
+              "in_features": 16,
+              "out_features": 48
+            }
+          },
+          {
+            "id": "global_sie_type_0",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.0.global_sie",
+              "expected": "_GlobalSIE"
+            }
+          },
+          {
+            "id": "patch_merging_reduction",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "downsample.reduction",
+              "in_features": 64,
+              "out_features": 32
+            }
+          },
+          {
+            "id": "patch_merging_norm",
+            "type": "layer_norm_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "downsample.norm",
+              "normalized_shape": [
+                64
+              ]
+            }
+          },
+          {
+            "id": "patch_expansion_norm",
+            "type": "layer_norm_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "upsample.norm",
+              "normalized_shape": [
+                16
+              ]
+            }
+          },
+          {
+            "id": "local_depth_0",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.0.local_sies",
+              "length": 1
+            }
+          },
+          {
+            "id": "local_depth_1",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.1.local_sies",
+              "length": 2
+            }
+          },
+          {
+            "id": "local_depth_2",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.2.local_sies",
+              "length": 2
+            }
+          },
+          {
+            "id": "local_depth_3",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.3.local_sies",
+              "length": 2
+            }
+          },
+          {
+            "id": "local_depth_4",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.4.local_sies",
+              "length": 1
+            }
+          },
+          {
+            "id": "global_sie_type_1",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.1.global_sie",
+              "expected": "_GlobalSIE"
+            }
+          },
+          {
+            "id": "global_sie_type_2",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.2.global_sie",
+              "expected": "_GlobalSIE"
+            }
+          },
+          {
+            "id": "global_sie_type_3",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.3.global_sie",
+              "expected": "_GlobalSIE"
+            }
+          },
+          {
+            "id": "global_sie_type_4",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "ocean_blocks.4.global_sie",
+              "expected": "_GlobalSIE"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c16",
+      "check_type": "model_xihe_structure_contract_method_correctness",
+      "method": "check_xihe_structure_contract",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c03"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_model_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [16, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          }
+        ],
+        "model_args": {
+          "img_size": [
+            16,
+            24
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 3,
+          "out_chans": 2,
+          "embed_dim": 16,
+          "mask": "$mask"
+        },
+        "group_vectors_path": "ocean_blocks.0.global_sie.group_vectors",
+        "group_vectors_shape": [
+          null,
+          16
+        ],
+        "mask_names": [
+          "mask",
+          "ocean_mask",
+          "land_sea_mask"
+        ],
+        "mask_shape": [
+          16,
+          24
+        ],
+        "expected_defaults": {
+          "img_size": [
+            2041,
+            4320
+          ],
+          "in_chans": 96,
+          "out_chans": 94
+        },
+        "forbidden_import_roots": [
+          "timm",
+          "transformers",
+          "mmcv",
+          "modulus",
+          "onescience"
+        ],
+        "forbidden_import_substrings": [
+          "xihe"
+        ]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c17",
+      "check_type": "model_xihe_internal_behavior_method_correctness",
+      "method": "check_xihe_internal_behavior",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c03",
+        "8af2d8d97c824c16"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_model_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [16, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          },
+          {
+            "function": "randn",
+            "args": {
+              "size": [1, 3, 16, 24]
+            },
+            "save_as": "x"
+          }
+        ],
+        "model_args": {
+          "img_size": [16, 24],
+          "patch_size": [4, 4],
+          "in_chans": 3,
+          "out_chans": 2,
+          "embed_dim": 16,
+          "mask": "$mask"
+        },
+        "forward_args": {
+          "x": "$x"
+        },
+        "expected_stage_order": [
+          "patch_partition",
+          "ocean_blocks.0",
+          "downsample",
+          "ocean_blocks.1",
+          "ocean_blocks.2",
+          "ocean_blocks.3",
+          "upsample",
+          "skip_projection",
+          "ocean_blocks.4",
+          "patch_restoration"
+        ],
+        "required_internal_modules": [
+          "ocean_blocks.0.global_sie.group_mixer",
+          "ocean_blocks.1.global_sie.group_mixer",
+          "ocean_blocks.2.global_sie.group_mixer",
+          "ocean_blocks.3.global_sie.group_mixer",
+          "ocean_blocks.4.global_sie.group_mixer"
+        ],
+        "local_feature_shape": [1, 4, 6, 16],
+        "internal_seed": 211
+      }
+    },
+    {
+      "id": "8af2d8d97c824c13",
+      "check_type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c02",
+        "8af2d8d97c824c03"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_forward_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [16, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          },
+          {
+            "function": "randn",
+            "args": {
+              "size": [2, 3, 16, 24]
+            },
+            "save_as": "x"
+          }
+        ],
+        "model_args": {
+          "img_size": [
+            16,
+            24
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 3,
+          "out_chans": 2,
+          "embed_dim": 16,
+          "mask": "$mask"
+        },
+        "forward_args": {
+          "x": "$x"
+        },
+        "out_shape": [
+          2,
+          2,
+          16,
+          24
+        ],
+        "check_backward": true
+      }
+    },
+    {
+      "id": "8af2d8d97c824c18",
+      "check_type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c02",
+        "8af2d8d97c824c03"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_forward_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [24, 32],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          },
+          {
+            "function": "randn",
+            "args": {
+              "size": [1, 4, 24, 32]
+            },
+            "save_as": "x"
+          }
+        ],
+        "model_args": {
+          "img_size": [24, 32],
+          "patch_size": [4, 4],
+          "in_chans": 4,
+          "out_chans": 3,
+          "embed_dim": 24,
+          "mask": "$mask"
+        },
+        "forward_args": {
+          "x": "$x"
+        },
+        "out_shape": [1, 3, 24, 32]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c19",
+      "check_type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c02",
+        "8af2d8d97c824c03"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_forward_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [17, 23],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          },
+          {
+            "function": "randn",
+            "args": {
+              "size": [1, 2, 17, 23]
+            },
+            "save_as": "x"
+          }
+        ],
+        "model_args": {
+          "img_size": [17, 23],
+          "patch_size": [3, 4],
+          "in_chans": 2,
+          "out_chans": 5,
+          "embed_dim": 12,
+          "mask": "$mask"
+        },
+        "forward_args": {
+          "x": "$x"
+        },
+        "out_shape": [1, 5, 17, 23]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c20",
+      "check_type": "model_xihe_invalid_input_contract_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c02"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [16, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          },
+          {
+            "function": "full",
+            "args": {
+              "size": [15, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "invalid_mask"
+          }
+        ],
+        "model_args": {
+          "img_size": [16, 24],
+          "patch_size": [4, 4],
+          "in_chans": 3,
+          "out_chans": 2,
+          "embed_dim": 16,
+          "mask": "$mask"
+        },
+        "invalid_cases": [
+          {
+            "name": "mask_shape",
+            "kind": "constructor_mask",
+            "value": "$invalid_mask"
+          }
+        ]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c21",
+      "check_type": "model_xihe_invalid_input_contract_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "8af2d8d97c824c13"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "pre_hooks": [
+          {
+            "function": "full",
+            "args": {
+              "size": [16, 24],
+              "fill_value": 1.0
+            },
+            "save_as": "mask"
+          },
+          {
+            "function": "randn",
+            "args": {
+              "size": [1, 4, 16, 24]
+            },
+            "save_as": "invalid_channels"
+          },
+          {
+            "function": "randn",
+            "args": {
+              "size": [1, 3, 15, 24]
+            },
+            "save_as": "invalid_spatial"
+          }
+        ],
+        "model_args": {
+          "img_size": [16, 24],
+          "patch_size": [4, 4],
+          "in_chans": 3,
+          "out_chans": 2,
+          "embed_dim": 16,
+          "mask": "$mask"
+        },
+        "invalid_cases": [
+          {
+            "name": "channel_count",
+            "kind": "forward_x",
+            "value": "$invalid_channels"
+          },
+          {
+            "name": "spatial_size",
+            "kind": "forward_x",
+            "value": "$invalid_spatial"
+          }
+        ]
+      }
+    },
+    {
+      "id": "8af2d8d97c824c14",
+      "check_type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "8af2d8d97c824c13",
+        "8af2d8d97c824c16",
+        "8af2d8d97c824c17",
+        "8af2d8d97c824c18",
+        "8af2d8d97c824c19",
+        "8af2d8d97c824c20",
+        "8af2d8d97c824c21"
+      ],
+      "params": {
+        "model_file": "xihe_model.py",
+        "model_class": "XiheModel",
+        "case": {
+          "seed": 101,
+          "img_size": [
+            24,
+            32
+          ],
+          "patch_size": [
+            4,
+            4
+          ],
+          "in_chans": 4,
+          "out_chans": 3,
+          "embed_dim": 24
+        },
+        "required_behaviors": [
+          "deterministic_eval",
+          "input_sensitive",
+          "mask_affects_prediction",
+          "land_values_do_not_affect_ocean",
+          "global_information_exchange"
+        ]
+      }
+    }
+  ]
+}

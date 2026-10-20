@@ -1,0 +1,937 @@
+{
+  "id": "nequix_energy_offset_adapter",
+  "eval_type": "sec-develop",
+  "domain": "matchem",
+  "task": "为固定 nequix-mp-1 增加可训练能量偏移适配层（冻结主干）",
+  "prompt": "基于固定的 nequix-mp-1 可移植配置与权重完成能量偏移二次开发。生成代码必须独立实现可由配置重建的完整 NequIX 模型结构，并读取固定 .pt 文件。该 .pt 首行是 JSON 配置（含 atomic_numbers、hidden_irreps、lmax、cutoff、n_layers、radial_basis_size、radial_mlp_size、radial_mlp_layers、radial_polynomial_p、mlp_init_scale、index_weights、layer_norm、shift、scale、avg_n_neighbors、atom_energies），其余字节是 torch state_dict zip；必须读取配置行后用 `torch.load` 读取 state_dict，从 state_dict 取出张量字典，再由本地模型类按配置构造（`NequixTorch(...)`）并通过 `load_state_dict(state_dict, strict=True)` 加载，禁止反序列化或调用任何保存的 nn.Module。不得依赖 OneScience 或外部 `nequip`、`mace`、`mattersim`、`nequix` 包。固定主干为 89 元素、cutoff=6.0、4 层、hidden_irreps=128x0e+64x1o+32x2e+32x3o、lmax=3、38 个参数张量；顶层模块顺序为 layers、readout，每层卷积模块顺序为 linear_1、tp、sort、radial_mlp、linear_2、skip、layer_norm、gate；完整 state_dict 为 107 项、732710 个元素。\n\n二次开发要求：在冻结的 NequIX 主干外包裹一个适配层 `NequixEnergyOffsetAdapter`，新增且仅新增一个可训练标量参数 `energy_offset`（shape [1]，初始为 0），前向时将其作为每个图（graph）的能量偏移加到总能量上，`forces` 与 `stress` 保持不变。除 `energy_offset` 外，主干全部 38 个参数张量必须 `requires_grad=false` 且更新前后逐项不变。当 `energy_offset=0` 时，适配层输出必须与冻结主干完全一致。\n\n固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt`，SHA256 为 `c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c`。固定训练数据为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb`，SHA256 为 `b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b`，共 16 个周期结构；使用 index=0 的真实 energy 与 forces 标签（28 原子结构），并由本地 ASE 周期邻居图在 cutoff=6.0 下构造 batch。训练损失为 total-energy MSE 与 force MSE 各乘权重 1.0 与 5.0。固定使用 AdamW、lr=1e-3、weight_decay=1e-8、max_steps=1、gradient_clip_norm=1e6；`train_step` 必须执行 zero_grad、真实前向、loss.backward、梯度裁剪和 optimizer.step，且优化器只包含 `energy_offset`。一次训练必须生成 `nequix_energy_offset_adapter.pt`、`metrics.jsonl`、`train.log`；checkpoint 包含完整模型状态、非空优化器状态、completed_steps=1、trainable_parameter_names=[energy_offset]、source_checkpoint_sha256、解析配置和 history。\n\n请在指定目录生成 `nequix_energy_offset_adapter.py`、`train_nequix_energy_offset.py`、`nequix_energy_offset.yaml` 和独立包 `portable_nequix/`。`nequix_energy_offset_adapter.py` 必须公开 `NequixEnergyOffsetAdapter`、`load_checkpoint_payload`、`raw_model_state`、`build_model`、`load_model`、`load_training_structures`、`build_finetune_batch`、`predict_energy_forces`；`train_nequix_energy_offset.py` 必须公开 `load_config`、`trainable_named_parameters`、`build_model`、`build_trainer`、`train_step`、`train`、`main`。",
+  "evaluation_script": "evaluate_nequix_energy_offset_adapter.py",
+  "stardard_dir_name": "nequix_energy_offset_adapter",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+    "time_limit": "00:20:00",
+    "job_name": "eval_nequix_energy_offset",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "28f2780491abbc0a",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "nequix_energy_offset.yaml"
+        ]
+      }
+    },
+    {
+      "id": "c43da1af908e7eab",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "nequix_energy_offset_adapter.py"
+        ]
+      }
+    },
+    {
+      "id": "844dc07814b9d0f8",
+      "type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "28f2780491abbc0a"
+      ],
+      "params": {
+        "config_name": "nequix_energy_offset.yaml",
+        "required_config_keys": [
+          {
+            "key": "data_path",
+            "value": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb"
+          }
+        ],
+        "config_paths": {
+          "data_path": [
+            "paths.data",
+            "training_data"
+          ]
+        }
+      }
+    },
+    {
+      "id": "17862836ec9fd60c",
+      "type": "dataset_pipeline",
+      "method": "check_dataset_pipeline",
+      "phase": "data_analysis",
+      "depends": [
+        "c43da1af908e7eab"
+      ],
+      "params": {
+        "model_file": "nequix_energy_offset_adapter.py",
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+        "data_sha256": "b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b",
+        "frame_index": 0,
+        "frame_num_atoms": 28,
+        "structure_count": 16,
+        "cutoff": 6.0,
+        "graph_fields": {
+          "positions": "positions",
+          "edge_index": "edge_index",
+          "shifts": "edge_attr",
+          "shifts_are_cartesian": false,
+          "edge_index_rows": [
+            1,
+            0
+          ]
+        },
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt"
+      }
+    },
+    {
+      "id": "aeee1838737676fc",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "28f2780491abbc0a",
+        "c43da1af908e7eab"
+      ],
+      "params": {
+        "config_name": "nequix_energy_offset.yaml",
+        "model_file": "nequix_energy_offset_adapter.py",
+        "model_class": "NequixEnergyOffsetAdapter",
+        "model_args": {},
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+        "strict": true,
+        "json_header_checkpoint": true,
+        "pre_load_hooks": [
+          {
+            "function": "prepare_nequix_probe",
+            "args": {
+              "model_file": "nequix_energy_offset_adapter.py",
+              "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+              "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c"
+            },
+            "save_as": "probe"
+          }
+        ]
+      }
+    },
+    {
+      "id": "7c7fe02c5e84a018",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "c43da1af908e7eab"
+      ],
+      "params": {
+        "files": [
+          "nequix_energy_offset_adapter.py"
+        ],
+        "required_interfaces": [
+          "NequixEnergyOffsetAdapter",
+          "NequixEnergyOffsetAdapter.forward",
+          "load_checkpoint_payload",
+          "raw_model_state",
+          "build_model",
+          "load_model",
+          "load_training_structures",
+          "build_finetune_batch",
+          "predict_energy_forces"
+        ]
+      }
+    },
+    {
+      "id": "5fe830911da61b09",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "28f2780491abbc0a",
+        "7c7fe02c5e84a018"
+      ],
+      "params": {
+        "model_file": "nequix_energy_offset_adapter.py",
+        "model_class": "NequixEnergyOffsetAdapter",
+        "config_name": "nequix_energy_offset.yaml",
+        "model_args": {},
+        "model_ref": "model",
+        "pre_model_hooks": [
+          {
+            "function": "prepare_nequix_probe",
+            "args": {
+              "model_file": "nequix_energy_offset_adapter.py",
+              "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+              "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c"
+            },
+            "save_as": "probe"
+          }
+        ],
+        "rules": [
+          {
+            "id": "adapter_class",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "expected": "NequixEnergyOffsetAdapter"
+            }
+          },
+          {
+            "id": "base_top_order",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "NequixTorch"
+              },
+              "structure": {
+                "children": [
+                  {
+                    "name": "layers"
+                  },
+                  {
+                    "name": "readout"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "base_layers",
+            "type": "children_count",
+            "severity": "error",
+            "params": {
+              "target_path": "${base_path}.layers",
+              "count": 4
+            }
+          },
+          {
+            "id": "conv_order_0",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "${base_path}.layers.0",
+              "structure": {
+                "children": [
+                  {
+                    "name": "linear_1"
+                  },
+                  {
+                    "name": "tp"
+                  },
+                  {
+                    "name": "sort"
+                  },
+                  {
+                    "name": "radial_mlp"
+                  },
+                  {
+                    "name": "linear_2"
+                  },
+                  {
+                    "name": "skip"
+                  },
+                  {
+                    "name": "layer_norm"
+                  },
+                  {
+                    "name": "gate"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "conv_order_1",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "${base_path}.layers.1",
+              "structure": {
+                "children": [
+                  {
+                    "name": "linear_1"
+                  },
+                  {
+                    "name": "tp"
+                  },
+                  {
+                    "name": "sort"
+                  },
+                  {
+                    "name": "radial_mlp"
+                  },
+                  {
+                    "name": "linear_2"
+                  },
+                  {
+                    "name": "skip"
+                  },
+                  {
+                    "name": "layer_norm"
+                  },
+                  {
+                    "name": "gate"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "conv_order_2",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "${base_path}.layers.2",
+              "structure": {
+                "children": [
+                  {
+                    "name": "linear_1"
+                  },
+                  {
+                    "name": "tp"
+                  },
+                  {
+                    "name": "sort"
+                  },
+                  {
+                    "name": "radial_mlp"
+                  },
+                  {
+                    "name": "linear_2"
+                  },
+                  {
+                    "name": "skip"
+                  },
+                  {
+                    "name": "layer_norm"
+                  },
+                  {
+                    "name": "gate"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "conv_order_3",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "${base_path}.layers.3",
+              "structure": {
+                "children": [
+                  {
+                    "name": "linear_1"
+                  },
+                  {
+                    "name": "tp"
+                  },
+                  {
+                    "name": "sort"
+                  },
+                  {
+                    "name": "radial_mlp"
+                  },
+                  {
+                    "name": "linear_2"
+                  },
+                  {
+                    "name": "skip"
+                  },
+                  {
+                    "name": "layer_norm"
+                  },
+                  {
+                    "name": "gate"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "adapter_contract": {
+          "state_count": 107,
+          "state_numel": 732710,
+          "base_parameter_tensors": 38,
+          "elements": 89,
+          "config_fields": [
+            "atomic_numbers",
+            "hidden_irreps",
+            "lmax",
+            "cutoff",
+            "n_layers",
+            "radial_basis_size",
+            "radial_mlp_size",
+            "radial_mlp_layers",
+            "radial_polynomial_p",
+            "mlp_init_scale",
+            "index_weights",
+            "layer_norm",
+            "shift",
+            "scale",
+            "avg_n_neighbors",
+            "atom_energies"
+          ],
+          "config_values": {
+            "cutoff": 6.0,
+            "n_layers": 4,
+            "hidden_irreps": "128x0e+64x1o+32x2e+32x3o",
+            "lmax": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "d86d5a1484e72f71",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "28f2780491abbc0a",
+        "7c7fe02c5e84a018",
+        "17862836ec9fd60c"
+      ],
+      "params": {
+        "model_file": "nequix_energy_offset_adapter.py",
+        "model_class": "NequixEnergyOffsetAdapter",
+        "config_name": "nequix_energy_offset.yaml",
+        "model_args": {},
+        "model_ref": "model",
+        "pre_forward_hooks": [
+          {
+            "function": "prepare_nequix_probe",
+            "args": {
+              "model_file": "nequix_energy_offset_adapter.py",
+              "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+              "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+              "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+              "frame_index": 0
+            },
+            "save_as": "probe"
+          }
+        ],
+        "forward_args": {
+          "batch": "$batch"
+        },
+        "forward_function": "predict_energy_forces",
+        "enable_grad": true,
+        "output_shapes": {
+          "energy": [
+            [
+              1
+            ],
+            [
+              1,
+              1
+            ]
+          ],
+          "forces": [
+            [
+              28,
+              3
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "d0d3141184ea538e",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "28f2780491abbc0a",
+        "7c7fe02c5e84a018",
+        "17862836ec9fd60c"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "nequix_energy_offset_adapter.py",
+          "model_class": "NequixEnergyOffsetAdapter",
+          "config_name": "nequix_energy_offset.yaml",
+          "model_args": {},
+          "model_ref": "model",
+          "pre_forward_hooks": [
+            {
+              "function": "prepare_nequix_probe",
+              "args": {
+                "model_file": "nequix_energy_offset_adapter.py",
+                "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+                "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+                "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+                "frame_index": 0
+              },
+              "save_as": "probe"
+            }
+          ],
+          "forward_args": {
+            "batch": "$batch"
+          },
+          "forward_function": "predict_energy_forces"
+        },
+        "reference": {
+          "model_file": "nequix_energy_offset_adapter.py",
+          "model_class": "NequixEnergyOffsetAdapter",
+          "config_name": "nequix_energy_offset.yaml",
+          "model_args": {},
+          "model_ref": "base",
+          "pre_forward_hooks": [
+            {
+              "function": "prepare_nequix_probe",
+              "args": {
+                "model_file": "nequix_energy_offset_adapter.py",
+                "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+                "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+                "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+                "frame_index": 0
+              },
+              "save_as": "probe"
+            }
+          ],
+          "forward_args": {
+            "batch": "$batch"
+          },
+          "forward_function": "predict_energy_forces",
+          "from_candidate": true
+        },
+        "same_forward_reference": true,
+        "initialize_parameters": false,
+        "enable_grad": true,
+        "energy_offset": 0.0,
+        "compare_keys": [
+          "energy",
+          "forces",
+          "stress"
+        ],
+        "compare_atol": 1e-06
+      }
+    },
+    {
+      "id": "551bea16f14b5d70",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "28f2780491abbc0a",
+        "7c7fe02c5e84a018",
+        "17862836ec9fd60c"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "nequix_energy_offset_adapter.py",
+          "model_class": "NequixEnergyOffsetAdapter",
+          "config_name": "nequix_energy_offset.yaml",
+          "model_args": {},
+          "model_ref": "model",
+          "pre_forward_hooks": [
+            {
+              "function": "prepare_nequix_probe",
+              "args": {
+                "model_file": "nequix_energy_offset_adapter.py",
+                "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+                "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+                "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+                "frame_index": 0
+              },
+              "save_as": "probe"
+            }
+          ],
+          "forward_args": {
+            "batch": "$batch"
+          },
+          "forward_function": "predict_energy_forces"
+        },
+        "reference": {
+          "model_file": "nequix_energy_offset_adapter.py",
+          "model_class": "NequixEnergyOffsetAdapter",
+          "config_name": "nequix_energy_offset.yaml",
+          "model_args": {},
+          "model_ref": "base",
+          "pre_forward_hooks": [
+            {
+              "function": "prepare_nequix_probe",
+              "args": {
+                "model_file": "nequix_energy_offset_adapter.py",
+                "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+                "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+                "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+                "frame_index": 0
+              },
+              "save_as": "probe"
+            }
+          ],
+          "forward_args": {
+            "batch": "$batch"
+          },
+          "forward_function": "predict_energy_forces",
+          "from_candidate": true
+        },
+        "same_forward_reference": true,
+        "initialize_parameters": false,
+        "enable_grad": true,
+        "energy_offset": 0.75,
+        "compare_keys": [
+          "energy",
+          "forces",
+          "stress"
+        ],
+        "compare_atol": 1e-06
+      }
+    },
+    {
+      "id": "24587e116e6eea67",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "28f2780491abbc0a",
+        "7c7fe02c5e84a018",
+        "17862836ec9fd60c"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "nequix_energy_offset_adapter.py",
+          "model_class": "NequixEnergyOffsetAdapter",
+          "config_name": "nequix_energy_offset.yaml",
+          "model_args": {},
+          "model_ref": "model",
+          "pre_forward_hooks": [
+            {
+              "function": "prepare_nequix_probe",
+              "args": {
+                "model_file": "nequix_energy_offset_adapter.py",
+                "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+                "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+                "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+                "frame_index": 0
+              },
+              "save_as": "probe"
+            }
+          ],
+          "forward_args": {
+            "batch": "$batch"
+          },
+          "forward_function": "predict_energy_forces"
+        },
+        "reference": {
+          "model_file": "nequix_energy_offset_adapter.py",
+          "model_class": "NequixEnergyOffsetAdapter",
+          "config_name": "nequix_energy_offset.yaml",
+          "model_args": {},
+          "model_ref": "base",
+          "pre_forward_hooks": [
+            {
+              "function": "prepare_nequix_probe",
+              "args": {
+                "model_file": "nequix_energy_offset_adapter.py",
+                "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+                "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+                "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+                "frame_index": 0
+              },
+              "save_as": "probe"
+            }
+          ],
+          "forward_args": {
+            "batch": "$batch"
+          },
+          "forward_function": "predict_energy_forces",
+          "from_candidate": true
+        },
+        "same_forward_reference": true,
+        "initialize_parameters": false,
+        "enable_grad": true,
+        "energy_offset": -0.25,
+        "compare_keys": [
+          "energy",
+          "forces",
+          "stress"
+        ],
+        "compare_atol": 1e-06
+      }
+    },
+    {
+      "id": "325920a3de69e6d3",
+      "type": "train_file",
+      "method": "check_files",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "train_nequix_energy_offset.py"
+        ]
+      }
+    },
+    {
+      "id": "cad611e6c3d5e033",
+      "type": "train_config_content",
+      "method": "check_config_content",
+      "phase": "train_script",
+      "depends": [
+        "28f2780491abbc0a"
+      ],
+      "params": {
+        "config_name": "nequix_energy_offset.yaml",
+        "required_config_keys": [
+          {
+            "key": "optimizer",
+            "value": "AdamW"
+          },
+          {
+            "key": "lr",
+            "value": 0.001
+          },
+          {
+            "key": "weight_decay",
+            "value": 1e-08
+          },
+          {
+            "key": "max_steps",
+            "value": 1
+          },
+          {
+            "key": "gradient_clip_norm",
+            "value": 1000000.0
+          },
+          {
+            "key": "energy_weight",
+            "value": 1.0
+          },
+          {
+            "key": "force_weight",
+            "value": 5.0
+          },
+          {
+            "key": "structure_index",
+            "value": 0
+          }
+        ],
+        "config_paths": {
+          "optimizer": "training.optimizer",
+          "lr": "training.lr",
+          "weight_decay": "training.weight_decay",
+          "max_steps": "training.max_steps",
+          "gradient_clip_norm": "training.gradient_clip_norm",
+          "energy_weight": "training.energy_weight",
+          "force_weight": "training.force_weight",
+          "structure_index": [
+            "training.structure_index",
+            "index"
+          ]
+        },
+        "config_value_types": {
+          "gradient_clip_norm": "float"
+        }
+      }
+    },
+    {
+      "id": "632c695d3ea93d29",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "325920a3de69e6d3"
+      ],
+      "params": {
+        "files": [
+          "train_nequix_energy_offset.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "trainable_named_parameters",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "7bb9ab45a22e5206",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "325920a3de69e6d3",
+        "c43da1af908e7eab"
+      ],
+      "params": {
+        "files": [
+          "train_nequix_energy_offset.py"
+        ],
+        "check_config": {
+          "entry_names": [
+            "main",
+            "train"
+          ],
+          "model_names": [
+            "build_model",
+            "build_trainer",
+            "NequixEnergyOffsetAdapter"
+          ],
+          "model_attributes": [
+            "train",
+            "forward"
+          ],
+          "dataloader_names": [
+            "build_finetune_batch"
+          ],
+          "optimizer_names": [
+            "AdamW"
+          ],
+          "loss_names": [
+            "mse_loss",
+            "MSELoss",
+            "energy_force_loss",
+            "compute_loss",
+            "loss"
+          ],
+          "qualified_dataloader_calls": [
+            "api.build_finetune_batch"
+          ]
+        },
+        "single_step_function": "train_step",
+        "frozen_eval_allowed": true,
+        "source_contract": {
+          "required_package": "portable_nequix",
+          "prohibited_imports": [
+            "onescience",
+            "nequip",
+            "mace",
+            "mattersim",
+            "nequix"
+          ]
+        }
+      }
+    },
+    {
+      "id": "b3711afda76d9696",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "325920a3de69e6d3"
+      ],
+      "params": {
+        "files": [
+          "train_nequix_energy_offset.py"
+        ]
+      }
+    },
+    {
+      "id": "eac57218d34c0f8c",
+      "type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": [
+        "28f2780491abbc0a",
+        "7c7fe02c5e84a018",
+        "632c695d3ea93d29",
+        "17862836ec9fd60c"
+      ],
+      "params": {
+        "run_file": "train_nequix_energy_offset.py",
+        "config_name": "nequix_energy_offset.yaml",
+        "train_fn_name": "train",
+        "smoke_config": {},
+        "pre_train_hooks": [
+          {
+            "function": "prepare_nequix_probe",
+            "args": {
+              "model_file": "nequix_energy_offset_adapter.py",
+              "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/NequIX/nequix-mp-1.pt",
+              "checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+              "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+              "frame_index": 0
+            },
+            "save_as": "probe"
+          }
+        ],
+        "train_args": {
+          "config_path": "$candidate_dir/nequix_energy_offset.yaml",
+          "output_dir": "$results_dir",
+          "device": "cpu"
+        },
+        "offset_contract": {
+          "lr": 0.001,
+          "weight_decay": 1e-08,
+          "gradient_clip_norm": 1000000.0,
+          "energy_weight": 1.0,
+          "force_weight": 5.0,
+          "base_parameter_tensors": 38,
+          "step_function": "train_step",
+          "prediction_function": "predict_energy_forces",
+          "step_arguments": [
+            "model",
+            "optimizer",
+            "batch",
+            "config"
+          ],
+          "trainable_selector": "trainable_named_parameters",
+          "output_dir": "$results_dir",
+          "checkpoint_name": "nequix_energy_offset_adapter.pt",
+          "source_checkpoint_sha256": "c6f54523bb73537994bc932f0a1a55c06b1d643e582e9c9ab20d00c35546791c",
+          "checkpoint_keys": [
+            "model",
+            "optimizer",
+            "completed_steps",
+            "trainable_parameter_names",
+            "source_checkpoint_sha256",
+            "config",
+            "history"
+          ],
+          "observe_model_forward": true,
+          "checkpoint_key_paths": {
+            "model": [
+              "model",
+              "model_state_dict"
+            ],
+            "optimizer": [
+              "optimizer",
+              "optimizer_state_dict"
+            ]
+          }
+        },
+        "dict_train_args": {
+          "config": "$train_config"
+        },
+        "dict_train_overrides": {
+          "output_dir": "${results_dir}",
+          "device": "cpu"
+        }
+      }
+    },
+    {
+      "id": "157823c9a86a25ee",
+      "type": "smoke_artifacts",
+      "method": "check_files",
+      "phase": "smoke_train",
+      "depends": [
+        "eac57218d34c0f8c"
+      ],
+      "params": {
+        "required_files": [
+          "smoke-training/results/nequix_energy_offset_adapter.pt",
+          "smoke-training/results/metrics.jsonl",
+          "smoke-training/results/train.log"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,240 @@
+{
+  "id": "nowcastnet_radar_nowcasting_finetune",
+  "eval_type": "train",
+  "domain": "earth",
+  "task": "基于 NowCastNet 微调雷达回波短临预报模型",
+  "prompt": "基于 NowCastNet 的演化与生成式路径实现雷达回波短临预报微调。生成目录必须包含 nowcastnet_radar_nowcasting.py、train.py 和 evaluate.py；模型类命名为 RadarNowcastNet，输入为 (B,4,H,W) 或等价单通道时序，输出为未来 (B,3,H,W) 三帧雷达回波。模型必须包含 evolution 和 generator，执行真实 AdamW、MSE、backward 和短训练，并返回未来帧 RMSE/MAE。",
+  "evaluation_script": "evaluate_nowcastnet_radar_nowcasting_finetune.py",
+  "stardard_dir_name": "nowcastnet_radar_nowcasting_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "f82ba34601414a1c",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_resolution": {
+          "env": "NOWCASTNET_RADAR_SUBMISSION_DIR",
+          "case_name": "weather_finetune_contract",
+          "search_order": [
+            "env",
+            "PYTHONPATH entry",
+            "PYTHONPATH entry/case_name",
+            "cwd",
+            "cwd/case_name"
+          ],
+          "discovery_files": [
+            "nowcastnet_radar_nowcasting.py",
+            "train.py"
+          ]
+        },
+        "required_files": [
+          "nowcastnet_radar_nowcasting.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "syntax_validation": "ast.parse UTF-8 source"
+      }
+    },
+    {
+      "id": "78c6da734049a576",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "input_shape": [
+          2,
+          4,
+          8,
+          8
+        ],
+        "target_shape": [
+          2,
+          3,
+          8,
+          8
+        ],
+        "input_factory": "torch.randn",
+        "target_factory": "torch.randn",
+        "finite_tensors": [
+          "inputs",
+          "targets"
+        ],
+        "mask": {
+          "factory": "torch.zeros_like(targets)",
+          "assignment": "mask[..., :2, :2] = 1",
+          "expected_shape": [
+            2,
+            3,
+            8,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "87b0c27d09cbd149",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "f82ba34601414a1c"
+      ],
+      "params": {
+        "train_file": "train.py",
+        "function": "train_step",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_calls": [
+          "backward",
+          "step"
+        ],
+        "required_source_text": [
+          "AdamW"
+        ],
+        "parse_with": "ast.parse"
+      }
+    },
+    {
+      "id": "b08f1d72eb92348e",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "f82ba34601414a1c"
+      ],
+      "params": {
+        "evaluate_file": "evaluate.py",
+        "required_source_text": [
+          "def evaluate",
+          "rmse",
+          "mae"
+        ]
+      }
+    },
+    {
+      "id": "64eef6bed9eeb3c7",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "f82ba34601414a1c",
+        "78c6da734049a576"
+      ],
+      "params": {
+        "model_file": "nowcastnet_radar_nowcasting.py",
+        "train_file": "train.py",
+        "module_import_names": {
+          "model": "weather_finetune_model",
+          "train": "weather_finetune_train"
+        },
+        "build_function": "build_model",
+        "build_positional_args": [
+          {}
+        ],
+        "device": "cuda:0 if torch.cuda.is_available() else cpu",
+        "model_mode": "eval",
+        "no_grad": true,
+        "input_shape": [
+          2,
+          4,
+          8,
+          8
+        ],
+        "required_children_in_order": [
+          "evolution",
+          "generator"
+        ],
+        "pred_length": 3,
+        "evolution_shape": [
+          2,
+          3,
+          8,
+          8
+        ],
+        "generator_input": "torch.cat([inputs, evolution], dim=1)",
+        "generator_shape": [
+          2,
+          3,
+          8,
+          8
+        ]
+      }
+    },
+    {
+      "id": "3dfbd31c8a62e90e",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "64eef6bed9eeb3c7",
+        "78c6da734049a576"
+      ],
+      "params": {
+        "model_mode": "eval",
+        "no_grad": true,
+        "input_shape": [
+          2,
+          4,
+          8,
+          8
+        ],
+        "expected_output_shape": [
+          2,
+          3,
+          8,
+          8
+        ],
+        "require_finite_output": true
+      }
+    },
+    {
+      "id": "ee332e5335a862f8",
+      "type": "train_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "87b0c27d09cbd149",
+        "64eef6bed9eeb3c7",
+        "78c6da734049a576"
+      ],
+      "params": {
+        "train_file": "train.py",
+        "train_function": "train_step",
+        "model_mode": "train",
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "p for p in model.parameters() if p.requires_grad",
+          "lr": 0.001
+        },
+        "train_args": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "train_kwargs": {
+          "optimizer": "optimizer"
+        },
+        "loss_type": [
+          "float",
+          "int"
+        ],
+        "loss_not_nan": "loss == loss",
+        "require_trainable_parameter_change": true
+      }
+    }
+  ]
+}

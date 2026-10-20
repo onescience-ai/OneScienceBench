@@ -1,0 +1,483 @@
+{
+  "id": "mattersim_inference",
+  "eval_type": "infer",
+  "domain": "matchem",
+  "task": "使用固定 MatterSim 1M 权重完成 ASE 原子结构的能量、力和应力推理",
+  "prompt": "独立实现 MatterSim v1.0.0 1M 的 M3GNet 模型结构，并使用固定原始 checkpoint 对 ASE 原子结构执行能量、力和应力推理。固定权重为 `/public/share/sugonhpcapp01/onestore/onemodels/mattersim/mattersim-v1.0.0-1M.pth`，SHA256 为 `28b0b0b0f13efefee06b47ea4c9105a26bd3e2c8396da193430da96b3b49a8be`；不得下载、训练、替换、裁剪或伪造权重。checkpoint 顶层必须且仅含 `model_name`、`model`、`model_args`、`optimizer`、`ema`、`scheduler`、`last_epoch`、`validation_metrics`、`description`，其中 `model_name=m3gnet`，`model` 共有 89 个 tensor entry、890246 个元素。本地模型必须用完整 `model` 状态执行 `load_state_dict(..., strict=True)`，不得过滤键、忽略 missing/unexpected key、动态改写 tensor shape 或覆盖加载钩子绕过严格加载；读取该纯张量 checkpoint 必须使用 `torch.load(..., weights_only=True)`。固定模型参数为 `num_blocks=3`、`units=128`、`max_l=4`、`max_n=4`、`cutoff=5.0`、`max_z=94`、`threebody_cutoff=4.0`。模型必须在本地实现 SmoothBessel 径向基、SphericalBasis 三体角基、4 到 128 维 edge encoder、95 到 128 维原子 one-hot embedding、三个按顺序执行的 MainBlock、gated energy readout 和逐元素 AtomScaling；每个 MainBlock 必须实际完成三体边更新、边消息更新和原子消息更新。`sbf.coef` 是 shape `[4,9,4]` 的固定解析系数表，参与前向但使用 `register_buffer(..., persistent=False)`，因此不得为了凑键而加入旧 checkpoint 的 89 项 state_dict。输入支持 ASE 可读结构文件、单个 `ase.Atoms` 或 `ase.Atoms` 序列；必须根据晶胞和 PBC 构造 5.0 Angstrom 周期邻居图，并在 4.0 Angstrom 内构造同中心、排除自配对的有序三体边对。推理输出必须且仅含 `energies`、`forces`、`stresses`：`energies` 为每个构型的总能量 `[B]`，单位 eV；`forces` 为按构型组织的逐原子 `[N_i,3]`，单位 eV/Angstrom；`stresses` 为完整 `[B,3,3]`，单位 eV/Angstrom^3。力必须通过总能量对原子坐标的负梯度得到，应力必须通过晶格应变梯度除以体积得到，所有输出必须有限。候选不得主动导入 `onescience` 或外部 `mattersim` 包，不得读取评测器、标准实现或旧候选；最终模型、构图、严格加载、前向和自动微分必须由候选本地代码完成。\n\n请在当前工作目录生成 `mattersim_inference/mattersim.py`、`mattersim_inference/run_inference.py`、`mattersim_inference/mattersim_inference.yaml`、`mattersim_inference/portable_mattersim/__init__.py`、`mattersim_inference/portable_mattersim/model.py`、`mattersim_inference/portable_mattersim/blocks.py`、`mattersim_inference/portable_mattersim/layers.py`、`mattersim_inference/portable_mattersim/embeddings.py`、`mattersim_inference/portable_mattersim/scaling.py`、`mattersim_inference/portable_mattersim/graph.py`；其余本地文件可按实现需要自行组织。`mattersim.py` 必须公开 `M3Gnet`、`build_model`、`checkpoint_sha256`、`load_checkpoint_payload`、`load_model`、`evaluate_structure`；`run_inference.py` 必须公开 `load_config`、`load_structures`、`evaluate`、`save_predictions`、`main`，并提供 `--config`、`--checkpoint`、`--input`、`--output`、`--device auto|cpu|cuda` 命令行参数。配置文件必须记录固定 checkpoint、全部七个模型参数和 `energies/forces/stresses` 输出。",
+  "evaluation_script": "evaluate_mattersim_inference.py",
+  "stardard_dir_name": "mattersim_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_mattersim_inference",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "556d355f11643fb1",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "mattersim.py",
+          "run_inference.py",
+          "mattersim_inference.yaml",
+          "portable_mattersim/__init__.py",
+          "portable_mattersim/model.py",
+          "portable_mattersim/blocks.py",
+          "portable_mattersim/layers.py",
+          "portable_mattersim/embeddings.py",
+          "portable_mattersim/scaling.py",
+          "portable_mattersim/graph.py"
+        ],
+        "require_regular_files": true
+      }
+    },
+    {
+      "id": "11a22b2b1b0a8419",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "556d355f11643fb1"
+      ],
+      "params": {
+        "checkpoint": {
+          "path_environment_variable": "MATTERSIM_CHECKPOINT_PATH",
+          "default_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattersim/mattersim-v1.0.0-1M.pth",
+          "require_regular_file": true,
+          "sha256": "28b0b0b0f13efefee06b47ea4c9105a26bd3e2c8396da193430da96b3b49a8be",
+          "torch_load": {
+            "map_location": "cpu",
+            "weights_only": true
+          }
+        },
+        "source_scan": {
+          "source_glob": "**/*.py",
+          "require_at_least_one_python_file": true,
+          "forbidden_import_roots": [
+            "onescience"
+          ],
+          "forbidden_import_prefixes": [
+            "mattersim."
+          ],
+          "forbid_dynamic_calls": [
+            "__import__",
+            "import_module"
+          ],
+          "forbid_sys_modules_alias": true,
+          "forbidden_normalized_path_substrings": [
+            "benchmarks/standard",
+            "benchmarks/evaluators"
+          ],
+          "require_call_attribute": {
+            "load": {
+              "keyword": {
+                "weights_only": true
+              }
+            },
+            "load_state_dict": {
+              "keyword": {
+                "strict": true
+              }
+            }
+          }
+        },
+        "runtime_import_guard": {
+          "forbidden_import_roots": [
+            "onescience"
+          ],
+          "forbidden_import_prefixes": [
+            "mattersim."
+          ]
+        },
+        "payload_contract": {
+          "exact_top_level_keys": [
+            "model_name",
+            "model",
+            "model_args",
+            "optimizer",
+            "ema",
+            "scheduler",
+            "last_epoch",
+            "validation_metrics",
+            "description"
+          ],
+          "model_name": "m3gnet",
+          "model_args": {
+            "num_blocks": 3,
+            "units": 128,
+            "max_l": 4,
+            "max_n": 4,
+            "cutoff": 5.0,
+            "max_z": 94,
+            "threebody_cutoff": 4.0
+          },
+          "state_key": "model",
+          "state_must_be_dict": true,
+          "state_entry_count": 89,
+          "state_numel_sum": 890246
+        },
+        "implementation_loading": {
+          "model_file": "mattersim.py",
+          "run_file": "run_inference.py",
+          "required_model_functions": [
+            "load_checkpoint_payload",
+            "build_model",
+            "load_model",
+            "evaluate_structure"
+          ],
+          "load_model": {
+            "checkpoint": "resolved_checkpoint",
+            "device": "cpu"
+          },
+          "require_model_class_source_within_submission": true
+        },
+        "restored_state_contract": {
+          "exact_key_set": true,
+          "per_key_cpu_tensor_equality": true
+        }
+      }
+    },
+    {
+      "id": "48e405816e5d75ef",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "11a22b2b1b0a8419"
+      ],
+      "params": {
+        "model_from_context": true,
+        "torch_manual_seed": 20260804,
+        "expected_class": {
+          "is_torch_nn_module": true,
+          "name": "M3Gnet"
+        },
+        "expected_top_level_module_order": [
+          "rbf",
+          "sbf",
+          "edge_encoder",
+          "graph_conv",
+          "final",
+          "atom_embedding",
+          "normalizer"
+        ],
+        "graph_conv": {
+          "length": 3,
+          "element_type": "MainBlock",
+          "required_module_attributes": [
+            "three_body",
+            "gated_mlp_edge",
+            "edge_layer_edge",
+            "gated_mlp_atom",
+            "edge_layer_atom"
+          ]
+        },
+        "top_level_module_types": {
+          "rbf": "SmoothBesselBasis",
+          "sbf": "SphericalBasisLayer",
+          "edge_encoder": "MLP",
+          "final": "GatedMLP",
+          "atom_embedding": "MLP",
+          "normalizer": "AtomScaling"
+        },
+        "model_args": {
+          "num_blocks": 3,
+          "units": 128,
+          "max_l": 4,
+          "max_n": 4,
+          "cutoff": 5.0,
+          "max_z": 94,
+          "threebody_cutoff": 4.0
+        },
+        "basis_contract": {
+          "rbf_max_n": 4,
+          "sbf_max_n": 4,
+          "sbf_max_l": 4,
+          "sbf_cutoff": 5.0,
+          "sbf_coef_shape": [
+            4,
+            9,
+            4
+          ],
+          "sbf_coef_nonpersistent": true,
+          "forbid_state_dict_key": "sbf.coef"
+        },
+        "tensor_shapes": {
+          "atom_embedding.mlp.0.linear.weight": [
+            128,
+            95
+          ],
+          "edge_encoder.mlp.0.linear.weight": [
+            128,
+            4
+          ],
+          "normalizer.scale": [
+            95
+          ],
+          "normalizer.shift": [
+            95
+          ]
+        },
+        "forward_signature": {
+          "first_parameter_names": [
+            "input"
+          ]
+        },
+        "state_envelope": {
+          "entry_count": 89,
+          "numel_sum": 890246
+        }
+      }
+    },
+    {
+      "id": "af3edb46f1226199",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "11a22b2b1b0a8419"
+      ],
+      "params": {
+        "run_module_from_context": true,
+        "run_file": "run_inference.py",
+        "required_callable_functions": [
+          "load_config",
+          "load_structures",
+          "evaluate",
+          "save_predictions",
+          "main"
+        ],
+        "evaluate_signature": {
+          "first_parameter_names": [
+            "structures",
+            "checkpoint",
+            "device"
+          ]
+        },
+        "temporary_directory_prefix": "mattersim-interface-",
+        "fixture": {
+          "factory": "ase.build.bulk",
+          "args": [
+            "Si",
+            "diamond"
+          ],
+          "lattice_constants": [
+            5.4,
+            5.43,
+            5.46
+          ],
+          "batch_size": 3,
+          "ase_file": "structures.extxyz",
+          "ase_format": "extxyz"
+        },
+        "load_structures_contract": {
+          "path_input_count": 3,
+          "single_atoms_input_count": 1,
+          "atoms_sequence_input_count": 3,
+          "all_items_instance_of": "ase.Atoms"
+        },
+        "config_contract": {
+          "file": "mattersim_inference.yaml",
+          "checkpoint_resolved_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattersim/mattersim-v1.0.0-1M.pth",
+          "model": {
+            "num_blocks": 3,
+            "units": 128,
+            "max_l": 4,
+            "max_n": 4,
+            "cutoff": 5.0,
+            "max_z": 94,
+            "threebody_cutoff": 4.0
+          },
+          "inference_outputs": [
+            "energies",
+            "forces",
+            "stresses"
+          ]
+        },
+        "main_source_required_substrings": [
+          "--config",
+          "--checkpoint",
+          "--input",
+          "--output",
+          "--device"
+        ],
+        "save_predictions_contract": {
+          "output_file": "predictions.json",
+          "input_batch_size": 3,
+          "record_list_length": 3,
+          "record_exact_keys": [
+            "index",
+            "energy",
+            "forces",
+            "stress"
+          ],
+          "sequential_indices_start_at": 0,
+          "force_shape": [
+            2,
+            3
+          ],
+          "stress_shape": [
+            3,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "58b602d0c28e6c5a",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "11a22b2b1b0a8419",
+        "af3edb46f1226199"
+      ],
+      "params": {
+        "run_module_from_context": true,
+        "torch_manual_seed": 20260804,
+        "device": {
+          "environment_variable": "MATTERSIM_EVAL_DEVICE",
+          "default": "cuda if torch.cuda.is_available() else cpu"
+        },
+        "evaluation": {
+          "function": "evaluate",
+          "structures": {
+            "factory": "ase.build.bulk",
+            "args": [
+              "Si",
+              "diamond"
+            ],
+            "lattice_constants": [
+              5.4,
+              5.43,
+              5.46
+            ]
+          },
+          "checkpoint": "resolved_fixed_checkpoint",
+          "device": "selected_device"
+        },
+        "output_contract": {
+          "result_type": "dict",
+          "exact_keys": [
+            "energies",
+            "forces",
+            "stresses"
+          ],
+          "energies_shape": [
+            3
+          ],
+          "forces_list_length": 3,
+          "force_item_shape": [
+            2,
+            3
+          ],
+          "stresses_shape": [
+            3,
+            3,
+            3
+          ],
+          "all_values_finite": true
+        },
+        "context_outputs": [
+          "candidate_output",
+          "device"
+        ]
+      }
+    },
+    {
+      "id": "5811971961218e9d",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "58b602d0c28e6c5a"
+      ],
+      "params": {
+        "candidate_output_from_context": "candidate_output",
+        "device_from_context": "device",
+        "torch_manual_seed": 20260804,
+        "reference": {
+          "submission_dir": "benchmarks/standard/mattersim_inference",
+          "run_file": "run_inference.py",
+          "function": "evaluate",
+          "structures": {
+            "factory": "ase.build.bulk",
+            "args": [
+              "Si",
+              "diamond"
+            ],
+            "lattice_constants": [
+              5.4,
+              5.43,
+              5.46
+            ]
+          },
+          "checkpoint": "resolved_fixed_checkpoint",
+          "device": "context.device"
+        },
+        "required_output_contract": {
+          "result_type": "dict",
+          "exact_keys": [
+            "energies",
+            "forces",
+            "stresses"
+          ],
+          "energies_shape": [
+            3
+          ],
+          "forces_list_length": 3,
+          "force_item_shape": [
+            2,
+            3
+          ],
+          "stresses_shape": [
+            3,
+            3,
+            3
+          ],
+          "all_values_finite": true
+        },
+        "comparison": {
+          "cast": "numpy.float64",
+          "energies_and_stresses": {
+            "method": "numpy.allclose",
+            "rtol": 1e-06,
+            "atol": 1e-06
+          },
+          "forces": {
+            "zip_strict": true,
+            "per_item_method": "numpy.allclose",
+            "rtol": 1e-06,
+            "atol": 1e-06
+          }
+        },
+        "record_metrics": [
+          "energy_mae",
+          "force_mae",
+          "stress_mae",
+          "energy_max_abs_error",
+          "force_max_abs_error",
+          "stress_max_abs_error"
+        ],
+        "post_comparison": {
+          "gc_collect": true,
+          "empty_cuda_cache_if_available": true
+        }
+      }
+    }
+  ]
+}

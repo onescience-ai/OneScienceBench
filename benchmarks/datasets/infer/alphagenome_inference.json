@@ -1,0 +1,513 @@
+{
+  "id": "alphagenome_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现独立的轻量 AlphaGenome 风格模型与推理入口",
+  "prompt": "实现一个不依赖 onescience Python 包的轻量 AlphaGenome 风格 DNA 序列到多组学轨迹模型。必须使用 PyTorch，输入是 [batch, length, 4] 的 A/C/G/T one-hot float32 张量，长度至少为 4。实现 ResidualConvBlock(nn.Module)：属性名依次为 conv1=Conv1d(channels,channels,5,padding=2)、norm1=GroupNorm(4,channels)、conv2=Conv1d(channels,channels,3,padding=1)、norm2=GroupNorm(4,channels)，前向顺序为 conv1-norm1-GELU-conv2-norm2-残差相加-GELU。实现 AlphaGenomeTransformerBlock(nn.Module)：属性名为 attention_norm、attention、ffn_norm、ffn；attention 是 dropout=0、batch_first=True 的 MultiheadAttention，ffn 是 Linear-GELU-Linear，并按 pre-norm 注意力残差再 pre-norm FFN 残差执行。实现 AlphaGenomeModel(nn.Module)，默认参数必须为 hidden_dim=16、num_heads=4、num_transformer_layers=2、track_channels=None；模型属性名和结构必须为 stem=Conv1d(4,16,7,padding=3)、encoder=ResidualConvBlock(16)、downsample=Conv1d(16,32,5,stride=2,padding=2)、transformer=含两个 AlphaGenomeTransformerBlock(32,4,64) 的 ModuleList、bottleneck_norm=LayerNorm(32)、upsample_projection=Conv1d(32,16,1)、decoder=ResidualConvBlock(16)、output_heads=ModuleDict。前向先保留 encoder 跳连，主干转为 [B,L,32] 经过两层 Transformer 和 bottleneck_norm，再用 mode=linear、align_corners=False 插值回输入长度，经 upsample_projection 后与跳连相加并解码；六个独立 1x1 卷积头按 atac:3、dnase:2、cage:4、rna_seq:2、chip_tf:5、chip_histone:3 命名，全部经 softplus 后返回对应 [B,L,C] 张量。实现 encode_dna，按 A/C/G/T 通道顺序编码，拒绝空序列、批内不等长和非法字符。不得导入 onescience。请在当前工作目录生成且仅生成 run_inference.py。脚本必须支持 --sequence、--checkpoint、--output-dir 和 --device auto|cpu|cuda；支持原始 state_dict 或含 model_state_dict 的 checkpoint 并用 strict=True 加载；必须在 eval 和 no_grad 模式执行前向，将批次第一条序列的六个 [length,channels] 预测分别保存为 output-dir 下同名 .npy 文件。输入、权重或输出不符合约定时必须明确失败。",
+  "evaluation_script": "evaluate_alphagenome_inference.py",
+  "stardard_dir_name": "alphagenome_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_alphagenome_inference"
+  },
+  "checks": [
+    {
+      "id": "0e18a28061f80f46",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "run_inference.py"
+        ]
+      }
+    },
+    {
+      "id": "ec66d0c2fce14579",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "0e18a28061f80f46"
+      ],
+      "params": {
+        "files": [
+          "run_inference.py"
+        ],
+        "required_interfaces": [
+          "encode_dna"
+        ]
+      }
+    },
+    {
+      "id": "f8c9a1d47e2b6035",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "0e18a28061f80f46"
+      ],
+      "params": {
+        "files": [
+          "run_inference.py"
+        ],
+        "required_interfaces": [
+          "ResidualConvBlock",
+          "ResidualConvBlock.forward",
+          "AlphaGenomeTransformerBlock",
+          "AlphaGenomeTransformerBlock.forward",
+          "AlphaGenomeModel",
+          "AlphaGenomeModel.forward"
+        ]
+      }
+    },
+    {
+      "id": "6b48696d34d9535b",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "ec66d0c2fce14579"
+      ],
+      "params": {}
+    },
+    {
+      "id": "2f67650852376948",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "f8c9a1d47e2b6035"
+      ],
+      "params": {
+        "rules": [
+          {
+            "id": "stem",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "stem",
+              "in_channels": 4,
+              "out_channels": 16,
+              "kernel_size": [
+                7
+              ],
+              "stride": [
+                1
+              ],
+              "padding": [
+                3
+              ]
+            }
+          },
+          {
+            "id": "downsample",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "downsample",
+              "in_channels": 16,
+              "out_channels": 32,
+              "kernel_size": [
+                5
+              ],
+              "stride": [
+                2
+              ],
+              "padding": [
+                2
+              ]
+            }
+          },
+          {
+            "id": "bottleneck_norm",
+            "type": "layer_norm_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "bottleneck_norm",
+              "normalized_shape": [
+                32
+              ]
+            }
+          },
+          {
+            "id": "upsample_projection",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "upsample_projection",
+              "in_channels": 32,
+              "out_channels": 16,
+              "kernel_size": [
+                1
+              ],
+              "stride": [
+                1
+              ],
+              "padding": [
+                0
+              ]
+            }
+          },
+          {
+            "id": "residual_block_count",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "ResidualConvBlock"
+              },
+              "count": 2
+            }
+          },
+          {
+            "id": "encoder_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder",
+              "expected": "ResidualConvBlock"
+            }
+          },
+          {
+            "id": "decoder_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "decoder",
+              "expected": "ResidualConvBlock"
+            }
+          },
+          {
+            "id": "encoder_conv1",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.conv1",
+              "in_channels": 16,
+              "out_channels": 16,
+              "kernel_size": [
+                5
+              ],
+              "stride": [
+                1
+              ],
+              "padding": [
+                2
+              ]
+            }
+          },
+          {
+            "id": "encoder_norm1",
+            "type": "normalization_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.norm1",
+              "num_groups": 4,
+              "num_channels": 16
+            }
+          },
+          {
+            "id": "encoder_conv2",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.conv2",
+              "in_channels": 16,
+              "out_channels": 16,
+              "kernel_size": [
+                3
+              ],
+              "stride": [
+                1
+              ],
+              "padding": [
+                1
+              ]
+            }
+          },
+          {
+            "id": "encoder_norm2",
+            "type": "normalization_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.norm2",
+              "num_groups": 4,
+              "num_channels": 16
+            }
+          },
+          {
+            "id": "transformer_length",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer",
+              "length": 2
+            }
+          },
+          {
+            "id": "transformer_0_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.0",
+              "expected": "AlphaGenomeTransformerBlock"
+            }
+          },
+          {
+            "id": "transformer_1_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.1",
+              "expected": "AlphaGenomeTransformerBlock"
+            }
+          },
+          {
+            "id": "transformer_0_attention_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.0.attention",
+              "expected": "MultiheadAttention"
+            }
+          },
+          {
+            "id": "transformer_1_attention_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.1.attention",
+              "expected": "MultiheadAttention"
+            }
+          },
+          {
+            "id": "transformer_0_attention_norm",
+            "type": "layer_norm_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.0.attention_norm",
+              "normalized_shape": [
+                32
+              ]
+            }
+          },
+          {
+            "id": "transformer_0_ffn_norm",
+            "type": "layer_norm_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.0.ffn_norm",
+              "normalized_shape": [
+                32
+              ]
+            }
+          },
+          {
+            "id": "transformer_0_ffn",
+            "type": "sequential_mlp",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.0.ffn",
+              "layers": 3,
+              "in_features": 32,
+              "hidden_features": 64,
+              "out_features": 32
+            }
+          },
+          {
+            "id": "transformer_1_ffn",
+            "type": "sequential_mlp",
+            "severity": "error",
+            "params": {
+              "target_path": "transformer.1.ffn",
+              "layers": 3,
+              "in_features": 32,
+              "hidden_features": 64,
+              "out_features": 32
+            }
+          },
+          {
+            "id": "output_head_keys",
+            "type": "moduledict_keys",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads",
+              "keys": [
+                "atac",
+                "dnase",
+                "cage",
+                "rna_seq",
+                "chip_tf",
+                "chip_histone"
+              ],
+              "exact": true
+            }
+          },
+          {
+            "id": "head_atac",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads.atac",
+              "in_channels": 16,
+              "out_channels": 3,
+              "kernel_size": [
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_dnase",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads.dnase",
+              "in_channels": 16,
+              "out_channels": 2,
+              "kernel_size": [
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_cage",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads.cage",
+              "in_channels": 16,
+              "out_channels": 4,
+              "kernel_size": [
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_rna_seq",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads.rna_seq",
+              "in_channels": 16,
+              "out_channels": 2,
+              "kernel_size": [
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_chip_tf",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads.chip_tf",
+              "in_channels": 16,
+              "out_channels": 5,
+              "kernel_size": [
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_chip_histone",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "output_heads.chip_histone",
+              "in_channels": 16,
+              "out_channels": 3,
+              "kernel_size": [
+                1
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "35d44cfbf713ce32",
+      "type": "infer_dna_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "ec66d0c2fce14579"
+      ],
+      "params": {
+        "scope": "dna"
+      }
+    },
+    {
+      "id": "16bdde0a9be78718",
+      "type": "model_components_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "2f67650852376948"
+      ],
+      "params": {
+        "scope": "model_components"
+      }
+    },
+    {
+      "id": "d300a8ef1ba9cbe1",
+      "type": "model_configuration_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "16bdde0a9be78718"
+      ],
+      "params": {
+        "scope": "custom_configuration"
+      }
+    },
+    {
+      "id": "8d2fe61cf65566a7",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "2f67650852376948",
+        "35d44cfbf713ce32"
+      ],
+      "params": {}
+    },
+    {
+      "id": "ac593f3a9c9f66be",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "2f67650852376948"
+      ],
+      "params": {
+        "sequence": "ACGTACGTACGTACGT",
+        "timeout": 90
+      }
+    },
+    {
+      "id": "82947b5ec60b6fbb",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "6b48696d34d9535b",
+        "8d2fe61cf65566a7",
+        "ac593f3a9c9f66be"
+      ],
+      "params": {
+        "sequence": "ACGTACGTACGTACGT",
+        "timeout": 90
+      }
+    }
+  ]
+}

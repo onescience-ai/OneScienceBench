@@ -1,0 +1,252 @@
+{
+  "id": "tropical_cyclone_track_intensity_inference",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现热带气旋路径、强度和登陆概率联合推理",
+  "prompt": "实现热带气旋路径、强度和登陆概率联合推理模型文件命名为 tropical_cyclone_track_intensity_inference.py，定义 TropicalCycloneTrackIntensityModel，默认 history_features=4、hidden_dim=24、lead_steps=4。forward(history) 接收 [B,T,4] 且 T>=2，四个特征依次为纬度、经度、中心气压和最大风速；输出 track [B,lead_steps,2]、central_pressure [B,lead_steps]、max_wind [B,lead_steps]、landfall_probability [B,lead_steps]，经度归一到 [-180,180)，纬度限制在 [-90,90]，概率在 [0,1]。实现 infer(history) 使用 eval/no_grad；结构必须包含 history_encoder、track_head、intensity_head、landfall_head；实现 strict=True checkpoint 加载。请在当前工作目录生成且仅生成 tropical_cyclone_track_intensity_inference.py，禁止下载数据或权重。",
+  "evaluation_script": "evaluate_tropical_cyclone_track_intensity_inference.py",
+  "stardard_dir_name": "tropical_cyclone_track_intensity_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "c1056ca03b86523c",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "tropical_cyclone_track_intensity_inference.py"
+        ],
+        "legacy_assertion": "is_file"
+      }
+    },
+    {
+      "id": "3fb212734b732d89",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "c1056ca03b86523c"
+      ],
+      "params": {
+        "model_file": "tropical_cyclone_track_intensity_inference.py",
+        "model_class": "TropicalCycloneTrackIntensityModel",
+        "loader_function": "load_checkpoint",
+        "loader_args": {
+          "path": "${good_checkpoint_path}",
+          "device": "cpu"
+        },
+        "good_checkpoint": {
+          "filename": "good.pt",
+          "payload_keys": [
+            "model_state_dict"
+          ],
+          "state_dict_source": "standard_model.state_dict()"
+        },
+        "bad_checkpoint": {
+          "filename": "bad.pt",
+          "payload": {}
+        },
+        "state_dict_assertions": {
+          "same_key_order": true,
+          "every_tensor_equal_to_standard": true
+        },
+        "bad_checkpoint_must_raise": true
+      }
+    },
+    {
+      "id": "45da27cd261d119b",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "c1056ca03b86523c"
+      ],
+      "params": {
+        "model_file": "tropical_cyclone_track_intensity_inference.py",
+        "model_class": "TropicalCycloneTrackIntensityModel",
+        "model_args": {},
+        "required_top_level_module_order": [
+          "history_encoder",
+          "track_head",
+          "intensity_head",
+          "landfall_head"
+        ],
+        "expected_attributes": [
+          {
+            "path": "track_head.out_features",
+            "value": 8
+          },
+          {
+            "path": "intensity_head.out_features",
+            "value": 8
+          },
+          {
+            "path": "landfall_head.out_features",
+            "value": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "9c1a147130d3b3b4",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "c1056ca03b86523c"
+      ],
+      "params": {
+        "files": [
+          "tropical_cyclone_track_intensity_inference.py"
+        ],
+        "model_class": "TropicalCycloneTrackIntensityModel",
+        "required_class_methods": [
+          "forward",
+          "infer"
+        ],
+        "required_module_functions": [
+          "load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "253cf80096ca5a16",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "45da27cd261d119b",
+        "9c1a147130d3b3b4"
+      ],
+      "params": {
+        "model_file": "tropical_cyclone_track_intensity_inference.py",
+        "model_class": "TropicalCycloneTrackIntensityModel",
+        "shape_probe": {
+          "history_shape": [
+            2,
+            6,
+            4
+          ],
+          "expected_outputs": {
+            "track": [
+              2,
+              4,
+              2
+            ],
+            "central_pressure": [
+              2,
+              4
+            ],
+            "max_wind": [
+              2,
+              4
+            ],
+            "landfall_probability": [
+              2,
+              4
+            ]
+          }
+        },
+        "range_probe": {
+          "history_shape": [
+            2,
+            6,
+            4
+          ],
+          "require_finite_outputs": [
+            "track",
+            "central_pressure",
+            "max_wind",
+            "landfall_probability"
+          ],
+          "latitude_index": 0,
+          "latitude_range": [
+            -90,
+            90
+          ],
+          "longitude_index": 1,
+          "longitude_min": -180,
+          "longitude_max_exclusive": 180,
+          "probability_output": "landfall_probability",
+          "probability_range": [
+            0,
+            1
+          ]
+        },
+        "short_history_probe": {
+          "history_shape": [
+            1,
+            1,
+            4
+          ],
+          "required_exception": "ValueError"
+        },
+        "immutability_probe": {
+          "history_shape": [
+            1,
+            6,
+            4
+          ],
+          "call": "infer",
+          "input_must_remain_equal": true
+        }
+      }
+    },
+    {
+      "id": "3702e6c3333988cd",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "253cf80096ca5a16",
+        "3fb212734b732d89"
+      ],
+      "params": {
+        "model_file": "tropical_cyclone_track_intensity_inference.py",
+        "model_class": "TropicalCycloneTrackIntensityModel",
+        "model_args": {},
+        "candidate_and_reference_eval": true,
+        "state_initialization": {
+          "source": "standard_model.state_dict()",
+          "strict": true
+        },
+        "history": {
+          "linspace_start": -1,
+          "linspace_end": 1,
+          "numel": 48,
+          "shape": [
+            2,
+            6,
+            4
+          ]
+        },
+        "field_errors": {
+          "outputs": [
+            "track",
+            "central_pressure",
+            "max_wind"
+          ],
+          "metrics": [
+            "rmse",
+            "mae"
+          ],
+          "atol": 1e-06
+        },
+        "landfall_brier": {
+          "output": "landfall_probability",
+          "target": "zeros_like(reference.landfall_probability.detach())",
+          "absolute_difference_atol": 1e-06
+        }
+      }
+    }
+  ]
+}

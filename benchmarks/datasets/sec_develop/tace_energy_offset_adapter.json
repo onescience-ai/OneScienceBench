@@ -1,0 +1,490 @@
+{
+  "id": "tace_energy_offset_adapter",
+  "eval_type": "sec-develop",
+  "domain": "matchem",
+  "task": "为固定 TACE-OAM-7M 增加可训练能量偏移适配层（冻结主干）",
+  "prompt": "基于固定的 TACE-OAM-7M 可移植配置与权重完成能量偏移二次开发。生成代码必须独立实现可由配置重建的完整 TACE 模型结构，并使用 `torch.load(..., weights_only=True)` 读取固定 .pt 文件。该 .pt 是 TACE 导出包，顶层包含 `cfg`、`state_dict`、`statistics`、`target_property`、`embedding_property`；必须从 `state_dict` 取出张量字典，再由本地模型类按 `cfg` 构造（`TensorModel(e3nnTACE(**cfg))`）并通过 `load_state_dict(state_dict, strict=True)` 加载，禁止反序列化或调用任何保存的 nn.Module。不得依赖 OneScience 或外部 `nequip`、`mace`、`mattersim` 包。固定主干为 89 元素、cutoff=6.0、5 层、128 通道、184 个参数，target_property 为 [energy, forces, stress]，readout 模块顺序为 representation、energy_readouts、atomic_energy_layer、scale_shift、zbl；完整 state_dict 为 456 项、7105809 个元素。\n\n二次开发要求：在冻结的 TACE 主干外包裹一个适配层 `TACEEnergyOffsetAdapter`，新增且仅新增一个可训练标量参数 `energy_offset`（shape [1]，初始为 0），前向时将其加到主干输出的 `energy` 上，`forces` 与 `stress` 保持不变。除 `energy_offset` 外，主干全部 184 个参数必须 `requires_grad=false` 且更新前后逐项不变。当 `energy_offset=0` 时，适配层输出必须与冻结主干完全一致。\n\n固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt`，SHA256 为 `87f6b23c40a5b29c3b0d2520bca104d73c653866e82541919db94979c7f6511c`。固定训练数据为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz`，SHA256 为 `e540bc7c026cfad063fc970406bb74c0f668007fc3c6d200801ecfd5f1ba600e`；使用 index=3 的真实 `energy_xtb` 与 `forces_xtb` 标签（24 原子结构），并由本地 ASE 周期邻居图在 cutoff=6.0 下构造 batch。训练损失为 total-energy MSE 与 force MSE 各乘权重 1.0 与 5.0。固定使用 AdamW、lr=1e-3、weight_decay=1e-8、max_steps=1、gradient_clip_norm=1e6；`train_step` 必须执行 zero_grad、真实前向、loss.backward、梯度裁剪和 optimizer.step，且优化器只包含 `energy_offset`。一次训练必须生成 `tace_energy_offset_adapter.pt`、`metrics.jsonl`、`train.log`；checkpoint 包含完整模型状态、非空优化器状态、completed_steps=1、trainable_parameter_names=[energy_offset]、source_checkpoint_sha256、解析配置和 history。\n\n请在指定目录生成 `tace_energy_offset_adapter.py`、`train_tace_energy_offset.py`、`tace_energy_offset.yaml` 和独立包 `portable_tace/`。`tace_energy_offset_adapter.py` 必须公开 `TACEEnergyOffsetAdapter`、`load_checkpoint_payload`、`raw_model_state`、`build_model`、`load_model`、`load_training_structures`、`build_finetune_batch`、`predict_energy_forces`；`train_tace_energy_offset.py` 必须公开 `load_config`、`trainable_named_parameters`、`build_model`、`build_trainer`、`train_step`、`train`、`main`。",
+  "evaluation_script": "evaluate_tace_energy_offset_adapter.py",
+  "stardard_dir_name": "tace_energy_offset_adapter",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "32G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_tace_energy_offset",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "80a9efa481ce3d52",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "tace_energy_offset_adapter.py"
+        ]
+      }
+    },
+    {
+      "id": "24aec1494cd53f0b",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "tace_energy_offset.yaml"
+        ]
+      }
+    },
+    {
+      "id": "e82a558eb2890cf6",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "train_tace_energy_offset.py"
+        ]
+      }
+    },
+    {
+      "id": "536f7abbc3b3e4e0",
+      "type": "task_artifacts",
+      "method": "check_source_contract",
+      "phase": "task_artifacts",
+      "depends": [
+        "80a9efa481ce3d52",
+        "e82a558eb2890cf6"
+      ],
+      "params": {
+        "source_dir": ".",
+        "package_path": "portable_tace",
+        "prohibited_imports": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim"
+        ]
+      }
+    },
+    {
+      "id": "9224c0edc65f0b46",
+      "type": "dataset_pipeline",
+      "method": "check_dataset_pipeline",
+      "phase": "data_analysis",
+      "depends": [
+        "80a9efa481ce3d52"
+      ],
+      "params": {
+        "model_file": "tace_energy_offset_adapter.py",
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz",
+        "data_sha256": "e540bc7c026cfad063fc970406bb74c0f668007fc3c6d200801ecfd5f1ba600e",
+        "frame_index": 3,
+        "frame_energy": -1602.093208085042,
+        "energy_atol": 0.001,
+        "shapes": {
+          "energy": [
+            1,
+            1
+          ],
+          "forces": [
+            24,
+            3
+          ],
+          "positions": [
+            24,
+            3
+          ]
+        },
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "checkpoint_sha256": "87f6b23c40a5b29c3b0d2520bca104d73c653866e82541919db94979c7f6511c",
+        "energy_shapes": [
+          [
+            1,
+            1
+          ],
+          [
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "43800a803e8b9ea6",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "80a9efa481ce3d52",
+        "24aec1494cd53f0b",
+        "e82a558eb2890cf6"
+      ],
+      "params": {
+        "tace_checkpoint": true,
+        "model_file": "tace_energy_offset_adapter.py",
+        "config_name": "tace_energy_offset.yaml",
+        "model_loader": "load_model",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "base_path": "base",
+        "checkpoint_sha256": "87f6b23c40a5b29c3b0d2520bca104d73c653866e82541919db94979c7f6511c",
+        "state_count": 456,
+        "state_numel": 7105809,
+        "target_property": [
+          "energy",
+          "forces",
+          "stress"
+        ],
+        "strict": true,
+        "train_file": "train_tace_energy_offset.py"
+      }
+    },
+    {
+      "id": "eb8050f4588c38f4",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "80a9efa481ce3d52"
+      ],
+      "params": {
+        "files": [
+          "tace_energy_offset_adapter.py"
+        ],
+        "required_interfaces": [
+          "TACEEnergyOffsetAdapter",
+          "load_checkpoint_payload",
+          "raw_model_state",
+          "build_model",
+          "load_model",
+          "load_training_structures",
+          "build_finetune_batch",
+          "predict_energy_forces"
+        ]
+      }
+    },
+    {
+      "id": "b2240acb5917a447",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "43800a803e8b9ea6"
+      ],
+      "params": {
+        "tace_checkpoint": true,
+        "model_file": "tace_energy_offset_adapter.py",
+        "config_name": "tace_energy_offset.yaml",
+        "model_loader": "load_model",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "base_path": "base",
+        "base_param_count": 184,
+        "rules": [
+          {
+            "id": "adapter_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "",
+              "expected": "TACEEnergyOffsetAdapter"
+            }
+          },
+          {
+            "id": "frozen_tensor_model",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "base",
+              "expected": "TensorModel"
+            }
+          },
+          {
+            "id": "tace_readout",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "target_path": "base.readout_fn",
+              "expected": "e3nnTACE"
+            }
+          },
+          {
+            "id": "readout_order",
+            "type": "structure",
+            "severity": "error",
+            "params": {
+              "target_path": "base.readout_fn",
+              "structure": {
+                "children": [
+                  {
+                    "registered_name": "representation"
+                  },
+                  {
+                    "registered_name": "energy_readouts"
+                  },
+                  {
+                    "registered_name": "atomic_energy_layer"
+                  },
+                  {
+                    "registered_name": "scale_shift"
+                  },
+                  {
+                    "registered_name": "zbl"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "train_file": "train_tace_energy_offset.py"
+      }
+    },
+    {
+      "id": "1a3fab12adcdedde",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "43800a803e8b9ea6",
+        "9224c0edc65f0b46"
+      ],
+      "params": {
+        "tace_checkpoint": true,
+        "model_file": "tace_energy_offset_adapter.py",
+        "config_name": "tace_energy_offset.yaml",
+        "model_loader": "load_model",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "base_path": "base",
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz",
+        "frame_index": 3,
+        "forward_args": {},
+        "output_shapes": {
+          "energy": [
+            1
+          ],
+          "forces": [
+            24,
+            3
+          ]
+        },
+        "train_file": "train_tace_energy_offset.py"
+      }
+    },
+    {
+      "id": "8b865cd509e25d68",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "43800a803e8b9ea6",
+        "9224c0edc65f0b46"
+      ],
+      "params": {
+        "tace_checkpoint": true,
+        "model_file": "tace_energy_offset_adapter.py",
+        "config_name": "tace_energy_offset.yaml",
+        "model_loader": "load_model",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "base_path": "base",
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz",
+        "frame_index": 3,
+        "compare_atol": 1e-06,
+        "energy_offset": 0.0,
+        "output_keys": [
+          "energy",
+          "forces",
+          "stress"
+        ],
+        "train_file": "train_tace_energy_offset.py"
+      }
+    },
+    {
+      "id": "28bf1964b837b18c",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "43800a803e8b9ea6",
+        "9224c0edc65f0b46"
+      ],
+      "params": {
+        "tace_checkpoint": true,
+        "model_file": "tace_energy_offset_adapter.py",
+        "config_name": "tace_energy_offset.yaml",
+        "model_loader": "load_model",
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "base_path": "base",
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz",
+        "frame_index": 3,
+        "compare_atol": 1e-06,
+        "energy_offset": 0.375,
+        "output_keys": [
+          "energy",
+          "forces",
+          "stress"
+        ],
+        "train_file": "train_tace_energy_offset.py"
+      }
+    },
+    {
+      "id": "c8b96ed6beabb1cf",
+      "type": "train_config_content",
+      "method": "check_config_content",
+      "phase": "train_script",
+      "depends": [
+        "24aec1494cd53f0b",
+        "e82a558eb2890cf6",
+        "80a9efa481ce3d52"
+      ],
+      "params": {
+        "config_name": "tace_energy_offset.yaml",
+        "config_section": "training",
+        "required_config_keys": [
+          {
+            "key": "optimizer",
+            "value": "AdamW"
+          },
+          {
+            "key": "lr",
+            "value": 0.001
+          },
+          {
+            "key": "weight_decay",
+            "value": 1e-08
+          },
+          {
+            "key": "energy_weight",
+            "value": 1.0
+          },
+          {
+            "key": "force_weight",
+            "value": 5.0
+          },
+          {
+            "key": "gradient_clip_norm",
+            "value": 1000000.0
+          },
+          {
+            "key": "max_steps",
+            "value": 1
+          },
+          {
+            "key": "structure_index",
+            "value": 3
+          }
+        ],
+        "config_loader_file": "train_tace_energy_offset.py",
+        "config_loader": "load_config"
+      }
+    },
+    {
+      "id": "0294c0e8ca3b202f",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "80a9efa481ce3d52",
+        "e82a558eb2890cf6"
+      ],
+      "params": {
+        "files": [
+          "train_tace_energy_offset.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "trainable_named_parameters",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "565cea4505d3dc07",
+      "type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": [
+        "80a9efa481ce3d52",
+        "e82a558eb2890cf6",
+        "c8b96ed6beabb1cf",
+        "9224c0edc65f0b46",
+        "43800a803e8b9ea6"
+      ],
+      "params": {
+        "tace_training": true,
+        "run_file": "train_tace_energy_offset.py",
+        "config_name": "tace_energy_offset.yaml",
+        "train_fn_name": "train_step",
+        "smoke_config": {},
+        "model_file": "tace_energy_offset_adapter.py",
+        "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz",
+        "frame_index": 3,
+        "base_path": "base",
+        "base_param_count": 184,
+        "energy_weight": 1.0,
+        "force_weight": 5.0,
+        "lr": 0.001,
+        "weight_decay": 1e-08,
+        "gradient_clip_norm": 1000000.0,
+        "train_args": {
+          "model": "$model",
+          "optimizer": "$optimizer",
+          "batch": "$batch",
+          "config": "$config"
+        },
+        "expected_outputs": [
+          "tace_energy_offset_adapter.pt",
+          "metrics.jsonl",
+          "train.log"
+        ]
+      }
+    },
+    {
+      "id": "ca304a89de2214b6",
+      "type": "smoke_artifacts",
+      "method": "check_files",
+      "phase": "smoke_train",
+      "depends": [
+        "565cea4505d3dc07"
+      ],
+      "params": {
+        "required_files": [
+          "smoke-training/results/tace_energy_offset_adapter.pt",
+          "smoke-training/results/metrics.jsonl",
+          "smoke-training/results/train.log"
+        ]
+      }
+    },
+    {
+      "id": "09ef009704acff68",
+      "type": "smoke_artifacts",
+      "method": "check_adapter_checkpoint",
+      "phase": "smoke_train",
+      "depends": [
+        "565cea4505d3dc07",
+        "ca304a89de2214b6"
+      ],
+      "params": {
+        "checkpoint_path": "smoke-training/results/tace_energy_offset_adapter.pt",
+        "checkpoint_sha256": "87f6b23c40a5b29c3b0d2520bca104d73c653866e82541919db94979c7f6511c",
+        "model_file": "tace_energy_offset_adapter.py",
+        "source_checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt",
+        "train_file": "train_tace_energy_offset.py",
+        "config_name": "tace_energy_offset.yaml"
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "task": "targetdiff_inference",
+  "entrypoint": "targetdiff_inference.py",
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/targetdiff/pretrained_models/pretrained_diffusion.pt",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/targetdiff",
+    "mount_required": true
+  },
+  "model_class": "TargetDiff",
+  "input": {
+    "protein": "/public/share/sugonhpcapp01/onestore/onedatasets/targetdiff/examples/3ug2_protein.pdb",
+    "ligand": "/public/share/sugonhpcapp01/onestore/onedatasets/targetdiff/examples/3ug2_ligand.sdf",
+    "format": "pdb_sdf"
+  },
+  "hidden_size": 32,
+  "ligand_vocab": 8,
+  "num_refine_layers": 2,
+  "heads": {
+    "position": 3,
+    "atom_type": 8
+  },
+  "diffusion": {
+    "default_num_steps": 4,
+    "default_seed": 20260820
+  },
+  "checkpoint_contract": [
+    "raw state_dict",
+    "model_state_dict envelope",
+    "strict=True loading"
+  ]
+}

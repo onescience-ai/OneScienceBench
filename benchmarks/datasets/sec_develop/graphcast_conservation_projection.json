@@ -1,0 +1,391 @@
+{
+  "id": "graphcast_conservation_projection",
+  "eval_type": "sec_develop",
+  "domain": "earth",
+  "task": "为 GraphCast 网格预测增加面积加权守恒投影层",
+  "prompt": "完成 GraphCast 守恒投影的二次开发。在指定目录中生成 graphcast_conservation_projection.py 和 train.py。主文件定义 GraphCastConservationProjection(constrained_channels=(0,), eps=1e-8)、ResidualGridBlock 和 GraphCastConservationModel(in_channels,out_channels,hidden_channels=16,processor_layers=2,constrained_channels=(0,))。投影层输入 forecast [B,C,H,W]、target_integrals [B,K]、area_weights [H,W] 和可选二值 mask [H,W]；K 对应唯一且合法的 constrained_channels。对每个受约束通道计算 area_weights*mask 加权总和，沿有效区域施加均匀可微修正，使输出的加权总和等于 target_integrals；未约束通道不变，已满足守恒时投影为恒等映射。模型必须按 encoder Conv2d、processor ModuleList 残差块、decoder Conv2d、projection 的顺序组成，forward_raw 返回未投影结果，forward 返回投影结果。train.py 提供 build_model(config=None) 和 train_step(model,inputs,targets,target_integrals,area_weights,optimizer,mask=None)，完成有限 MSE、反向传播和参数更新。对 channel、shape、面积权重、mask 或有效面积非法的输入抛出明确异常。",
+  "evaluation_script": "evaluate_graphcast_conservation_projection.py",
+  "stardard_dir_name": "graphcast_conservation_projection",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "34fd5d1f2c359767",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_resolution": {
+          "environment_variable": "GRAPHCAST_CONSERVATION_PROJECTION_SUBMISSION_DIR",
+          "pythonpath_hints": [
+            "graphcast_conservation_projection",
+            "graphcast_conservation_projection_V1"
+          ],
+          "pythonpath_version_prefix": "graphcast_conservation_projection_V",
+          "selection": "first candidate containing every required file; otherwise last candidate; otherwise evaluator-file parent"
+        },
+        "required_files": [
+          "graphcast_conservation_projection.py",
+          "train.py"
+        ],
+        "assertion": "Path.is_file"
+      }
+    },
+    {
+      "id": "3bc950647da50b66",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "34fd5d1f2c359767"
+      ],
+      "params": {
+        "x": {
+          "factory": "torch.randn",
+          "shape": [
+            2,
+            2,
+            6,
+            8
+          ]
+        },
+        "area": {
+          "factory": "torch.ones",
+          "shape": [
+            6,
+            8
+          ]
+        },
+        "target_integrals": {
+          "factory": "torch.tensor",
+          "value": [
+            [
+              1.5,
+              -0.5
+            ],
+            [
+              0.25,
+              0.75
+            ]
+          ]
+        },
+        "assertions": {
+          "target_integrals_shape": [
+            2,
+            2
+          ],
+          "area_shape": [
+            6,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "2af62e724805dc39",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "34fd5d1f2c359767"
+      ],
+      "params": {
+        "module_file": "train.py",
+        "module_load_name": "graphcast_conservation_projection_train_submission",
+        "required_module_callables": [
+          "build_model",
+          "train_step"
+        ],
+        "assertion": "callable(getattr(train,name,None)) for every required callable"
+      }
+    },
+    {
+      "id": "64d65fef1d90eb56",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "34fd5d1f2c359767"
+      ],
+      "params": {
+        "model_file": "graphcast_conservation_projection.py",
+        "model_class": "GraphCastConservationModel",
+        "model_constructor": {
+          "positional_args": [
+            2,
+            2
+          ],
+          "keyword_args": {
+            "hidden_channels": 8,
+            "processor_layers": 2,
+            "constrained_channels": [
+              0,
+              1
+            ]
+          }
+        },
+        "projection_setup": {
+          "class": "GraphCastConservationProjection",
+          "constructor_args": [
+            [
+              0,
+              1
+            ]
+          ]
+        },
+        "assertions": {
+          "module_order": [
+            "encoder",
+            "processor",
+            "decoder",
+            "projection"
+          ],
+          "encoder_instanceof": "torch.nn.Conv2d",
+          "processor_instanceof": "torch.nn.ModuleList",
+          "every_processor_block_class": "ResidualGridBlock",
+          "decoder_instanceof": "torch.nn.Conv2d",
+          "projection_instanceof": "torch.nn.Module"
+        }
+      }
+    },
+    {
+      "id": "5ae9a558375527bf",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "3bc950647da50b66",
+        "64d65fef1d90eb56"
+      ],
+      "params": {
+        "model_file": "graphcast_conservation_projection.py",
+        "projection_class": "GraphCastConservationProjection",
+        "projection_constructor_args": [
+          [
+            0,
+            1
+          ]
+        ],
+        "model_class": "GraphCastConservationModel",
+        "model_constructor": {
+          "positional_args": [
+            2,
+            2
+          ],
+          "keyword_args": {
+            "hidden_channels": 8,
+            "processor_layers": 2,
+            "constrained_channels": [
+              0,
+              1
+            ]
+          }
+        },
+        "x": {
+          "factory": "torch.randn",
+          "shape": [
+            2,
+            2,
+            6,
+            8
+          ]
+        },
+        "area": {
+          "factory": "torch.ones",
+          "shape": [
+            6,
+            8
+          ]
+        },
+        "target_integrals": {
+          "factory": "torch.tensor",
+          "value": [
+            [
+              1.5,
+              -0.5
+            ],
+            [
+              0.25,
+              0.75
+            ]
+          ]
+        },
+        "execution": {
+          "raw": "model.forward_raw(x)",
+          "output": "projection(raw,target_integrals,area)"
+        },
+        "assertions": {
+          "output_shape_equals": "raw.shape",
+          "output_all_finite": "bool(torch.isfinite(output).all())"
+        }
+      }
+    },
+    {
+      "id": "07e4d90f97934ff9",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "5ae9a558375527bf"
+      ],
+      "params": {
+        "model_file": "graphcast_conservation_projection.py",
+        "projection_class": "GraphCastConservationProjection",
+        "projection_constructor_args": [
+          [
+            0,
+            1
+          ]
+        ],
+        "model_class": "GraphCastConservationModel",
+        "model_constructor": {
+          "positional_args": [
+            2,
+            2
+          ],
+          "keyword_args": {
+            "hidden_channels": 8,
+            "processor_layers": 2,
+            "constrained_channels": [
+              0,
+              1
+            ]
+          }
+        },
+        "x": {
+          "factory": "torch.randn",
+          "shape": [
+            2,
+            2,
+            6,
+            8
+          ]
+        },
+        "area": {
+          "factory": "torch.ones",
+          "shape": [
+            6,
+            8
+          ]
+        },
+        "target_integrals": {
+          "factory": "torch.tensor",
+          "value": [
+            [
+              1.5,
+              -0.5
+            ],
+            [
+              0.25,
+              0.75
+            ]
+          ]
+        },
+        "execution": {
+          "raw": "model.forward_raw(x)",
+          "output": "projection(raw,target_integrals,area)",
+          "integrals": "(output * area).sum(dim=(-2,-1))"
+        },
+        "assertions": [
+          {
+            "id": "conservation_oracle",
+            "expression": "torch.allclose(integrals,target_integrals,atol=1e-5)"
+          },
+          {
+            "id": "identity_when_conserved",
+            "target_integrals": "(raw[:,(0,1)] * area).sum(dim=(-2,-1))",
+            "output": "projection(raw,target_integrals,area)",
+            "expression": "torch.allclose(identity,raw,atol=1e-5)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "5b4735e8bac63f4b",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "2af62e724805dc39",
+        "07e4d90f97934ff9"
+      ],
+      "params": {
+        "model_file": "graphcast_conservation_projection.py",
+        "train_file": "train.py",
+        "train_step": "train.train_step",
+        "model_class": "GraphCastConservationModel",
+        "model_constructor": {
+          "positional_args": [
+            2,
+            2
+          ],
+          "keyword_args": {
+            "hidden_channels": 8,
+            "processor_layers": 2,
+            "constrained_channels": [
+              0,
+              1
+            ]
+          }
+        },
+        "x": {
+          "factory": "torch.randn",
+          "shape": [
+            2,
+            2,
+            6,
+            8
+          ]
+        },
+        "area": {
+          "factory": "torch.ones",
+          "shape": [
+            6,
+            8
+          ]
+        },
+        "target_integrals": {
+          "factory": "torch.tensor",
+          "value": [
+            [
+              1.5,
+              -0.5
+            ],
+            [
+              0.25,
+              0.75
+            ]
+          ]
+        },
+        "raw": "model.forward_raw(x)",
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "model.parameters()",
+          "kwargs": {
+            "lr": 0.001
+          }
+        },
+        "before_parameters": "[p.detach().clone() for p in model.parameters()]",
+        "train_step_args": [
+          "model",
+          "x",
+          "torch.zeros_like(raw)",
+          "target_integrals",
+          "area",
+          "optimizer"
+        ],
+        "assertions": {
+          "loss_not_nan": "loss == loss",
+          "any_parameter_changed": "any(not torch.equal(a,b) for a,b in zip(before,model.parameters()))"
+        }
+      }
+    }
+  ]
+}

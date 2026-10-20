@@ -1,0 +1,340 @@
+{
+  "id": "fengwu_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "earth",
+  "task": "复现 FengWu 六变量族独立编码、跨变量三维融合和分支解码模型",
+  "prompt": "复现 FengWu 论文的多模态全球天气预报核心：surface、z、r、u、v、t 六个变量族使用独立二维 encoder，得到同分辨率特征后沿变量轴堆叠，通过三维 fuser 建模跨变量耦合，再由六个独立 decoder 恢复各自变量场；实现真实 AdamW、六分支 MSE、backward 训练步和整体 MAE/RMSE 评估。请在指定目录生成 fengwu.py、train.py 和 evaluate.py；fengwu.py 定义 Fengwu，构造参数至少包含 pressure_level、embed_dim、img_size、patch_size，forward(surface,z,r,u,v,t) 返回同顺序六元组，surface 为 (B,4,H,W)，五个高空分支为 (B,pressure_level,H,W)，严格校验所有分支的 batch、通道和空间网格。",
+  "evaluation_script": "evaluate_fengwu_paper_repro.py",
+  "stardard_dir_name": "fengwu_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "26ec32d42d5b9980",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "fengwu.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "parse_ast": true,
+        "encoding": "utf-8",
+        "require_nonempty": true,
+        "forbidden_tokens": [
+          "codegen.evaluators",
+          "codegen.standard"
+        ]
+      }
+    },
+    {
+      "id": "dc2997d9dd80e1a9",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "seed": 20260819,
+        "input_shapes": [
+          [
+            2,
+            4,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ]
+        ],
+        "target_shapes": [
+          [
+            2,
+            4,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            3,
+            8,
+            8
+          ]
+        ],
+        "require_finite": true,
+        "fixture_device": "cuda:0 if available else cpu"
+      }
+    },
+    {
+      "id": "55939ae5e0a7dfad",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "function": "train_step",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_calls": [
+          "AdamW",
+          "backward",
+          "step"
+        ],
+        "ast_parse": true
+      }
+    },
+    {
+      "id": "ee3998c23d73081d",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [],
+      "params": {
+        "file": "evaluate.py",
+        "function": "evaluate",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_metric_strings": [
+          "mae",
+          "rmse"
+        ],
+        "required_calls": [
+          "abs",
+          "mean",
+          "sqrt"
+        ],
+        "ast_parse": true
+      }
+    },
+    {
+      "id": "083f0c2739e519af",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "model_file": "fengwu.py",
+        "model_class": "Fengwu",
+        "constructor_args": {
+          "pressure_level": 3,
+          "embed_dim": 8,
+          "img_size": [
+            8,
+            8
+          ],
+          "patch_size": 2
+        },
+        "children_subsequence": [
+          "encoders",
+          "fuser",
+          "decoders"
+        ],
+        "encoders": {
+          "type": "ModuleList",
+          "length": 6,
+          "in_channels": [
+            4,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "kernel_size": [
+            2,
+            2
+          ],
+          "stride": [
+            2,
+            2
+          ]
+        },
+        "decoders": {
+          "type": "ModuleList",
+          "length": 6,
+          "out_channels": [
+            4,
+            3,
+            3,
+            3,
+            3,
+            3
+          ]
+        },
+        "fuser_conv3d_min": 2,
+        "invalid_constructor": {
+          "pressure_level": 3,
+          "embed_dim": 8,
+          "img_size": [
+            7,
+            8
+          ],
+          "patch_size": 2,
+          "reject_exceptions": [
+            "ValueError",
+            "TypeError"
+          ]
+        }
+      }
+    },
+    {
+      "id": "98c50851e8ebaa05",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "083f0c2739e519af",
+        "dc2997d9dd80e1a9"
+      ],
+      "params": {
+        "model_file": "fengwu.py",
+        "model_class": "Fengwu",
+        "forward_mode": "eval",
+        "no_grad": true,
+        "expected_output_count": 6,
+        "expected_output_type": "torch.Tensor",
+        "expected_shapes": "match fixture target shapes",
+        "require_finite": true,
+        "invalid_inputs": {
+          "batch": "inputs[2][:1]",
+          "channels": "randn(2,2,8,8) at inputs[3]",
+          "grid": "inputs[4][:,:,:6]"
+        },
+        "reject_exceptions": [
+          "ValueError",
+          "TypeError"
+        ]
+      }
+    },
+    {
+      "id": "c8e5b55a08a8c5d8",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "98c50851e8ebaa05"
+      ],
+      "params": {
+        "clone": "copy.deepcopy(model).eval()",
+        "state_dict_strict": true,
+        "no_grad": true,
+        "expected_output_count": 6,
+        "allclose": {
+          "atol": 1e-06,
+          "rtol": 1e-05
+        }
+      }
+    },
+    {
+      "id": "cb3269d4b1903218",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "98c50851e8ebaa05",
+        "dc2997d9dd80e1a9"
+      ],
+      "params": {
+        "optimizer": "AdamW",
+        "learning_rate": 0.001,
+        "zero_grad": {
+          "set_to_none": true
+        },
+        "loss": "sum((output-target).square().mean() for output,target in zip(outputs,targets))",
+        "branches": 6,
+        "require_finite_loss": true,
+        "require_nonempty_finite_gradients": true,
+        "require_parameter_change": true
+      }
+    },
+    {
+      "id": "bd5f07aa6ff8a2a0",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "26ec32d42d5b9980"
+      ],
+      "params": {
+        "files": [
+          "train.py",
+          "evaluate.py"
+        ],
+        "required_interfaces": [
+          "train_step",
+          "evaluate"
+        ],
+        "loader": "_load_module",
+        "require_callable": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,379 @@
+{
+  "id": "climax_regional_lora_finetune",
+  "eval_type": "train",
+  "domain": "earth",
+  "task": "基于 ClimaX 进行区域气象预报 LoRA 微调",
+  "prompt": "基于 ClimaX 气象基础模型实现区域 LoRA 微调。生成目录必须包含 climax_regional_lora.py、train.py 和 evaluate.py；模型类命名为 ClimaXRegionalLoRA，输入为 (B,C,H,W) 的区域气象变量，输出为 (B,2,H,W) 的目标变量。冻结 ClimaX 主干，只更新名称包含 lora_A、lora_B 或 head 的参数；训练必须执行真实 AdamW、backward、梯度裁剪，并支持调用方提供的 max_steps。请保存 checkpoint、metrics.jsonl、predictions.json 和 targets.json。",
+  "evaluation_script": "evaluate_climax_regional_lora_finetune.py",
+  "stardard_dir_name": "climax_regional_lora_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "b6e3f3e1f48a32e3",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_resolution": {
+          "case_name_environment": "WEATHER_FINETUNE_CASE",
+          "case_name_default": "weather_finetune_contract",
+          "explicit_environment": "CLIMAX_REGIONAL_LORA_FINETUNE_SUBMISSION_DIR",
+          "pythonpath_candidates": [
+            "entry",
+            "entry/case_name"
+          ],
+          "cwd_candidates": [
+            "cwd",
+            "cwd/case_name"
+          ],
+          "deduplicate": "dict.fromkeys(Path.resolve candidates)",
+          "selection": "first candidate with climax_regional_lora.py and train.py as regular files"
+        },
+        "required_files": [
+          "climax_regional_lora.py",
+          "train.py",
+          "evaluate.py"
+        ],
+        "source_validation": {
+          "encoding": "utf-8",
+          "must_be_regular_file": true,
+          "ast_parse": true,
+          "success_detail": "syntax=ok, bytes=path.stat().st_size"
+        },
+        "failure_accounting": {
+          "submission_resolution_failure_types": [
+            "file",
+            "data",
+            "train_script",
+            "model_structure",
+            "forward_executable",
+            "traning"
+          ],
+          "missing_stage_types": [
+            "file",
+            "data",
+            "train_script",
+            "model_structure",
+            "forward_executable",
+            "traning"
+          ]
+        }
+      }
+    },
+    {
+      "id": "6db0e2ef22d0e44b",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "b6e3f3e1f48a32e3"
+      ],
+      "params": {
+        "device": "cuda:0 if torch.cuda.is_available() else cpu",
+        "fixture": {
+          "inputs": {
+            "factory": "torch.randn",
+            "shape": [
+              2,
+              4,
+              8,
+              8
+            ]
+          },
+          "targets": {
+            "factory": "torch.randn",
+            "shape": [
+              2,
+              2,
+              8,
+              8
+            ]
+          },
+          "mask": {
+            "factory": "torch.zeros_like(targets)",
+            "assignment": "mask[..., :2, :2] = 1",
+            "reported_shape": [
+              2,
+              2,
+              8,
+              8
+            ]
+          }
+        },
+        "pass_assertion": "bool(torch.isfinite(inputs).all() and torch.isfinite(targets).all())",
+        "detail_shapes": {
+          "input": [
+            2,
+            4,
+            8,
+            8
+          ],
+          "target": [
+            2,
+            2,
+            8,
+            8
+          ],
+          "mask": [
+            2,
+            2,
+            8,
+            8
+          ]
+        },
+        "post_fixture_action": "inputs, targets, mask = inputs.to(device), targets.to(device), mask.to(device)"
+      }
+    },
+    {
+      "id": "7040b887a7c7070a",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "b6e3f3e1f48a32e3"
+      ],
+      "params": {
+        "module_loads": [
+          {
+            "name": "weather_finetune_model",
+            "file": "climax_regional_lora.py"
+          },
+          {
+            "name": "weather_finetune_train",
+            "file": "train.py"
+          },
+          {
+            "name": "weather_finetune_eval",
+            "file": "evaluate.py"
+          }
+        ],
+        "loader": {
+          "prepend_parent_to_sys_path_if_missing": true,
+          "factory": "importlib.util.spec_from_file_location",
+          "module_factory": "importlib.util.module_from_spec",
+          "register_in_sys_modules": true,
+          "execute": "spec.loader.exec_module(module)"
+        },
+        "load_order": "model, train, evaluate; stop subsequent loads on exception",
+        "load_failure_result": {
+          "type": "train_script",
+          "name": "train_script:modules_importable"
+        },
+        "model_build": {
+          "condition": "model_module and train_module",
+          "expression": "train_module.build_model({}).to(device)",
+          "failure_result": {
+            "type": "train_script",
+            "name": "train_script:build_model"
+          }
+        }
+      }
+    },
+    {
+      "id": "28cc1114daadfc08",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "7040b887a7c7070a"
+      ],
+      "params": {
+        "file": "train.py",
+        "encoding": "utf-8",
+        "ast_parse": true,
+        "function_lookup": {
+          "name": "train_step",
+          "node_type": "ast.FunctionDef",
+          "search": "first ast.walk match"
+        },
+        "parameters": {
+          "source": "node.args.args",
+          "required": [
+            "model",
+            "inputs",
+            "targets"
+          ],
+          "match": "all_names_present"
+        },
+        "calls": {
+          "source": "ast.walk(node) Call.func Name.id or Attribute.attr",
+          "required": [
+            "backward",
+            "step"
+          ],
+          "match": "all_names_present"
+        },
+        "source_substring": {
+          "required": "AdamW",
+          "scope": "entire train.py source"
+        }
+      }
+    },
+    {
+      "id": "c747abd680ec4a8e",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "7040b887a7c7070a"
+      ],
+      "params": {
+        "file": "evaluate.py",
+        "source": "Path(eval_module.__file__).read_text(encoding='utf-8')",
+        "required_case_sensitive_substrings": [
+          "def evaluate",
+          "rmse",
+          "mae"
+        ],
+        "pass_assertion": "all(token in source for token in required_case_sensitive_substrings)",
+        "success_detail": "evaluate/rmse/mae"
+      }
+    },
+    {
+      "id": "5147047ce10ac8c4",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "7040b887a7c7070a",
+        "6db0e2ef22d0e44b"
+      ],
+      "params": {
+        "model_source": "climax_regional_lora.py",
+        "model_construction": "train_module.build_model({}).to(device)",
+        "case_kind": "lora",
+        "execution": {
+          "no_grad": true,
+          "statements": [
+            "backbone = model.backbone(inputs)",
+            "low_rank = model.lora_A(inputs)",
+            "adapted = model.lora_B(low_rank)",
+            "output = model.head(torch.nn.functional.gelu(backbone + adapted))"
+          ]
+        },
+        "assertions": {
+          "relative_child_order": [
+            "backbone",
+            "lora_A",
+            "lora_B",
+            "head"
+          ],
+          "named_parameters_present": [
+            "lora_A.weight",
+            "lora_B.weight"
+          ],
+          "backbone_all_requires_grad_false": true,
+          "backbone_shape": [
+            2,
+            16,
+            8,
+            8
+          ],
+          "adapted_shape": [
+            2,
+            16,
+            8,
+            8
+          ],
+          "output_shape": [
+            2,
+            2,
+            8,
+            8
+          ]
+        },
+        "detail_only_shapes": [
+          "low_rank"
+        ]
+      }
+    },
+    {
+      "id": "bbca876be90f283f",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "7040b887a7c7070a",
+        "6db0e2ef22d0e44b"
+      ],
+      "params": {
+        "model": "constructed train_module.build_model({}).to(device)",
+        "mode": "model.eval()",
+        "no_grad": true,
+        "forward": "output = model(inputs)",
+        "assertions": {
+          "output_shape_equals": "targets.shape",
+          "output_all_finite": "bool(torch.isfinite(output).all())"
+        },
+        "inputs_shape": [
+          2,
+          4,
+          8,
+          8
+        ],
+        "targets_shape": [
+          2,
+          2,
+          8,
+          8
+        ],
+        "legacy_unused_argument": "mask"
+      }
+    },
+    {
+      "id": "d0ec07a22574cc60",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "7040b887a7c7070a",
+        "6db0e2ef22d0e44b"
+      ],
+      "params": {
+        "mode": "model.train()",
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "parameters": "[p for p in model.parameters() if p.requires_grad]",
+          "kwargs": {
+            "lr": 0.001
+          }
+        },
+        "snapshot": "[p.detach().clone() for p in model.parameters() if p.requires_grad]",
+        "train_step": {
+          "file": "train.py",
+          "function": "train_step",
+          "positional_args": [
+            "model",
+            "inputs",
+            "targets"
+          ],
+          "keyword_args": {
+            "optimizer": "optimizer"
+          },
+          "event_mask": {
+            "condition": "case.kind == 'extreme'",
+            "keyword": "event_mask",
+            "value": "mask"
+          }
+        },
+        "assertions": {
+          "loss_type": "isinstance(loss, (float, int))",
+          "loss_not_nan": "loss == loss",
+          "parameter_changed": "any(not torch.equal(left, right) for left, right in zip(before, after))"
+        },
+        "failure_result": {
+          "type": "traning",
+          "name": "traning:real_backward_optimizer_update"
+        }
+      }
+    }
+  ]
+}

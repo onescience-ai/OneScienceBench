@@ -1,0 +1,97 @@
+# INFINITY / AirfRANS 2-D airfoil flattened configuration
+# Priority policy used here: paper-explicit > official repository > no guessing.
+
+data:
+  # Point this to a directory containing Dataset/manifest.json and the AirfRANS VTK files.
+  root: "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset"
+  manifest: "Dataset/manifest.json"
+  train_key: "full_train"
+  test_key: "full_test"
+  expected_train_cases: 800   # paper-explicit
+  expected_test_cases: 200    # paper-explicit
+  strict_split_size: true
+  sample_points_per_case: 4000  # repository-only; paper does not disclose point subsampling
+  normalize: true               # repository z-score convention; paper only says metrics use normalized fields
+  cache_dir: null               # optional directory for parsed .pt case caches
+
+model:
+  latent_dim: 256                # repository-only; not disclosed in paper
+  # PAPER-STRICT default: f(x) is queried at spatial coordinate x.
+  # The repository actually appends normalized SDF to [x,y] for physical-field INR decoding.
+  # Set true for repository-parity experiments; leave false for paper-priority semantics.
+  physics_decoder_condition_on_sdf: false
+
+  inr:
+    # Paper requires Fourier Features for every INR. SDF therefore uses Fourier here even though
+    # the earliest public repository README records a SIREN SDF run (documented conflict).
+    sdf: &geometry_fourier
+      hidden_dim: 128
+      depth: 5
+      num_frequencies: 128
+      max_frequency: 32
+      base_frequency: 1.25
+      include_input: true
+    n:
+      <<: *geometry_fourier
+    vx: &physics_fourier
+      hidden_dim: 256
+      depth: 6
+      num_frequencies: 32
+      max_frequency: 10
+      base_frequency: 2.0
+      include_input: false
+    vy:
+      <<: *physics_fourier
+    p:
+      <<: *physics_fourier
+    nu:
+      <<: *physics_fourier
+
+  processor:
+    # Repository implementation of the paper's MLP g_psi.
+    hidden_dim: 256
+    depth: 4
+    dropout: 0.0
+
+optimization:
+  inner_steps: 3       # paper-explicit for training
+  test_inner_steps: 3  # paper-explicit for testing
+  gradient_clip_value: 1.0  # repository-only
+
+  # Per-INR values below are repository-derived because the paper does not disclose them.
+  # Physical values follow the earliest public separate-INR configuration/defaults.
+  inr:
+    sdf: &geometry_optim
+      batch_size: 64
+      epochs: 5000
+      outer_lr: 5.0e-5
+      inner_lr: 1.0e-2
+      inner_lr_meta_lr: 0.0
+      weight_decay: 0.0
+    n:
+      <<: *geometry_optim
+    vx: &physics_optim
+      batch_size: 64
+      epochs: 10000
+      outer_lr: 5.0e-5
+      inner_lr: 1.0e-2
+      inner_lr_meta_lr: 5.0e-5
+      weight_decay: 0.0
+    vy:
+      <<: *physics_optim
+    p:
+      <<: *physics_optim
+    nu:
+      <<: *physics_optim
+
+  processor:
+    batch_size: 64
+    epochs: 500
+    lr: 1.0e-3
+    weight_decay: 1.0e-6
+
+runtime:
+  seed: 1060            # repository regression script; paper does not disclose a seed
+  device: "cuda"
+  checkpoint_dir: "checkpoints"
+  log_every: 100

@@ -1,0 +1,349 @@
+{
+  "id": "satellite_cloud_property_inference",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现多光谱卫星云属性推理模型",
+  "prompt": "实现多光谱卫星云属性推理模型模型文件命名为 satellite_cloud_property_inference.py，定义 SatelliteCloudPropertyModel，默认 bands=5、hidden_dim=16、cloud_types=4。输入 spectral 为 [B,T,5,H,W]，可选 valid_mask 为 [B,T] bool；模型沿时间轴做有效帧平均，输出字典 cloud_top_temperature [B,H,W]、cloud_type_logits [B,H,W,4] 和 precipitation_probability [B,H,W]，概率必须在 [0,1]。实现 infer(batch)，batch 必须包含 spectral、latitude、longitude，并原样保留两个坐标。结构必须包含 temporal_encoder、stem、heads。实现 load_checkpoint，checkpoint 只能包含 model_state_dict，先 CPU 加载后 strict=True 恢复。请在当前工作目录生成且仅生成 satellite_cloud_property_inference.py，禁止下载数据或权重。",
+  "evaluation_script": "evaluate_satellite_cloud_property_inference.py",
+  "stardard_dir_name": "satellite_cloud_property_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "a3ef608eb0fcba4a",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "satellite_cloud_property_inference.py"
+        ],
+        "require_is_file": true
+      }
+    },
+    {
+      "id": "d51a35845b110abc",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "a3ef608eb0fcba4a"
+      ],
+      "params": {
+        "model_file": "satellite_cloud_property_inference.py",
+        "model_class": "SatelliteCloudPropertyModel",
+        "model_constructor_kwargs": {},
+        "checkpoint_loader": {
+          "module_function": "load_checkpoint",
+          "call_device": "cpu"
+        },
+        "good_checkpoint": {
+          "filename": "good.pt",
+          "payload_keys": [
+            "model_state_dict"
+          ],
+          "state_dict_source": "standard.SatelliteCloudPropertyModel().state_dict()"
+        },
+        "loaded_state_contract": {
+          "state_key_order_equals_standard": true,
+          "all_tensor_values_equal": true
+        },
+        "malformed_checkpoint": {
+          "filename": "bad.pt",
+          "payload": {},
+          "must_raise": true
+        }
+      }
+    },
+    {
+      "id": "7dfa738ac39e162f",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "a3ef608eb0fcba4a"
+      ],
+      "params": {
+        "model_file": "satellite_cloud_property_inference.py",
+        "model_class": "SatelliteCloudPropertyModel",
+        "model_constructor_kwargs": {},
+        "top_level_module_order": [
+          "temporal_encoder",
+          "stem",
+          "heads"
+        ],
+        "heads": {
+          "ordered_keys": [
+            "cloud_top_temperature",
+            "cloud_type_logits",
+            "precipitation_probability"
+          ],
+          "out_channels": [
+            1,
+            4,
+            1
+          ]
+        },
+        "temporal_encoder": {
+          "in_channels": 5
+        }
+      }
+    },
+    {
+      "id": "efc45ef739dd9d55",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "a3ef608eb0fcba4a"
+      ],
+      "params": {
+        "files": [
+          "satellite_cloud_property_inference.py"
+        ],
+        "model_class": "SatelliteCloudPropertyModel",
+        "required_class_methods": [
+          "forward",
+          "infer"
+        ],
+        "required_module_functions": [
+          "load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "7f60d9728fe0e6ad",
+      "type": "model_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "7dfa738ac39e162f",
+        "efc45ef739dd9d55"
+      ],
+      "params": {
+        "model_file": "satellite_cloud_property_inference.py",
+        "model_class": "SatelliteCloudPropertyModel",
+        "model_constructor_kwargs": {},
+        "fresh_model_per_probe": true,
+        "output_shape_probe": {
+          "eval": true,
+          "spectral": {
+            "generator": "torch.randn",
+            "shape": [
+              2,
+              3,
+              5,
+              8,
+              10
+            ]
+          },
+          "valid_mask": [
+            [
+              true,
+              true,
+              false
+            ],
+            [
+              true,
+              false,
+              false
+            ]
+          ],
+          "latitude": {
+            "generator": "torch.arange",
+            "end": 8
+          },
+          "longitude": {
+            "generator": "torch.arange",
+            "end": 10
+          },
+          "required_keys": [
+            "cloud_top_temperature",
+            "cloud_type_logits",
+            "precipitation_probability",
+            "latitude",
+            "longitude"
+          ],
+          "expected_shapes": {
+            "cloud_top_temperature": [
+              2,
+              8,
+              10
+            ],
+            "cloud_type_logits": [
+              2,
+              8,
+              10,
+              4
+            ],
+            "precipitation_probability": [
+              2,
+              8,
+              10
+            ]
+          }
+        },
+        "finite_output_probe": {
+          "spectral": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              2,
+              5,
+              4,
+              5
+            ]
+          },
+          "latitude": {
+            "generator": "torch.arange",
+            "end": 4
+          },
+          "longitude": {
+            "generator": "torch.arange",
+            "end": 5
+          },
+          "all_tensor_output_values_finite": true
+        },
+        "probability_range_probe": {
+          "spectral": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              2,
+              5,
+              4,
+              5
+            ]
+          },
+          "latitude": {
+            "generator": "torch.arange",
+            "end": 4
+          },
+          "longitude": {
+            "generator": "torch.arange",
+            "end": 5
+          },
+          "output_key": "precipitation_probability",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "coordinate_preservation_probe": {
+          "spectral": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              2,
+              5,
+              4,
+              5
+            ]
+          },
+          "latitude": {
+            "generator": "torch.arange",
+            "end": 4
+          },
+          "longitude": {
+            "generator": "torch.arange",
+            "end": 5
+          },
+          "require_torch_equal": true
+        },
+        "invalid_mask_probe": {
+          "forward_spectral": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              2,
+              5,
+              4,
+              5
+            ]
+          },
+          "valid_mask": {
+            "generator": "torch.zeros",
+            "shape": [
+              1,
+              2
+            ],
+            "dtype": "torch.bool"
+          },
+          "required_exception": "ValueError"
+        },
+        "invalid_spectral_probe": {
+          "forward_spectral": {
+            "generator": "torch.randn",
+            "shape": [
+              1,
+              2,
+              4,
+              4,
+              5
+            ]
+          },
+          "required_exception": "ValueError"
+        }
+      }
+    },
+    {
+      "id": "eef5e9d5b86f8cfc",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "d51a35845b110abc",
+        "7dfa738ac39e162f",
+        "7f60d9728fe0e6ad"
+      ],
+      "params": {
+        "candidate_file": "satellite_cloud_property_inference.py",
+        "reference_file": "benchmarks/standard/satellite_cloud_property_inference/satellite_cloud_property_inference.py",
+        "model_class": "SatelliteCloudPropertyModel",
+        "model_constructor_kwargs": {},
+        "candidate_and_reference_eval": true,
+        "candidate_loads_reference_state_dict": {
+          "strict": true
+        },
+        "batch": {
+          "spectral": {
+            "generator": "torch.linspace",
+            "start": 0,
+            "end": 1,
+            "steps": 420,
+            "shape": [
+              1,
+              2,
+              5,
+              6,
+              7
+            ]
+          },
+          "latitude": {
+            "generator": "torch.arange",
+            "end": 6
+          },
+          "longitude": {
+            "generator": "torch.arange",
+            "end": 7
+          }
+        },
+        "compared_output_keys": [
+          "cloud_top_temperature",
+          "cloud_type_logits",
+          "precipitation_probability"
+        ],
+        "metrics": [
+          "rmse",
+          "mae"
+        ],
+        "maximum_metric_value": 1e-06
+      }
+    }
+  ]
+}

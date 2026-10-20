@@ -1,0 +1,374 @@
+{
+  "id": "nowcastnet_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "earth",
+  "task": "复现 NowCastNet 运动演化外推与随机生成细节增强的短临降水模型",
+  "prompt": "复现 NowCastNet 论文的物理演化与生成式短临预报核心：EvolutionNetwork 从历史单通道雷达帧预测未来强度增量和二维运动场，逐步使用可微 grid_sample 平流最后观测并叠加强度；生成路径把历史、演化序列和经 noise_projector 编码的随机噪声共同送入 generator 预测细节残差；实现真实 AdamW、MSE、backward 训练步和 MAE/RMSE 评估。请在指定目录生成 nowcastnet.py、train.py 和 evaluate.py；nowcastnet.py 定义 Net 和 EvolutionNetwork，Net 构造参数至少包含 input_length、total_length、img_height、img_width、ngf、device、pretrained_model，forward 接收 (B,total_length,H,W,C) 或等价单通道时序并返回 (B,total_length-input_length,H,W)，可选 noise 必须实际影响生成结果。",
+  "evaluation_script": "evaluate_nowcastnet_paper_repro.py",
+  "stardard_dir_name": "nowcastnet_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "98d8c14f1c8cce1d",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "nowcastnet.py",
+          "train.py",
+          "evaluate.py"
+        ]
+      }
+    },
+    {
+      "id": "ebf93ee82fa148a1",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "seed": 20260819,
+        "device": "cuda:0 if torch.cuda.is_available() else cpu",
+        "fixture": {
+          "batch": {
+            "generator": "torch.randn",
+            "shape": [
+              2,
+              6,
+              8,
+              8,
+              1
+            ]
+          },
+          "target": {
+            "generator": "torch.randn",
+            "shape": [
+              2,
+              3,
+              8,
+              8
+            ]
+          },
+          "noise": {
+            "generator": "torch.randn",
+            "shape": [
+              2,
+              1,
+              8,
+              8
+            ]
+          }
+        },
+        "require_finite": true
+      }
+    },
+    {
+      "id": "2897a021bece28df",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "file": "train.py",
+        "ast_parse": true,
+        "function": "train_step",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_calls": [
+          "AdamW",
+          "backward",
+          "step"
+        ]
+      }
+    },
+    {
+      "id": "5c484196997b314c",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [],
+      "params": {
+        "file": "evaluate.py",
+        "ast_parse": true,
+        "function": "evaluate",
+        "required_parameters": [
+          "model",
+          "inputs",
+          "targets"
+        ],
+        "required_metric_literals": [
+          "mae",
+          "rmse"
+        ],
+        "required_calls": [
+          "abs",
+          "mean",
+          "sqrt"
+        ]
+      }
+    },
+    {
+      "id": "b49802f2eef165af",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "model_file": "nowcastnet.py",
+        "model_class": "Net",
+        "model_class_must_be_class": true,
+        "model_args": {
+          "input_length": 3,
+          "total_length": 6,
+          "img_height": 8,
+          "img_width": 8,
+          "ngf": 8
+        },
+        "top_level_child_subsequence": [
+          "evolution",
+          "noise_projector",
+          "generator"
+        ],
+        "evolution_child_subsequence": [
+          "body",
+          "intensity",
+          "motion"
+        ],
+        "required_modules": {
+          "evolution.intensity": {
+            "class": "torch.nn.Conv2d",
+            "out_channels": 3
+          },
+          "evolution.motion": {
+            "class": "torch.nn.Conv2d",
+            "out_channels": 6
+          },
+          "noise_projector": {
+            "class": "torch.nn.Conv2d",
+            "in_channels": 1
+          }
+        },
+        "required_attributes": {
+          "pred_length": 3,
+          "_warp": "callable"
+        },
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "d0d0fda039682b47",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "fixture": {
+          "seed": 20260819,
+          "batch_shape": [
+            2,
+            6,
+            8,
+            8,
+            1
+          ],
+          "target_shape": [
+            2,
+            3,
+            8,
+            8
+          ],
+          "noise_shape": [
+            2,
+            1,
+            8,
+            8
+          ]
+        },
+        "eval_mode": true,
+        "no_grad": true,
+        "forward_variants": {
+          "default": "model(inputs)",
+          "zero_noise": "model(inputs, torch.zeros_like(noise))",
+          "provided_noise": "model(inputs, noise)",
+          "channel_first": "model(inputs[..., 0])"
+        },
+        "expected_output_shape": [
+          2,
+          3,
+          8,
+          8
+        ],
+        "require_finite_default_output": true,
+        "allclose": {
+          "atol": 1e-06,
+          "rtol": 1e-05,
+          "pairs": [
+            [
+              "default",
+              "zero_noise"
+            ],
+            [
+              "default",
+              "channel_first"
+            ]
+          ]
+        },
+        "noise_delta_max_abs_gt": 1e-07,
+        "invalid_inputs": [
+          {
+            "name": "length",
+            "expression": "inputs[:, :5]"
+          },
+          {
+            "name": "grid",
+            "expression": "inputs[:, :, :6]"
+          },
+          {
+            "name": "channels",
+            "expression": "inputs.repeat(1, 1, 1, 1, 2)"
+          },
+          {
+            "name": "noise",
+            "expression": "noise[:, :, :6]"
+          }
+        ],
+        "accepted_invalid_input_exceptions": [
+          "ValueError",
+          "TypeError"
+        ],
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "e65e14cd0d752973",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "fixture": {
+          "seed": 20260819,
+          "batch_shape": [
+            2,
+            6,
+            8,
+            8,
+            1
+          ],
+          "noise_shape": [
+            2,
+            1,
+            8,
+            8
+          ]
+        },
+        "eval_mode": true,
+        "clone": "copy.deepcopy(model).eval()",
+        "state_reload": {
+          "source": "model.state_dict()",
+          "strict": true
+        },
+        "forward_args": [
+          "batch",
+          "noise"
+        ],
+        "require_same_shape": true,
+        "allclose": {
+          "atol": 1e-06,
+          "rtol": 1e-05
+        },
+        "report": "max_abs_diff",
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "9ea65f0898e1e5a0",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [],
+      "params": {
+        "fixture": {
+          "seed": 20260819,
+          "batch_shape": [
+            2,
+            6,
+            8,
+            8,
+            1
+          ],
+          "target_shape": [
+            2,
+            3,
+            8,
+            8
+          ],
+          "noise_shape": [
+            2,
+            1,
+            8,
+            8
+          ]
+        },
+        "train_mode": true,
+        "trainable_parameters_only": true,
+        "optimizer": {
+          "class": "torch.optim.AdamW",
+          "lr": 0.001
+        },
+        "zero_grad": {
+          "set_to_none": true
+        },
+        "forward_args": [
+          "batch",
+          "noise"
+        ],
+        "loss": "(output - target).square().mean()",
+        "require_finite_loss": true,
+        "require_nonempty_gradients": true,
+        "require_all_gradients_finite": true,
+        "require_any_parameter_changed": true,
+        "model_unavailable_fails": true
+      }
+    },
+    {
+      "id": "524dbb476b222cfd",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "imports": [
+          {
+            "module_name": "nowcastnet_submission_train",
+            "file": "train.py",
+            "required_callable": "train_step"
+          },
+          {
+            "module_name": "nowcastnet_submission_evaluate",
+            "file": "evaluate.py",
+            "required_callable": "evaluate"
+          }
+        ],
+        "import_behavior": {
+          "prepend_parent_to_sys_path_if_missing": true,
+          "loader": "importlib.util.spec_from_file_location",
+          "register_module_in_sys_modules": true,
+          "execute_module": true
+        }
+      }
+    }
+  ]
+}

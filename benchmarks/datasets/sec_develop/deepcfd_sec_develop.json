@@ -1,0 +1,307 @@
+{
+  "id": "deepcfd_sec_develop",
+  "eval_type": "sec_develop",
+  "domain": "cfd",
+  "task": "基于 DeepCFD 模型实现二维非均匀稳态层流的速度场与压力场的二次开发训推",
+  "prompt": "基于 DeepCFD 模型实现二维非均匀稳态层流的速度场与压力场的二次开发训推。\n    原始任务定义如下：\n    1. 任务定义和数据集使用\n    该任务该任务的输入和输出 shape 均为 (B, 3, 172, 79)，其中 B 为批次大小，172×79 为空间网格尺寸。输入的三个通道依次表示障碍物表面的符号距离函数（SDF）、流动区域标签（障碍物、自由流、壁面、入口和出口）以及上下壁面的 SDF；输出的三个通道依次为水平速度U_x、垂直速度U_y 和压力p。配套的数据集可使用`modelscope download --dataset OneScience/deepcfd --local_dir ./data --include '*.pkl'`下载，以 random.Random(0) 打乱并按0.7划分为686个训练样本和295个测试样本，batch_size=16、num_workers=0。所有文件的输出路径为./test_deepcfd_sec_develop_oneskills/\n    2.模型结构定义\n    模型文件命名为 unetex.py，实现 DoubleConv2D、Down2D、Up2D、UNetEncoder2D、UNetDecoder2D、UNetHead2D、DecoderPath 和 UNetEx；UNetEx 配置为 in_channels=3、out_channels=3、base_channels=8、num_stages=4、kernel_size=5、bilinear=True、normtype=\"none\"，共享编码器注册为 encoder，包含 inc 和 down_stages=nn.ModuleList(...)，通道依次为 8→16→32→64→128，每个下采样层必须注册为 maxpool_conv=nn.Sequential(nn.MaxPool2d(2), DoubleConv2D(...))；DoubleConv2D 的属性名为 double_conv，当 normtype=\"none\" 时必须严格按 Conv2d-ReLU-Conv2d-ReLU 顺序构造，不得插入归一化层或 nn.Identity，两个 Conv2d 均须设置 bias=False，确保参数键为 double_conv.0.weight 和 double_conv.2.weight 且不产生对应 bias 键；三个独立输出分支注册为 decoders=nn.ModuleList(...)，每个元素为独立的 DecoderPath，内部包含 decoder 和 head，decoder.up_stages 包含4个 Up2D，双线性上采样使用 nn.Upsample(scale_factor=2, mode=\"bilinear\", align_corners=True)，双线性模式下 DoubleConv2D 的中间通道为 in_channels // 2；输出头必须为 head.conv=nn.Conv2d(base_channels,1,kernel_size=1,padding=0,bias=True)，最终输出 shape 为 (B,3,172,79)\n    3. 训练细节\n    训练采用 AdamW 优化器（学习率为0.001，权重衰减为0.005），最多训练1000轮，每10轮评估一次，早停耐心值为200次评估；训练目标为经通道 RMS 加权的 \\(U_x、U_y\\) 平方误差与压力绝对误差之和，评估指标为每个样本的总网格平方误差和及各通道网格平方误差和（Total、Ux、Uy 和 p MSE），并根据验证损失 val_loss 选择最优模型及执行早停；配置文件为 config.yaml\n    4. 推理脚本\n    inference.py脚本中调用compute_sample_normalized_grid_mse(predictions, targets) 在完整测试集上按通道累加所有网格点平方误差并除以样本数，返回 Ux_MSE、Uy_MSE、p_MSE 及三者之和 Total_MSE\n    5. 运行命令\n    训练和推理命令分别为 python train.py --config config.yaml 和 python inference.py --config config.yaml，最优权重与测试指标分别保存至 weight/best_model.pt 和 result/deepcfd/metrics.json。\n    二次开发要求如下：\n    1. 统一 Loss 与 Total_MSE\n    输入输出均为 (B,3,172,79)，通道依次为 Ux、Uy、p。分别计算各通道在 batch 和网格维度上的平均平方误差，并定义：Total_MSE = Ux_MSE + Uy_MSE + p_MSE\n    训练、验证、checkpoint 选择和推理统一使用该指标\n    2. 部分共享解码器\n    为 UNetEx 增加 shared_decoder_stages。默认 num_stages=4、shared_decoder_stages=2：深层 4→3→2 共享，浅层 2→1→0 及输出头按通道独立。\n    要求：\n    (1) 输出保持 (B,3,172,79)，支持奇数网格对齐；\n    (2) 取值为 0 时恢复原独立解码器并兼容其参数键；\n    (3) 取值为 num_stages 时完全共享解码器\n    ",
+  "evaluation_script": "evaluate_deepcfd_sec_develop.py",
+  "stardard_dir_name": "deepcfd_sec_develop",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "2d558e8f833ee567",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "unetex.py",
+          "dataset.py",
+          "train.py",
+          "inference.py",
+          "config.yaml"
+        ]
+      }
+    },
+    {
+      "id": "499a79ba53679da9",
+      "type": "data_split",
+      "method": "check_data_split",
+      "phase": "data_analysis",
+      "depends": [
+        "2d558e8f833ee567"
+      ],
+      "params": {
+        "dataset_file": "dataset.py",
+        "loader_function": "create_dataloaders",
+        "input_file": "dataX.pkl",
+        "target_file": "dataY.pkl",
+        "split_ratio": 0.7,
+        "seed": 0,
+        "batch_size": 16,
+        "num_workers": 0,
+        "sample_count": 10,
+        "expected_train_count": 7,
+        "expected_test_count": 3
+      }
+    },
+    {
+      "id": "c6df4cd31938f87f",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "499a79ba53679da9"
+      ],
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "check_config": {
+          "entry_names": [
+            "main"
+          ],
+          "optimizer_names": [
+            "AdamW"
+          ],
+          "loss_names": [
+            "loss_func",
+            "compute_loss",
+            "total_mse_loss"
+          ]
+        },
+        "legacy_cli_flag": "--config",
+        "legacy_loss_reduction": "mean_over_(0,2,3)_then_sum"
+      }
+    },
+    {
+      "id": "88f7bc4d49ab72fd",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "c6df4cd31938f87f"
+      ],
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_attributes": [
+            "load",
+            "load_state_dict"
+          ],
+          "input_load_functions": [
+            "create_dataloaders"
+          ],
+          "infer_call_functions": [
+            "compute_sample_normalized_grid_mse"
+          ],
+          "output_attributes": [
+            "dump",
+            "to_json"
+          ]
+        },
+        "legacy_metric_keys": [
+          "Ux_MSE",
+          "Uy_MSE",
+          "p_MSE",
+          "Total_MSE"
+        ],
+        "optional_absent": true
+      }
+    },
+    {
+      "id": "5b2b3cbc79528466",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "2d558e8f833ee567"
+      ],
+      "params": {
+        "model_file": "unetex.py",
+        "model_class": "UNetEx",
+        "config_name": "config.yaml",
+        "model_args": {
+          "in_channels": 3,
+          "out_channels": 3,
+          "base_channels": 8,
+          "num_stages": 4,
+          "kernel_size": 5,
+          "bilinear": true,
+          "normtype": "none",
+          "shared_decoder_stages": 2
+        },
+        "sharing_modes": [
+          0,
+          2,
+          4
+        ],
+        "required_classes": [
+          "DoubleConv2D",
+          "Down2D",
+          "Up2D",
+          "UNetEncoder2D",
+          "UNetDecoder2D",
+          "UNetHead2D",
+          "DecoderPath",
+          "UNetEx"
+        ]
+      }
+    },
+    {
+      "id": "cc69e805a72c5056",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "5b2b3cbc79528466"
+      ],
+      "params": {
+        "model_file": "unetex.py",
+        "model_class": "UNetEx",
+        "config_name": "config.yaml",
+        "model_args": {
+          "in_channels": 3,
+          "out_channels": 3,
+          "base_channels": 8,
+          "num_stages": 4,
+          "kernel_size": 5,
+          "bilinear": true,
+          "normtype": "none",
+          "shared_decoder_stages": 2
+        },
+        "required_input_shape": [
+          1,
+          3,
+          172,
+          79
+        ],
+        "odd_input_shape": [
+          2,
+          3,
+          35,
+          21
+        ],
+        "out_shape": [
+          1,
+          3,
+          172,
+          79
+        ]
+      }
+    },
+    {
+      "id": "62591a0d2f3149b0",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "5b2b3cbc79528466",
+        "cc69e805a72c5056"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "unetex.py",
+          "model_class": "UNetEx",
+          "config_name": "config.yaml"
+        },
+        "reference": {
+          "model_file": "standard/deepcfd_sec_develop/unetex.py",
+          "model_class": "UNetEx",
+          "config_name": "standard/deepcfd_sec_develop/config.yaml"
+        },
+        "shared_decoder_stages": [
+          0,
+          2,
+          4
+        ],
+        "input_shape": [
+          1,
+          3,
+          35,
+          21
+        ],
+        "parameter_fill": {
+          "weight": 0.001,
+          "bias": 0.01
+        },
+        "compare_rtol": 1e-06,
+        "compare_atol": 1e-07
+      }
+    },
+    {
+      "id": "e82ab8b7115a188b",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "5b2b3cbc79528466"
+      ],
+      "params": {
+        "files": [
+          "unetex.py"
+        ],
+        "optimizer": "AdamW",
+        "lr": 0.001,
+        "weight_decay": 0.005,
+        "loss": "Total_MSE",
+        "input_shape": [
+          1,
+          3,
+          32,
+          31
+        ],
+        "target_shape": [
+          1,
+          3,
+          32,
+          31
+        ],
+        "require_finite_loss": true,
+        "require_finite_gradients": true,
+        "require_parameter_change": true
+      }
+    },
+    {
+      "id": "d6776f77c2d77e9a",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "c6df4cd31938f87f",
+        "88f7bc4d49ab72fd"
+      ],
+      "params": {
+        "artifacts": {
+          "files": [
+            "weight/best_model.pt",
+            "result/deepcfd/metrics.json"
+          ]
+        },
+        "training_checkpoint_path": "weight/best_model.pt",
+        "inference_checkpoint_path": "weight/best_model.pt",
+        "metrics_path": "result/deepcfd/metrics.json",
+        "optional_metrics_validation": true,
+        "metric_keys": [
+          "Ux_MSE",
+          "Uy_MSE",
+          "p_MSE",
+          "Total_MSE"
+        ],
+        "metric_sum_rtol": 1e-06,
+        "metric_sum_atol": 1e-08
+      }
+    }
+  ]
+}

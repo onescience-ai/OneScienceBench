@@ -1,0 +1,13 @@
+paths:
+  arch_config: nequix_arch_config.json
+  data: /public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb
+training:
+  optimizer: AdamW
+  lr: 0.001
+  weight_decay: 1.0e-08
+  energy_weight: 1.0
+  force_weight: 5.0
+  gradient_clip_norm: 1.0e6
+  max_steps: 1
+  structure_index: 0
+  seed: 456

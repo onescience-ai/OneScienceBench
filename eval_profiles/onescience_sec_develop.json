@@ -1,0 +1,61 @@
+{
+  "profile_id": "sec_develop",
+  "eval_type": "sec_develop",
+  "agent_id": "openscience",
+  "base_model": "sugon/glm-5.2",
+  "use_oneskill": true,
+  "run_config": {
+    "max_concurrency": 1,
+    "batch_preflight": false,
+    "agent_id": "codex",
+    "base_model": "gpt-6.1-sol"
+  },
+  "default_eval_dataset_path": "benchmarks/datasets/sec_develop",
+  "stages": [
+    {
+      "id": "execute_task",
+      "workflow": "references/execute_task.md",
+      "enabled": true,
+      "blocking": true,
+      "params": {
+        "conda_env":"onescience311",
+        "max_debug_attempts": 3
+      }
+    },
+    {
+      "id": "execute_task_token_usage",
+      "python_script": "collect_agent_usage.py",
+      "enabled": true,
+      "blocking": true,
+      "params": {
+        "case-path": "${case-path}",
+        "artifact-path": "${artifact-path}",
+        "eval-output-dir": "${eval-output-dir}"
+      }
+    },
+    {
+      "id": "rule_eval",
+      "python_script": "rule_eval.py",
+      "enabled": true,
+      "blocking": true,
+      "params": {
+        "case-path": "${case-path}",
+        "artifact-path": "${artifact-path}",
+        "eval-output-dir": "${eval-output-dir}"
+      }
+    },
+    {
+      "id": "scoring",
+      "python_script": "scoring.py",
+      "enabled": true,
+      "blocking": true,
+      "params": {
+        "input-json": "${eval-result-path}",
+        "output-json": "${scoring-result-path}"
+      }
+    }
+  ],
+  "metrics_stages": [
+  ],
+  "on_blocking_failure": "continue_case_continue_batch"
+}

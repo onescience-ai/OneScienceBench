@@ -1,0 +1,30 @@
+{
+  "model": {
+    "num_recycles": 2,
+    "num_diffusion_samples": 2,
+    "single_dim": 32,
+    "pair_dim": 32,
+    "num_pairformer_layers": 2
+  },
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/AlphaFold3/af3.bin",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/alphafold3",
+    "mount_required": true
+  },
+  "runtime": {
+    "run_data_pipeline": false,
+    "run_inference": true,
+    "flash_attention_implementation": "xla",
+    "seed": 20260820
+  },
+  "input": {
+    "source": "/public/share/sugonhpcapp01/onestore/onedatasets/alphafold3/infer_input_data",
+    "format": "alphafold3_json",
+    "selection": "one deterministic record from the mounted input set"
+  },
+  "outputs": [
+    "sample_0.pdb",
+    "confidence.json",
+    "ranking_scores.csv"
+  ]
+}

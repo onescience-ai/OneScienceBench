@@ -1,0 +1,7 @@
+paths:
+  checkpoint: /public/share/sugonhpcapp01/onestore/onemodels/EquiformerV3/omat24-mptrj-salex_gradient.pt
+  input: null
+  output: equiformer_v3_predictions.json
+inference:
+  device: cpu
+  seed: 456

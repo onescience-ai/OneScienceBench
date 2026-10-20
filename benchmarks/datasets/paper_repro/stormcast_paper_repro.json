@@ -1,0 +1,369 @@
+{
+  "id": "stormcast_paper_repro",
+  "eval_type": "paper-repro",
+  "domain": "earth",
+  "task": "复现 StormCast 条件扩散去噪器与随机高分辨率天气采样链路",
+  "prompt": "复现 StormCast 论文中的条件生成式天气预报核心：以低分辨率或确定性预报条件场和高分辨率 noisy state 为输入，通过独立条件投影、扩散 timestep embedding 以及残差卷积去噪块预测噪声，并提供从噪声逐步修正的 sample 接口；实现真实 AdamW、噪声 MSE、backward 训练步和 MAE/RMSE 评估。请在 stormcast_paper_repro 目录生成 stormcast.py、train.py 和 evaluate.py；stormcast.py 定义 StormCast，构造参数至少包含 in_channels、cond_channels、base_channels、num_steps，forward(noisy,conditioning,timestep) 返回与 noisy 同 shape 的有限张量，sample(conditioning,steps,generator) 支持固定 generator 的可重复采样，并对 batch、通道、网格和 timestep 长度进行严格校验。",
+  "evaluation_script": "evaluate_stormcast_paper_repro.py",
+  "stardard_dir_name": "stormcast_paper_repro",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+    "modules": ["sghpc-mpi-gcc/26.3"]
+  },
+  "checks": [
+    {
+      "id": "db8e2905db4d4db0",
+      "type": "model_file",
+      "phase": "model_structure",
+      "method": "check_files",
+      "params": {"required_files": ["stormcast.py"]},
+      "depends": []
+    },
+    {
+      "id": "ac81eccdc8d7412b",
+      "type": "model_interface",
+      "phase": "model_structure",
+      "method": "check_interface",
+      "params": {
+        "files": ["stormcast.py"],
+        "required_interfaces": ["StormCast", "StormCast.forward", "StormCast.sample"]
+      },
+      "depends": ["db8e2905db4d4db0"]
+    },
+    {
+      "id": "022488ce9c114709",
+      "type": "model_structure",
+      "phase": "model_structure",
+      "method": "check_model_structure",
+      "params": {
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "model_args": {
+          "in_channels": 1,
+          "cond_channels": 2,
+          "base_channels": 8,
+          "num_steps": 20
+        },
+        "rules": [
+          {
+            "id": "stormcast_structure:input_projection",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "input_projection",
+              "in_channels": "$in_channels",
+              "out_channels": "$base_channels"
+            }
+          },
+          {
+            "id": "stormcast_structure:conditioning_projection",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "conditioning_projection",
+              "in_channels": "$cond_channels",
+              "out_channels": "$base_channels"
+            }
+          },
+          {
+            "id": "stormcast_structure:residual_convolution",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "residual_convolution",
+              "in_channels": "$base_channels",
+              "out_channels": "$base_channels"
+            }
+          },
+          {
+            "id": "stormcast_structure:output_projection",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_role": "output_projection",
+              "in_channels": "$base_channels",
+              "out_channels": "$in_channels"
+            }
+          }
+        ]
+      },
+      "depends": ["ac81eccdc8d7412b"]
+    },
+    {
+      "id": "8b315ecf50704c29",
+      "type": "model_forward",
+      "phase": "model_structure",
+      "method": "check_model_forward_executable",
+      "params": {
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "fixture": {"batch_size": 2, "height": 8, "width": 8, "seed": 20260819}
+      },
+      "depends": ["ac81eccdc8d7412b"]
+    },
+    {
+      "id": "3928e5936334475e",
+      "type": "model_method_correctness",
+      "phase": "model_structure",
+      "method": "check_method_correctness",
+      "params": {
+        "task_rule": "component_usage",
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "fixture": {"batch_size": 2, "height": 8, "width": 8, "seed": 20260819}
+      },
+      "depends": ["022488ce9c114709"]
+    },
+    {
+      "id": "3263f76499da4da3",
+      "type": "model_method_correctness",
+      "phase": "model_structure",
+      "method": "check_method_correctness",
+      "params": {
+        "task_rule": "sampling",
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "fixture": {"batch_size": 2, "height": 8, "width": 8, "seed": 20260819},
+        "sample_steps": 3
+      },
+      "depends": ["ac81eccdc8d7412b"]
+    },
+    {
+      "id": "aaed1fb47b5f4f32",
+      "type": "train_file",
+      "phase": "train_script",
+      "method": "check_files",
+      "params": {"required_files": ["train.py"]},
+      "depends": []
+    },
+    {
+      "id": "b81a2fcf07464885",
+      "type": "train_interface",
+      "phase": "train_script",
+      "method": "check_interface",
+      "params": {
+        "files": ["train.py"],
+        "required_interfaces": ["train_step"]
+      },
+      "depends": [
+        "aaed1fb47b5f4f32",
+        "ac81eccdc8d7412b"
+      ]
+    },
+    {
+      "id": "151957dd3c6a41cf",
+      "type": "train_structure",
+      "phase": "train_script",
+      "method": "check_train_structure",
+      "params": {"train_file": "train.py", "train_function": "train_step"},
+      "depends": ["b81a2fcf07464885"]
+    },
+    {
+      "id": "c1cb857856d344ff",
+      "type": "train_method_correctness",
+      "phase": "train_script",
+      "method": "check_method_correctness",
+      "params": {
+        "task_rule": "optimizer",
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "train_file": "train.py",
+        "train_function": "train_step",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "fixture": {"batch_size": 2, "height": 8, "width": 8, "seed": 20260819}
+      },
+      "depends": [
+        "b81a2fcf07464885",
+        "ac81eccdc8d7412b"
+      ]
+    },
+    {
+      "id": "f2a24f9baa594297",
+      "type": "train_loss",
+      "phase": "train_script",
+      "method": "check_train_loss",
+      "params": {
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "train_file": "train.py",
+        "train_function": "train_step",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "fixture": {"batch_size": 2, "height": 8, "width": 8, "seed": 20260819}
+      },
+      "depends": [
+        "b81a2fcf07464885",
+        "ac81eccdc8d7412b"
+      ]
+    },
+    {
+      "id": "85a1851a3b2744ec",
+      "type": "parameter_update",
+      "phase": "train_script",
+      "method": "check_parameter_update",
+      "params": {"files": ["train.py"]},
+      "depends": ["b81a2fcf07464885"]
+    },
+    {
+      "id": "eabd9c4025224f5e",
+      "type": "smoke_training",
+      "phase": "smoke_train",
+      "method": "check_smoke_training",
+      "params": {
+        "run_file": "train.py",
+        "train_fn_name": "train_step",
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "smoke_config": {},
+        "pre_train_hooks": [
+          {"function": "torch.randn", "args": {"size": [2, 1, 8, 8], "device": "$device"}, "save_as": "noisy"},
+          {"function": "torch.randn", "args": {"size": [2, 2, 8, 8], "device": "$device"}, "save_as": "cond"},
+          {"function": "torch.randn", "args": {"size": [2, 1, 8, 8], "device": "$device"}, "save_as": "target_noise"}
+        ],
+        "train_args": {
+          "model": "$model",
+          "noisy": "$noisy",
+          "cond": "$cond",
+          "target_noise": "$target_noise",
+          "optimizer": "None"
+        },
+        "args_as_positional": false
+      },
+      "depends": [
+        "b81a2fcf07464885",
+        "ac81eccdc8d7412b"
+      ]
+    },
+    {
+      "id": "933b8ea670d940cf",
+      "type": "infer_file",
+      "phase": "infer_script",
+      "method": "check_files",
+      "params": {"required_files": ["evaluate.py"]},
+      "depends": []
+    },
+    {
+      "id": "f920135097de4244",
+      "type": "infer_interface",
+      "phase": "infer_script",
+      "method": "check_interface",
+      "params": {
+        "files": ["evaluate.py"],
+        "required_interfaces": ["evaluate"]
+      },
+      "depends": [
+        "933b8ea670d940cf",
+        "ac81eccdc8d7412b"
+      ]
+    },
+    {
+      "id": "5c5a18472ead443e",
+      "type": "infer_structure",
+      "phase": "infer_script",
+      "method": "check_infer_structure",
+      "params": {"evaluate_file": "evaluate.py", "evaluate_function": "evaluate"},
+      "depends": [
+        "933b8ea670d940cf",
+        "f920135097de4244"
+      ]
+    },
+    {
+      "id": "4c496396eae14d81",
+      "type": "infer_execution",
+      "phase": "infer_execution",
+      "method": "check_infer_execution",
+      "params": {
+        "run_file": "evaluate.py",
+        "infer_function": "evaluate",
+        "model_file": "stormcast.py",
+        "model_class": "StormCast",
+        "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+        "pre_infer_hooks": [
+          {"function": "torch.randn", "args": {"size": [2, 1, 8, 8], "device": "$device"}, "save_as": "noisy"},
+          {"function": "torch.randn", "args": {"size": [2, 2, 8, 8], "device": "$device"}, "save_as": "cond"},
+          {"function": "torch.randn", "args": {"size": [2, 1, 8, 8], "device": "$device"}, "save_as": "target_noise"}
+        ],
+        "infer_args": {
+          "model": "$model",
+          "noisy": "$noisy",
+          "cond": "$cond",
+          "target_noise": "$target_noise"
+        },
+        "output_path": "outputs/stormcast_metrics.pkl",
+        "output_fields": ["mae", "rmse"]
+      },
+      "depends": [
+        "5c5a18472ead443e",
+        "ac81eccdc8d7412b"
+      ]
+    },
+    {
+      "id": "d929d16117cc4b27",
+      "type": "infer_output_schema",
+      "phase": "infer_execution",
+      "method": "check_infer_output_schema",
+      "params": {
+        "output_path": "outputs/stormcast_metrics.pkl",
+        "output_shape": [2],
+        "check_nan_inf": true
+      },
+      "depends": ["4c496396eae14d81"]
+    },
+    {
+      "id": "038c6426922249b4",
+      "type": "infer_output_validity",
+      "phase": "infer_execution",
+      "method": "check_infer_output_validity",
+      "params": {
+        "output_path": "outputs/stormcast_metrics.pkl"
+      },
+      "depends": ["d929d16117cc4b27"]
+    },
+    {
+      "id": "4f7e0588780c4343",
+      "type": "infer_metric",
+      "phase": "infer_metric",
+      "method": "check_evaluate_oracle",
+      "params": {
+        "candidate": {
+          "run_file": "evaluate.py",
+          "infer_function": "evaluate",
+          "model_file": "stormcast.py",
+          "model_class": "StormCast",
+          "model_args": {"in_channels": 1, "cond_channels": 2, "base_channels": 8, "num_steps": 20},
+          "pre_infer_hooks": [
+            {"function": "torch.randn", "args": {"size": [2, 1, 8, 8], "device": "$device"}, "save_as": "noisy"},
+            {"function": "torch.randn", "args": {"size": [2, 2, 8, 8], "device": "$device"}, "save_as": "cond"},
+            {"function": "torch.randn", "args": {"size": [2, 1, 8, 8], "device": "$device"}, "save_as": "target_noise"}
+          ],
+          "infer_args": {
+            "model": "$model",
+            "noisy": "$noisy",
+            "cond": "$cond",
+            "target_noise": "$target_noise"
+          }
+        },
+        "reference": {
+          "run_file": "evaluate.py",
+          "infer_function": "evaluate",
+          "import_files": ["stormcast.py"]
+        },
+        "output_fields": ["mae", "rmse"],
+        "share_candidate_args": true,
+        "atol": 1e-6,
+        "rtol": 1e-5
+      },
+      "depends": ["d929d16117cc4b27"]
+    }
+  ]
+}

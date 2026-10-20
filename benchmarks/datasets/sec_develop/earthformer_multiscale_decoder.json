@@ -1,0 +1,365 @@
+{
+  "id": "earthformer_multiscale_decoder",
+  "eval_type": "sec_develop",
+  "domain": "earth",
+  "task": "为 Earthformer 实现融合浅、中、深层特征的多尺度解码器",
+  "prompt": "完成 Earthformer 多尺度解码器的二次开发。在输出目录 earthformer_multiscale_decoder/ 中生成 earthformer_multiscale_decoder.py 和 train.py。主文件定义 MultiscaleFusionBlock(hidden_channels) 和 EarthformerMultiscaleDecoder(encoder_channels=(8,16,32),hidden_channels=16,out_channels=2)。forward 接收按 shallow、middle、deep 排列的三个 [B,C,T,H,W] 张量；通道分别匹配 encoder_channels，B/T 相同，middle 空间分辨率为 shallow 的一半，deep 为 middle 的一半。使用三个 Conv3d 1x1 lateral_projections 把通道统一到 hidden_channels；从 deep 开始，两个 MultiscaleFusionBlock 依次用 trilinear interpolate 对齐 middle、shallow 的 T/H/W，拼接 skip 后通过 Conv3d-SiLU-Conv3d 融合；最后 Conv3d output_head 输出并排列为 [B,T,out_channels,Hshallow,Wshallow]。模型必须让深层特征真实影响最终结果，输出有限。train.py 提供 build_model(config=None) 和 train_step(model,features,targets,optimizer)，以 MSE 完成一次参数更新。encoder_channels 必须恰有三个正数，hidden/out channels 为正，并对 feature 数量、rank、channel、batch/time 或尺度关系非法的输入抛出明确异常。",
+  "evaluation_script": "evaluate_earthformer_multiscale_decoder.py",
+  "stardard_dir_name": "earthformer_multiscale_decoder",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "b39db0f7463c4096",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "phase": "model_structure",
+        "required_files": [
+          "earthformer_multiscale_decoder.py"
+        ],
+        "legacy_required_files": [
+          "earthformer_multiscale_decoder.py",
+          "train.py"
+        ],
+        "legacy_existence_only": true,
+        "legacy_submission_env": "EARTHFORMER_MULTISCALE_DECODER_SUBMISSION_DIR",
+        "legacy_path_hints": [
+          "earthformer_multiscale_decoder",
+          "earthformer_multiscale_decoder_V1"
+        ]
+      }
+    },
+    {
+      "id": "b76e2ff49c1466be",
+      "type": "train_file",
+      "method": "check_files",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "phase": "train_script",
+        "required_files": [
+          "train.py"
+        ],
+        "legacy_required_files": [
+          "earthformer_multiscale_decoder.py",
+          "train.py"
+        ],
+        "legacy_existence_only": true,
+        "legacy_submission_env": "EARTHFORMER_MULTISCALE_DECODER_SUBMISSION_DIR",
+        "legacy_path_hints": [
+          "earthformer_multiscale_decoder",
+          "earthformer_multiscale_decoder_V1"
+        ]
+      }
+    },
+    {
+      "id": "b76e6bd055c7cc3b",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "b39db0f7463c4096",
+        "b76e2ff49c1466be"
+      ],
+      "params": {
+        "config_name": "legacy_generated_tensor_contract",
+        "feature_shapes": [
+          [
+            2,
+            8,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            16,
+            3,
+            4,
+            4
+          ],
+          [
+            2,
+            32,
+            3,
+            2,
+            2
+          ]
+        ],
+        "target_shape": [
+          2,
+          3,
+          2,
+          8,
+          8
+        ],
+        "feature_container": "tuple",
+        "feature_batch_dim": 2,
+        "feature_time_dim": 3,
+        "feature_axis_order": "B,C,T,H,W",
+        "legacy_exception_fallback": "data:multiscale_feature_contract"
+      }
+    },
+    {
+      "id": "bf5b9eb88b60c8c0",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "b39db0f7463c4096",
+        "b76e2ff49c1466be"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "train.py"
+        ],
+        "required_interfaces": [
+          "build_model",
+          "train_step"
+        ],
+        "legacy_model_file": "earthformer_multiscale_decoder.py",
+        "legacy_model_module_name": "earthformer_multiscale_decoder_submission",
+        "legacy_train_module_name": "earthformer_multiscale_decoder_train_submission"
+      }
+    },
+    {
+      "id": "5c00f5270e8c7143",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "b39db0f7463c4096",
+        "b76e2ff49c1466be",
+        "bf5b9eb88b60c8c0"
+      ],
+      "params": {
+        "model_file": "earthformer_multiscale_decoder.py",
+        "model_class": "EarthformerMultiscaleDecoder",
+        "fusion_class": "MultiscaleFusionBlock",
+        "builder_file": "train.py",
+        "builder_function": "build_model",
+        "model_args": {
+          "encoder_channels": [
+            8,
+            16,
+            32
+          ],
+          "hidden_channels": 16,
+          "out_channels": 2
+        },
+        "expected_module_order": [
+          "lateral_projections",
+          "fusion_blocks",
+          "output_head"
+        ],
+        "lateral_projection_count": 3,
+        "lateral_projection_type": "Conv3d",
+        "projected_shapes": [
+          [
+            2,
+            16,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            16,
+            3,
+            4,
+            4
+          ],
+          [
+            2,
+            16,
+            3,
+            2,
+            2
+          ]
+        ],
+        "fusion_block_count": 2,
+        "fusion_block_class": "MultiscaleFusionBlock",
+        "output_head_type": "Conv3d",
+        "legacy_exception_fallback": "model_structure:top_down_structure"
+      }
+    },
+    {
+      "id": "e1c989219668de4d",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "5c00f5270e8c7143"
+      ],
+      "params": {
+        "model_file": "earthformer_multiscale_decoder.py",
+        "model_class": "EarthformerMultiscaleDecoder",
+        "builder_file": "train.py",
+        "builder_function": "build_model",
+        "model_args": {
+          "encoder_channels": [
+            8,
+            16,
+            32
+          ],
+          "hidden_channels": 16,
+          "out_channels": 2
+        },
+        "feature_shapes": [
+          [
+            2,
+            8,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            16,
+            3,
+            4,
+            4
+          ],
+          [
+            2,
+            32,
+            3,
+            2,
+            2
+          ]
+        ],
+        "target_shape": [
+          2,
+          3,
+          2,
+          8,
+          8
+        ],
+        "out_shape": [
+          2,
+          3,
+          2,
+          8,
+          8
+        ],
+        "feature_container": "tuple",
+        "require_finite": true,
+        "legacy_exception_fallback": "forward_executable:forward_contract"
+      }
+    },
+    {
+      "id": "14d9c90b7caee72f",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "e1c989219668de4d"
+      ],
+      "params": {
+        "model_file": "earthformer_multiscale_decoder.py",
+        "model_class": "EarthformerMultiscaleDecoder",
+        "builder_file": "train.py",
+        "builder_function": "build_model",
+        "model_args": {
+          "encoder_channels": [
+            8,
+            16,
+            32
+          ],
+          "hidden_channels": 16,
+          "out_channels": 2
+        },
+        "feature_shapes": [
+          [
+            2,
+            8,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            16,
+            3,
+            4,
+            4
+          ],
+          [
+            2,
+            32,
+            3,
+            2,
+            2
+          ]
+        ],
+        "altered_feature_index": 2,
+        "alteration": 2.0,
+        "comparison": "torch.allclose",
+        "require_outputs_not_allclose": true,
+        "legacy_exception_fallback": "forward_equivalence:multiscale_semantics"
+      }
+    },
+    {
+      "id": "de0e0cb85a430e54",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "5c00f5270e8c7143",
+        "bf5b9eb88b60c8c0"
+      ],
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "optimizer": "AdamW",
+        "lr": 0.001,
+        "train_function": "train_step",
+        "feature_shapes": [
+          [
+            2,
+            8,
+            3,
+            8,
+            8
+          ],
+          [
+            2,
+            16,
+            3,
+            4,
+            4
+          ],
+          [
+            2,
+            32,
+            3,
+            2,
+            2
+          ]
+        ],
+        "target_shape": [
+          2,
+          3,
+          2,
+          8,
+          8
+        ],
+        "require_finite_loss": true,
+        "require_parameter_change": true,
+        "parameter_comparison": "torch.equal",
+        "legacy_exception_fallback": "traning:optimizer_contract"
+      }
+    }
+  ]
+}

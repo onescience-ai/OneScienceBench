@@ -1,0 +1,435 @@
+{
+  "id": "kno_train",
+  "eval_type": "train",
+  "domain": "cfd",
+  "task": "基于 KNO 模型完成 Navier–Stokes 多步流场预测与推理验证。",
+  "prompt": "基于 KNO 完成 Navier–Stokes 多步流场预测训练。\n    读取 /public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/ns/NavierStokes_V1e-5_N1200_T20.mat，使用前 1000 个样本训练、后 200 个样本验证；输入前 10 步 64×64 涡量场，预测后续 10 步。model.py 实现 EncoderConv2D、DecoderConv2D、KoopmanOperator2D、KNO2D 和主类 KNO2DNavierStokes。编码器和解码器采用 1×1 Conv2d，默认 op_size=32；Koopman 算子通过 rfft2/irfft2 和 [32,32,12,12] 复数矩阵执行频域演化，使用 einsum(\"btxy,tfxy->bfxy\")，连续演化 6 次，并采用 x=x+K(x)、1×1 Conv2d shortcut 和 tanh，不使用 BatchNorm。模型输入 fx:[B,4096,10]，单步输出 [B,4096,1]；pos:[B,4096,2] 仅保持接口兼容。\n    训练采用逐步 teacher forcing 和 10 步 MSE Loss，使用 AdamW（lr=1e-3、weight_decay=1e-5）、StepLR（step_size=100、gamma=0.5）、batch_size=8，训练 500 epochs。每 10 epochs 执行 10 步自回归验证，以平均 Relative L2 最低保存 best_kno_navier_stokes_v1e5.pt。checkpoint 包含 model_state_dict、model_config、data_config、spatial_shape、epoch 和 best_relative_l2。\n    代码输出至 ./test_kno_train/，包含 model.py、dataset.py、utils.py、train.py 和 config.yaml，并保存最佳权重、训练日志及指标记录。\n    ",
+  "evaluation_script": "evaluate_kno_train.py",
+  "stardard_dir_name": "kno_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "83c5878c3fd8c962",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "model.py",
+          "dataset.py",
+          "utils.py",
+          "train.py",
+          "config.yaml"
+        ],
+        "legacy_python_files": [
+          "model.py",
+          "dataset.py",
+          "utils.py",
+          "train.py"
+        ],
+        "syntax_check_existing_python": true,
+        "yaml_mapping_required": true
+      }
+    },
+    {
+      "id": "46afacb560ff3e5a",
+      "type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "83c5878c3fd8c962"
+      ],
+      "params": {
+        "phase": "data_analysis",
+        "config_name": "config.yaml",
+        "source_files": [
+          "dataset.py",
+          "train.py",
+          "config.yaml"
+        ],
+        "data_file": "NavierStokes_V1e-5_N1200_T20.mat",
+        "mat_variable": "u",
+        "train_samples": 1000,
+        "val_samples": 200,
+        "train_slice": "first 1000",
+        "val_slice": "last 200",
+        "input_steps": 10,
+        "output_steps": 10,
+        "spatial_shape": [
+          64,
+          64
+        ],
+        "flattened_points": 4096,
+        "required_source_tokens": [
+          "loadmat",
+          "reshape",
+          "pos",
+          "fx",
+          "dataloader",
+          "shuffle=true",
+          "shuffle=false",
+          "float32"
+        ],
+        "split_detection_tokens": [
+          "raw[:self.train_samples]",
+          "raw[:ntrain",
+          "data[:1000]",
+          "[:1000",
+          "raw[-self.val_samples:]",
+          "raw[-ntest:",
+          "data[-200:]",
+          "[-200:"
+        ]
+      }
+    },
+    {
+      "id": "544b6d9635a36ca7",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "46afacb560ff3e5a"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "train.py",
+          "utils.py",
+          "config.yaml"
+        ],
+        "config_name": "config.yaml",
+        "epochs": 500,
+        "batch_size": 8,
+        "learning_rate": 0.001,
+        "weight_decay": 1e-05,
+        "scheduler": "StepLR",
+        "step_size": 100,
+        "gamma": 0.5,
+        "eval_interval": 10,
+        "output_steps": 10,
+        "optimizer": "AdamW",
+        "loss": "MSE",
+        "required_source_tokens": [
+          "adamw",
+          "zero_grad",
+          ".backward(",
+          "optimizer.step",
+          "steplr",
+          "step_size",
+          "gamma",
+          "scheduler.step",
+          "teacher_forcing",
+          "torch.cat",
+          "truth",
+          "target",
+          "mse_loss",
+          "autoregressive",
+          "prediction",
+          "pred",
+          "validate",
+          "evaluate",
+          "relative_l2",
+          "best_relative_l2",
+          "<best_relative_l2",
+          "<=best_relative_l2",
+          "best_kno_navier_stokes_v1e5.pt",
+          "model_state_dict",
+          "model_config",
+          "data_config",
+          "spatial_shape",
+          "epoch",
+          "best_relative_l2",
+          "if __name__ == \"__main__\""
+        ]
+      }
+    },
+    {
+      "id": "77d65d602658bc5e",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "83c5878c3fd8c962"
+      ],
+      "params": {
+        "phase": "infer_script",
+        "files": [
+          "evaluate.py",
+          "eval.py"
+        ],
+        "optional_absence_passes": true,
+        "checkpoint_tokens": [
+          "load",
+          "checkpoint"
+        ],
+        "inference_mode_tokens": [
+          ".eval(",
+          "no_grad",
+          "inference_mode"
+        ],
+        "metric_tokens": [
+          "autoregressive",
+          "relative_l2"
+        ]
+      }
+    },
+    {
+      "id": "3a38970082d8cc5e",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "83c5878c3fd8c962",
+        "46afacb560ff3e5a"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "model_file": "model.py",
+        "model_class": "KNO2DNavierStokes",
+        "model_args": {
+          "input_channels": 10,
+          "output_channels": 1,
+          "spatial_shape": [
+            64,
+            64
+          ],
+          "op_size": 32,
+          "modes_x": 12,
+          "modes_y": 12,
+          "evolution_steps": 6,
+          "decompose": 6,
+          "linear_type": true,
+          "normalization": false
+        },
+        "required_classes": [
+          "EncoderConv2D",
+          "DecoderConv2D",
+          "KoopmanOperator2D",
+          "KNO2D",
+          "KNO2DNavierStokes"
+        ],
+        "conv2d_count_min": 3,
+        "conv_kernel_size": [
+          1,
+          1
+        ],
+        "koopman_parameter_shape": [
+          32,
+          32,
+          12,
+          12
+        ],
+        "koopman_parameter_complex": true,
+        "fft_tokens": [
+          "rfft2",
+          "irfft2",
+          "einsum(\"btxy,tfxy->bfxy\")"
+        ],
+        "evolution_steps": 6,
+        "shortcut_tokens": [
+          "shortcut",
+          "w0",
+          "skip"
+        ],
+        "activation": "tanh",
+        "batch_norm_forbidden": true,
+        "trainable_parameter_count_min": 1
+      }
+    },
+    {
+      "id": "f7318b229ef31d8e",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "3a38970082d8cc5e"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "model_file": "model.py",
+        "model_class": "KNO2DNavierStokes",
+        "model_args": {
+          "input_channels": 10,
+          "output_channels": 1,
+          "spatial_shape": [
+            64,
+            64
+          ],
+          "op_size": 32,
+          "modes_x": 12,
+          "modes_y": 12,
+          "evolution_steps": 6,
+          "decompose": 6,
+          "linear_type": true,
+          "normalization": false
+        },
+        "forward_input_shapes": {
+          "pos": [
+            1,
+            4096,
+            2
+          ],
+          "fx": [
+            1,
+            4096,
+            10
+          ]
+        },
+        "expected_output_shape": [
+          1,
+          4096,
+          1
+        ],
+        "no_grad": true,
+        "finite_output": true,
+        "koopman_calls": 6,
+        "pos_shift": 7.0,
+        "pos_must_be_ignored": true,
+        "seed": 20260824
+      }
+    },
+    {
+      "id": "42ef9200ad5370b7",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "f7318b229ef31d8e",
+        "3a38970082d8cc5e"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "candidate": {
+          "model_file": "model.py",
+          "model_class": "KNO2DNavierStokes",
+          "spatial_shape": [
+            24,
+            24
+          ],
+          "input_channels": 10,
+          "output_channels": 1,
+          "op_size": 32,
+          "modes_x": 12,
+          "modes_y": 12,
+          "evolution_steps": 6,
+          "decompose": 6,
+          "linear_type": true,
+          "normalization": false
+        },
+        "reference": {
+          "source": "standard_dir()",
+          "model_file": "model.py",
+          "model_class": "KNO2DNavierStokes",
+          "spatial_shape": [
+            24,
+            24
+          ],
+          "input_channels": 10,
+          "output_channels": 1,
+          "op_size": 32,
+          "modes_x": 12,
+          "modes_y": 12,
+          "evolution_steps": 6,
+          "decompose": 6,
+          "linear_type": true,
+          "normalization": false
+        },
+        "state_schema_alignment": "order_and_shape",
+        "strict_state_dict": true,
+        "compare": "torch.allclose",
+        "atol": 1e-06,
+        "rtol": 1e-06,
+        "no_grad": true,
+        "seed": 20260824
+      }
+    },
+    {
+      "id": "9c305d7678d200b3",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "3a38970082d8cc5e",
+        "f7318b229ef31d8e"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "model.py"
+        ],
+        "model_file": "model.py",
+        "model_class": "KNO2DNavierStokes",
+        "spatial_shape": [
+          24,
+          24
+        ],
+        "optimizer": "AdamW",
+        "learning_rate": 0.001,
+        "weight_decay": 1e-05,
+        "seed": 20260824,
+        "target_seed": 20260825,
+        "steps": 10,
+        "target_shape": [
+          1,
+          576,
+          10
+        ],
+        "teacher_forcing": true,
+        "truth_feedback": "state[...,1:] concatenated with truth",
+        "loss": "mean(torch.stack(mse_losses))",
+        "mse": "torch.nn.functional.mse_loss",
+        "zero_grad_set_to_none": true,
+        "finite_loss": true,
+        "finite_gradients": true,
+        "parameters_must_change": true
+      }
+    },
+    {
+      "id": "973f2ad84590a216",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "544b6d9635a36ca7",
+        "77d65d602658bc5e"
+      ],
+      "params": {
+        "phase": "smoke_train",
+        "artifacts": {
+          "files": [
+            "best_kno_navier_stokes_v1e5.pt",
+            "train.log",
+            "metrics.jsonl",
+            "metrics.csv"
+          ]
+        },
+        "declaration_tokens": [
+          "best_kno_navier_stokes_v1e5.pt",
+          "train.log",
+          "metrics"
+        ],
+        "checkpoint_keys": [
+          "model_state_dict",
+          "model_config",
+          "data_config",
+          "spatial_shape",
+          "epoch",
+          "best_relative_l2"
+        ],
+        "checkpoint_optional_if_absent": true,
+        "checkpoint_loader": "torch.load(map_location=cpu,weights_only=false; fallback without weights_only)",
+        "metrics_glob": [
+          "metrics.jsonl",
+          "metrics.csv"
+        ],
+        "recursive_checkpoint_glob": "**/best_kno_navier_stokes_v1e5.pt"
+      }
+    }
+  ]
+}

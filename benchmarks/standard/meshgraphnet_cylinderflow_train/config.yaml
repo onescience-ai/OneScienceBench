@@ -1,0 +1,47 @@
+# Standalone MeshGraphNet configuration for DeepMind CylinderFlow.
+
+data:
+  root: /public/share/sugonhpcapp01/onestore/onedatasets/vortex_shedding_mgn/cylinder_flow
+  stats_dir: /public/share/sugonhpcapp01/onestore/onedatasets/vortex_shedding_mgn/cylinder_flow/stats
+  train_samples: 400
+  train_steps: 300
+  val_samples: 10
+  val_steps: 300
+  test_samples: 10
+  test_steps: 300
+  noise_std: 0.02
+  num_workers: 4
+  pin_memory: true
+
+model:
+  node_input_dim: 6
+  edge_input_dim: 3
+  output_dim: 3
+  latent_dim: 128
+  processor_steps: 15
+  mlp_hidden_layers: 2
+  activation: relu
+  aggregation: sum
+
+training:
+  seed: 0
+  device: auto
+  epochs: 25
+  batch_size: 1
+  learning_rate: 0.0001
+  lr_decay_rate: 0.9999991
+  loss: mse
+  # "all" preserves the OneScience example. Use "normal_outflow" for the
+  # loss mask used by the original DeepMind CylinderFlow implementation.
+  loss_nodes: all
+  amp: false
+  patience: 50
+  log_interval: 1000
+  output_dir: runs/meshgraphnet_cylinderflow
+  resume: true
+
+evaluation:
+  rollout_split: test
+  rollout_trajectories: 10
+  rollout_steps: 299
+

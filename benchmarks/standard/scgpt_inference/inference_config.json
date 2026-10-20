@@ -1,0 +1,7 @@
+{
+  "external_assets": {
+    "mount_required": true,
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/scGPT/scGPT_human",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/scGPT"
+  }
+}

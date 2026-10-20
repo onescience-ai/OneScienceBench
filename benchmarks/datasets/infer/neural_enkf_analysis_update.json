@@ -1,0 +1,348 @@
+{
+  "id": "neural_enkf_analysis_update",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现带观测掩码的神经集合卡尔曼分析更新推理",
+  "prompt": "实现带观测掩码的神经集合卡尔曼分析更新推理模型文件命名为 neural_enkf_analysis_update.py，定义 NeuralEnKFAnalyzer，默认 state_dim=4、obs_dim=2。analyze(prior, observations, observed_mask=None) 接收 prior [B,ensemble,state_dim]、observations [B,obs_dim] 和 bool observed_mask [B,obs_dim]，按显式 observation_matrix 和 gain 更新 ensemble 状态，未观测时必须恒等返回 prior，不能修改输入。实现 load_checkpoint(path)，NPZ 键必须且仅为 gain、observation_matrix，并严格校验 shape。请在当前工作目录生成且仅生成 neural_enkf_analysis_update.py，禁止下载数据或权重。",
+  "evaluation_script": "evaluate_neural_enkf_analysis_update.py",
+  "stardard_dir_name": "neural_enkf_analysis_update",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "432569ce258a160a",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "neural_enkf_analysis_update.py"
+        ],
+        "legacy_predicate": "is_file"
+      }
+    },
+    {
+      "id": "8c371ac427eeda73",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "432569ce258a160a"
+      ],
+      "params": {
+        "source_file": "neural_enkf_analysis_update.py",
+        "class_name": "NeuralEnKFAnalyzer",
+        "constructor_args": {
+          "state_dim": 4,
+          "obs_dim": 2
+        },
+        "checkpoint_format": "npz",
+        "valid_fixture": {
+          "gain": "standard_default.gain",
+          "observation_matrix": "standard_default.observation_matrix"
+        },
+        "load_result_arrays_equal_standard": [
+          "gain",
+          "observation_matrix"
+        ],
+        "rejection_fixtures": [
+          {
+            "name": "missing_observation_matrix",
+            "payload_keys": [
+              "gain"
+            ],
+            "requires_exception": true
+          },
+          {
+            "name": "wrong_gain_shape",
+            "gain_shape": [
+              1,
+              1
+            ],
+            "observation_matrix": "standard_default.observation_matrix",
+            "requires_exception": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "827e876a2f03a069",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "432569ce258a160a"
+      ],
+      "params": {
+        "source_file": "neural_enkf_analysis_update.py",
+        "class_name": "NeuralEnKFAnalyzer",
+        "constructor_args": {
+          "state_dim": 4,
+          "obs_dim": 2
+        },
+        "attribute_shapes": {
+          "gain": [
+            4,
+            2
+          ],
+          "observation_matrix": [
+            2,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "bc081780687910cc",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "432569ce258a160a"
+      ],
+      "params": {
+        "files": [
+          "neural_enkf_analysis_update.py"
+        ],
+        "class_name": "NeuralEnKFAnalyzer",
+        "required_interfaces": [
+          "NeuralEnKFAnalyzer.analyze",
+          "NeuralEnKFAnalyzer.load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "666258a07ebca483",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "827e876a2f03a069",
+        "bc081780687910cc"
+      ],
+      "params": {
+        "source_file": "neural_enkf_analysis_update.py",
+        "class_name": "NeuralEnKFAnalyzer",
+        "constructor_args": {
+          "state_dim": 4,
+          "obs_dim": 2
+        },
+        "probes": [
+          {
+            "name": "mixed_mask_shape_finite",
+            "prior": {
+              "shape": [
+                3,
+                5,
+                4
+              ],
+              "fill": 0.0
+            },
+            "observations": {
+              "shape": [
+                3,
+                2
+              ],
+              "fill": 1.0
+            },
+            "observed_mask": [
+              [
+                true,
+                true
+              ],
+              [
+                true,
+                false
+              ],
+              [
+                false,
+                false
+              ]
+            ],
+            "assertions": {
+              "shape_from": "prior",
+              "finite": true
+            }
+          },
+          {
+            "name": "all_missing_identity",
+            "prior": {
+              "shape": [
+                3,
+                5,
+                4
+              ],
+              "fill": 0.0
+            },
+            "observations": {
+              "shape": [
+                3,
+                2
+              ],
+              "fill": 1.0
+            },
+            "observed_mask": {
+              "shape": [
+                3,
+                2
+              ],
+              "fill": false,
+              "dtype": "bool"
+            },
+            "assertions": {
+              "array_equal": "prior"
+            }
+          },
+          {
+            "name": "partial_mask_semantics",
+            "prior": {
+              "shape": [
+                1,
+                3,
+                4
+              ],
+              "fill": 0.0
+            },
+            "observations": [
+              [
+                1.0,
+                1.0
+              ]
+            ],
+            "observed_mask": [
+              [
+                true,
+                false
+              ]
+            ],
+            "assertions": {
+              "any_nonzero_state_indices": [
+                0
+              ],
+              "all_exactly_zero_state_indices": [
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          {
+            "name": "nonboolean_mask_rejected",
+            "prior": {
+              "shape": [
+                1,
+                2,
+                4
+              ],
+              "fill": 0.0
+            },
+            "observations": {
+              "shape": [
+                1,
+                2
+              ],
+              "fill": 0.0
+            },
+            "observed_mask": {
+              "shape": [
+                1,
+                2
+              ],
+              "fill": 1.0,
+              "dtype": "float"
+            },
+            "expected_exception": "ValueError"
+          },
+          {
+            "name": "bad_prior_state_dim_rejected",
+            "prior": {
+              "shape": [
+                1,
+                2,
+                3
+              ],
+              "fill": 0.0
+            },
+            "observations": {
+              "shape": [
+                1,
+                2
+              ],
+              "fill": 0.0
+            },
+            "expected_exception": "ValueError"
+          }
+        ]
+      }
+    },
+    {
+      "id": "3897bbb62364d926",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "666258a07ebca483"
+      ],
+      "params": {
+        "candidate": {
+          "source_file": "neural_enkf_analysis_update.py",
+          "class_name": "NeuralEnKFAnalyzer",
+          "method": "analyze"
+        },
+        "reference": {
+          "source_file": "standard/neural_enkf_analysis_update/neural_enkf_analysis_update.py",
+          "class_name": "NeuralEnKFAnalyzer",
+          "method": "analyze"
+        },
+        "inputs": {
+          "prior": {
+            "generator": "arange",
+            "count": 60,
+            "dtype": "float",
+            "shape": [
+              3,
+              5,
+              4
+            ],
+            "divide_by": 10.0
+          },
+          "observations": [
+            [
+              1.0,
+              2.0
+            ],
+            [
+              3.0,
+              4.0
+            ],
+            [
+              5.0,
+              6.0
+            ]
+          ],
+          "observed_mask": "omitted"
+        },
+        "error_tensor": "candidate_analysis-reference_analysis",
+        "reports": [
+          {
+            "name": "analysis_rmse",
+            "value": "sqrt(mean(error_tensor*error_tensor))",
+            "pass_condition": "max(abs(error_tensor)) <= 1e-10"
+          },
+          {
+            "name": "analysis_mae",
+            "value": "mean(abs(error_tensor))",
+            "pass_condition": "max(abs(error_tensor)) <= 1e-10"
+          }
+        ]
+      }
+    }
+  ]
+}

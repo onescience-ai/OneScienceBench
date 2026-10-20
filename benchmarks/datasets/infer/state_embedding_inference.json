@@ -1,0 +1,253 @@
+{
+  "id": "state_embedding_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 STATE 风格单细胞表达 embedding 推理",
+  "prompt": "实现独立于 onescience Python 包的轻量 STATE 风格表达 embedding 模型。StateEmbeddingModel 默认 num_genes=64、hidden_size=32、embedding_size=16、num_layers=3；依次包含 gene_embedding、对 log1p 表达值投影的 value_projection、三层带 gate 的 blocks、pool_gate、embedding_projection 和 decoder。输入非负 [B,64] expression，encode 用 softmax gate pooling 和 L2 归一化输出 [B,16]，decode 用 softplus 重建非负 [B,64]。请在当前工作目录生成且仅生成 state_embedding_inference.py；模型类命名为 StateEmbeddingModel；脚本必须支持 --input-npz、--checkpoint、--output、--batch-size、--device，输入 NPZ 含 expression，严格加载 checkpoint，并将 embeddings 保存到 --output 指定的 NPZ 文件。",
+  "evaluation_script": "evaluate_state_embedding_inference.py",
+  "stardard_dir_name": "state_embedding_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_state_embed_infer"
+  },
+  "checks": [
+    {
+      "id": "8666ede841a28842",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "candidate_filename": "state_embedding_inference.py",
+        "candidate_module_name": "state_infer_candidate",
+        "reference_module_name": "state_infer_reference",
+        "reference_model_file": "benchmarks/standard/state_embedding_inference/state_embedding_inference.py",
+        "standard_config_file": "benchmarks/standard/state_embedding_inference/inference_config.json",
+        "external_assets": {
+          "mount_required": true,
+          "weights": "/public/share/sugonhpcapp01/onestore/onemodels/State",
+          "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/State_dataset"
+        }
+      }
+    },
+    {
+      "id": "0c27bfb90cee7a56",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "8666ede841a28842"
+      ],
+      "params": {
+        "model_file": "state_embedding_inference.py",
+        "reference_model_file": "benchmarks/standard/state_embedding_inference/state_embedding_inference.py",
+        "model_class": "StateEmbeddingModel",
+        "model_args": {
+          "num_genes": 64,
+          "hidden_size": 32,
+          "embedding_size": 16,
+          "num_layers": 3
+        },
+        "strict": true,
+        "reference_checkpoint": {
+          "filename": "reference.pt",
+          "state_dict_key": "model_state_dict",
+          "config_key": "config"
+        },
+        "source_required_substrings": [
+          "torch.load"
+        ],
+        "source_required_attributes": [
+          "load_state_dict"
+        ]
+      }
+    },
+    {
+      "id": "3b30ac954a0ce137",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "0c27bfb90cee7a56"
+      ],
+      "params": {
+        "model_file": "state_embedding_inference.py",
+        "reference_model_file": "benchmarks/standard/state_embedding_inference/state_embedding_inference.py",
+        "model_class": "StateEmbeddingModel",
+        "model_args": {
+          "num_genes": 64,
+          "hidden_size": 32,
+          "embedding_size": 16,
+          "num_layers": 3
+        },
+        "required_component_paths": [
+          "gene_embedding",
+          "value_projection",
+          "blocks",
+          "blocks.0.up_projection",
+          "blocks.0.gate",
+          "pool_gate",
+          "embedding_projection",
+          "decoder"
+        ],
+        "require_nn_module": true,
+        "compare_component_types_to_reference": true,
+        "compare_state_dict_key_order": true,
+        "compare_state_dict_tensor_shapes": true,
+        "compare_named_children_order": true,
+        "constructor_required_parameters": [
+          "num_genes",
+          "hidden_size",
+          "embedding_size",
+          "num_layers"
+        ]
+      }
+    },
+    {
+      "id": "d93546c4d6999287",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "3b30ac954a0ce137"
+      ],
+      "params": {
+        "model_file": "state_embedding_inference.py",
+        "model_class": "StateEmbeddingModel",
+        "model_args": {
+          "num_genes": 64,
+          "hidden_size": 32,
+          "embedding_size": 16,
+          "num_layers": 3
+        },
+        "fixture": {
+          "generator_seed": 83,
+          "random_shape": [
+            3,
+            64
+          ],
+          "random_scale": 4.0
+        },
+        "forward_output_shape": [
+          3,
+          16
+        ],
+        "require_tensor": true,
+        "require_finite": true,
+        "require_exact_repeat_equality": true,
+        "l2_normalization": {
+          "dimension": -1,
+          "target": 1.0,
+          "atol": 1e-05
+        },
+        "zero_expression_shape": [
+          1,
+          64
+        ],
+        "zero_expression_require_finite": true,
+        "inference_context": "torch.inference_mode"
+      }
+    },
+    {
+      "id": "9ce6cc56c919e82a",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "d93546c4d6999287"
+      ],
+      "params": {
+        "source_file": "state_embedding_inference.py",
+        "forbidden_import_roots": [
+          "onescience"
+        ],
+        "required_cli_flags": [
+          "--input-npz",
+          "--checkpoint",
+          "--output",
+          "--batch-size",
+          "--device"
+        ],
+        "no_grad_attributes": [
+          "inference_mode",
+          "no_grad"
+        ],
+        "input_fixture": {
+          "npz_key": "expression",
+          "generator_seed": 89,
+          "random_shape": [
+            4,
+            64
+          ],
+          "dtype": "float32",
+          "random_scale": 3.0
+        },
+        "cli": {
+          "interpreter": "sys.executable",
+          "checkpoint_file": "reference.pt",
+          "output_file": "embeddings.npz",
+          "batch_size": 2,
+          "device": "cpu",
+          "timeout_seconds": 180,
+          "expected_returncode": 0
+        },
+        "artifact": {
+          "path": "embeddings.npz",
+          "must_be_file": true
+        },
+        "partial_checkpoint": {
+          "filename": "partial.pt",
+          "state_dict_key": "model_state_dict",
+          "drop_first_state_dict_item": true,
+          "output_file": "invalid.npz",
+          "timeout_seconds": 180,
+          "require_nonzero_returncode": true
+        }
+      }
+    },
+    {
+      "id": "fdccd45ad8f74e0f",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "d93546c4d6999287",
+        "9ce6cc56c919e82a"
+      ],
+      "params": {
+        "reference_model_file": "benchmarks/standard/state_embedding_inference/state_embedding_inference.py",
+        "forward_fixture": {
+          "generator_seed": 83,
+          "random_shape": [
+            3,
+            64
+          ],
+          "random_scale": 4.0
+        },
+        "forward_comparison": {
+          "candidate_model_context_key": "model",
+          "reference_model_context_key": "reference_model",
+          "atol": 1e-06,
+          "rtol": 1e-06
+        },
+        "artifact_comparison": {
+          "artifact_path_context_key": "artifact",
+          "npz_key": "embeddings",
+          "expected_context_key": "expected",
+          "require_same_shape": true,
+          "atol": 1e-06,
+          "rtol": 1e-06
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,362 @@
+{
+  "id": "earthformer_cross_variable_attention",
+  "eval_type": "sec_develop",
+  "domain": "earth",
+  "task": "为 Earthformer 增加逐网格位置的跨气象变量注意力",
+  "prompt": "完成 Earthformer 跨变量注意力的二次开发。在指定目录中生成 earthformer_cross_variable_attention.py 和 train.py。主文件定义 CrossVariableAttentionBlock(num_variables,hidden_dim,num_heads) 和 EarthformerCrossVariableAttention(num_variables,hidden_dim=16,num_heads=4)。模型输入 x [B,T,V,H,W] 和可选布尔 variable_mask [V] 或 [B,V]；V 必须等于 num_variables。对每个 batch、时间和空间位置，把 V 个标量分别经 Linear(1,hidden_dim) 投影并加可训练变量 Embedding，然后在变量轴使用 batch_first MultiheadAttention 和 key padding mask，经过残差 LayerNorm 与 Linear(hidden_dim,1) 投回标量。输出必须保持 [B,T,V,H,W]、数值有限，并把无效变量严格置零；每个样本至少一个有效变量，hidden_dim 可被 num_heads 整除。train.py 提供 build_model(config=None) 和 train_step(model,inputs,targets,optimizer,variable_mask=None)，masked MSE 只统计有效变量并完成一次参数更新。对变量数、shape、mask 或构造参数非法的输入抛出明确异常。",
+  "evaluation_script": "evaluate_earthformer_cross_variable_attention.py",
+  "stardard_dir_name": "earthformer_cross_variable_attention",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "ntasks_per_node": 1,
+    "cpus_per_task": 4,
+    "time": "00:30:00",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+    "checks": [
+        {
+            "id": "1fa21c98fb12ef00",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": ["earthformer_cross_variable_attention.py", "train.py"]
+            }
+        },
+        {
+            "id": "90b9d328551c2dd9",
+            "type": "data_schema",
+            "method": "check_data_schema",
+            "phase": "data_analysis",
+            "depends": [],
+            "params": {
+                "pre_hooks": [
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 4, 4, 5],
+                            "device": "$device"
+                        },
+                        "save_as": "x"
+                    },
+                    {
+                        "function": "tensor",
+                        "args": {
+                            "data": [
+                                [true, true, false, true],
+                                [true, false, true, true]
+                            ],
+                            "device": "$device"
+                        },
+                        "save_as": "mask"
+                    }
+                ],
+                "schema": [{"path_key": "x", "shape": {"dims": [2, 3, 4, 4, 5]}}, {"path_key": "mask", "shape": {"dims": [2, 4]}, "dtype": "bool"}]
+            }
+        },
+        {
+            "id": "0546a67d06eb6222",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": ["1fa21c98fb12ef00"],
+            "params": {
+                "files": ["earthformer_cross_variable_attention.py"],
+                "required_interfaces": ["CrossVariableAttentionBlock", "EarthformerCrossVariableAttention"]
+            }
+        },
+        {
+            "id": "c45aeb594f1a89ea",
+            "type": "model_structure",
+            "method": "check_model_structure",
+            "phase": "model_structure",
+            "depends": ["0546a67d06eb6222"],
+            "params": {
+                "model_file": "train.py",
+                "pre_model_hooks": [
+                    {
+                        "function": "build_model",
+                        "args": {
+                            "config": {
+                                "num_variables": 4,
+                                "hidden_dim": 16,
+                                "num_heads": 4
+                            }
+                        },
+                        "save_as": "model"
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "root_model_type",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "expected": "EarthformerCrossVariableAttention",
+                            "match": "any"
+                        }
+                    },
+                    {
+                        "id": "cross_variable_block",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "selector": {
+                                "class_name": "CrossVariableAttentionBlock"
+                            },
+                            "expected": "CrossVariableAttentionBlock",
+                            "match": "any"
+                        }
+                    },
+                    {
+                        "id": "value_projection",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "selector": {
+                                "module_type": "linear"
+                            },
+                            "in_features": 1,
+                            "out_features": 16,
+                            "match": "any"
+                        }
+                    },
+                    {
+                        "id": "variable_embedding",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "selector": {
+                                "module_type": "embedding"
+                            },
+                            "expected": "Embedding",
+                            "match": "any"
+                        }
+                    },
+                    {
+                        "id": "attention",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "expected": "MultiheadAttention",
+                            "match": "any"
+                        }
+                    },
+                    {
+                        "id": "normalization",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "selector": {
+                                "module_type": "layernorm"
+                            },
+                            "expected": "LayerNorm",
+                            "match": "any"
+                        }
+                    },
+                    {
+                        "id": "output_projection",
+                        "type": "linear_shape",
+                        "severity": "error",
+                        "params": {
+                            "selector": {
+                                "module_type": "linear"
+                            },
+                            "in_features": 16,
+                            "out_features": 1,
+                            "match": "any"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "77e2d5a844afd52a",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": ["0546a67d06eb6222"],
+            "params": {
+                "model_file": "train.py",
+                "pre_forward_hooks": [
+                    {
+                        "function": "build_model",
+                        "args": {
+                            "config": {
+                                "num_variables": 4,
+                                "hidden_dim": 16,
+                                "num_heads": 4
+                            }
+                        },
+                        "save_as": "model"
+                    },
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 4, 4, 5],
+                            "device": "$device"
+                        },
+                        "save_as": "x"
+                    },
+                    {
+                        "function": "tensor",
+                        "args": {
+                            "data": [
+                                [true, true, false, true],
+                                [true, false, true, true]
+                            ],
+                            "device": "$device"
+                        },
+                        "save_as": "mask"
+                    }
+                ],
+                "forward_args": {
+                    "x": "$x",
+                    "variable_mask": "$mask"
+                },
+                "out_shape": [2, 3, 4, 4, 5],
+                "mask_atol": 1e-07
+            }
+        },
+        {
+            "id": "f544d238b83dcec6",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": ["0546a67d06eb6222"],
+            "params": {
+                "model_file": "train.py",
+                "pre_forward_hooks": [
+                    {
+                        "function": "build_model",
+                        "args": {
+                            "config": {
+                                "num_variables": 4,
+                                "hidden_dim": 16,
+                                "num_heads": 4
+                            }
+                        },
+                        "save_as": "model"
+                    },
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 4, 4, 5],
+                            "device": "$device"
+                        },
+                        "save_as": "x"
+                    },
+                    {
+                        "function": "tensor",
+                        "args": {
+                            "data": [
+                                [true, true, true, true],
+                                [true, true, true, true]
+                            ],
+                            "device": "$device"
+                        },
+                        "save_as": "mask"
+                    }
+                ],
+                "forward_args": {
+                    "x": "$x",
+                    "variable_mask": "$mask"
+                },
+                "permutation": [1, 0, 2, 3]
+            }
+        },
+        {
+            "id": "1bfe613f22039b6d",
+            "type": "train_interface",
+            "method": "check_interface",
+            "phase": "train_script",
+            "depends": ["1fa21c98fb12ef00"],
+            "params": {
+                "files": ["train.py"],
+                "required_interfaces": ["build_model", "train_step"]
+            }
+        },
+        {
+            "id": "9dcbe5e7cb0fbc7c",
+            "type": "parameter_update",
+            "method": "check_parameter_update",
+            "phase": "train_script",
+            "depends": ["1fa21c98fb12ef00"],
+            "params": {
+                "files": ["train.py"],
+                "train_fn_name": "train_step",
+                "optimizer_param_index": 3
+            }
+        },
+        {
+            "id": "a194009366e06047",
+            "type": "smoke_training",
+            "method": "check_smoke_training",
+            "phase": "smoke_train",
+            "depends": ["0546a67d06eb6222", "1bfe613f22039b6d"],
+            "params": {
+                "run_file": "train.py",
+                "train_fn_name": "train_step",
+                "smoke_config": {},
+                "pre_train_hooks": [
+                    {
+                        "function": "build_model",
+                        "args": {
+                            "config": {
+                                "num_variables": 4,
+                                "hidden_dim": 16,
+                                "num_heads": 4
+                            }
+                        },
+                        "save_as": "model"
+                    },
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 4, 4, 5],
+                            "device": "$device"
+                        },
+                        "save_as": "x"
+                    },
+                    {
+                        "function": "randn_like",
+                        "args": {
+                            "input": "$x"
+                        },
+                        "save_as": "target"
+                    },
+                    {
+                        "function": "tensor",
+                        "args": {
+                            "data": [
+                                [true, true, false, true],
+                                [true, false, true, true]
+                            ],
+                            "device": "$device"
+                        },
+                        "save_as": "mask"
+                    }
+                ],
+                "train_args": {
+                    "model": "$model",
+                    "inputs": "$x",
+                    "targets": "$target",
+                    "optimizer": "$optimizer",
+                    "variable_mask": "$mask"
+                },
+                "optimizer_args": {
+                    "lr": 0.001
+                },
+                "args_as_positional": true
+            }
+        }
+    ]
+}

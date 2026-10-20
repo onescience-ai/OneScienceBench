@@ -1,0 +1,7 @@
+{
+  "external_assets": {
+    "mount_required": true,
+    "weights": "/public/share/sugonhpcapp01/onestore/onedatasets/GenScore/trained_models/GatedGCN_0.5_2.pth",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/GenScore/genscore_data"
+  }
+}

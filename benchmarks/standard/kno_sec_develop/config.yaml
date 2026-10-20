@@ -1,0 +1,59 @@
+root:
+  common:
+    device: "auto"
+    seed: 0
+
+  datapipe:
+    source:
+      data_dir: "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/ns"
+      file_name: "NavierStokes_V1e-5_N1200_T20.mat"
+    data:
+      ntrain: 1000
+      ntest: 200
+      t_in: 10
+      max_horizon: 10
+      out_dim: 1
+      downsamplex: 1
+      downsampley: 1
+      normalize: false
+    dataloader:
+      batch_size: 8
+      num_workers: 0
+      pin_memory: true
+      drop_last: false
+
+  model:
+    name: "KNO2DNavierStokes"
+    input_channels: 10
+    output_channels: 1
+    op_size: 32
+    low_modes_x: 12
+    low_modes_y: 12
+    high_modes_x: 24
+    high_modes_y: 24
+    decompose: 6
+    linear_type: true
+    normalization: false
+    gate_init: 0.0
+
+  training:
+    output_dir: "results/kno_multiscale_seed0"
+    init_checkpoint: "/public/share/sugonhpcapp01/onestore/paper_repro/weight/best_kno_navier_stokes_v1e5.pt"
+    epochs: 500
+    learning_rate: 0.001
+    weight_decay: 0.00001
+    scheduler_step_size: 100
+    scheduler_gamma: 0.5
+    max_grad_norm: null
+    max_train_batches: null
+    max_validation_batches: null
+    curriculum:
+      horizons: [1, 2, 5, 10]
+      stage_fractions: [0.0, 0.25, 0.5, 0.75]
+      teacher_forcing_start: 1.0
+      teacher_forcing_end: 0.0
+    loss:
+      mse_weight: 1.0
+      relative_l2_weight: 0.1
+      spectral_weight: 0.1
+      far_step_weight: 2.0

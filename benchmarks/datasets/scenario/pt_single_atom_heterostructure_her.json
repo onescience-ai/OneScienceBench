@@ -1,0 +1,60 @@
+{
+    "id": "pt_single_atom_heterostructure_her",
+    "eval_type": "scenario",
+    "domain": "matchem",
+    "task": "Pt单原子异质结构碱性析氢优化",
+    "prompt": "围绕 Pt 单原子异质结构碱性析氢优化，采用常规实验合成-表征-电化学优化路线，按顺序执行样品制备与工艺矩阵、结构与组成表征、碱性 HER 测试及统计优化验证：由 sample_preparation.py:run_process_matrix 调用 ProcessMatrixBuilder 和 SynthesisBatchRecord 完成制备载体/异质界面，precursor_loading_range 与 thermal_chemical_treatment 从已声明制备配方读取，reaction_condition 严格使用声明值，不改变 target_product 或 temperature_K，并记录 sample_preparation_records.json、process_matrix.csv；由 characterization.py:run_complementary_characterization 调用 ComplementaryCharacterizationRunner 和 SingleAtomEvidenceEvaluator 进行 HAADF-STEM 成像，single_atom_criteria 按已确认单原子判据执行；判据缺失时标记 BLOCKED，sample_batch_source 读取 process_matrix.csv 中的样品和批次，形成 characterization_summary.json、single_atom_evidence.json；由 electrochemistry.py:run_alkaline_her_testing 调用 AlkalineHERTester 和 GasAndFaradaicAnalyzer 开展碱性 HER 极化，reaction_condition 严格使用声明的 target_product 和 temperature_K，electrode_protocol 要求电极配方、面积、参比电极、碱浓度、气体管理必须已确认，否则 BLOCKED，target_metrics_and_replicates 要求目标电流密度/过电位、稳定性时长、法拉第效率和统计重复数必须已声明，否则 BLOCKED，输出 polarization_tafel_eis.json、stability_gas_analysis.json；由 optimization.py:run_doe_anova_validation 调用 DOEANOVAOptimizer 和 ValidationStudy 实施独立批次与对照设计，statistical_design 采用 DOE/ANOVA 或层级统计模型；具体设计需确认，replicate_count_and_controls 要求独立批次、空白、规定对照和统计重复数均需声明；缺失则 BLOCKED，生成 doe_anova_results.json、optimization_validation_report.json、pre_post_structure_comparison.json；所有关键结果须可追溯，核心问题须有证据支持或明确标记 BLOCKED，最终交付工艺-结构-性能统计关联、最优配方与验证报告及测试前后结构对比。",
+    "evaluation_script": "",
+    "stardard_dir_name": "",
+    "evaluation_execution_mode": "scnet",
+    "evaluation_backend": "local",
+    "evaluation_env": {
+        "conda_env": "onescience311",
+        "partition": "hx1hdnormal01",
+        "nodes": 1,
+        "dcu": 1,
+        "cpus_per_task": 8,
+        "memory": "16G"
+    },
+    "checks": [
+        {
+            "id": "6058d3d25de94b14",
+            "type": "agent_execution",
+            "method": "None",
+            "phase": "agent_execution",
+            "depdends": [],
+            "params": {
+                "rubric": [
+                    {
+                        "check_name": "样品制备与工艺矩阵",
+                        "task_understanding": "本阶段的任务是制备载体/异质界面并通过受控前驱体、负载和热/化学处理得到候选样品，同时冻结可复现的参数窗口，以 催化剂结构或制备信息 所指定的 CIF/POSCAR/制备配方、Pt前驱体、负载范围及热/化学处理条件 所指定的 CIF/POSCAR/制备配方以及反应条件 所指定的 {\"target_product\":\"specified product\",\"temperature_K\":298} 为输入，预期形成 样品制备记录（保存为 sample_preparation_records.json）以及合成参数窗口与工艺矩阵（保存为 process_matrix.csv）；若出现“缺少可执行合成窗口、关键前驱体/载体流程，或批次与偏离无法追溯；活性位、目标产物或竞争反应定义不完整”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是受控前驱体负载与载体/界面制备、按热/化学处理条件生成候选样品、记录批次、偏离和可追溯原始数据以及建立活性位与竞争反应网络定义的输入边界，并选用 DOE/ANOVA 或层级统计模型，用于记录候选工艺空间并为后续优化提供设计字段 作为模型，并配备 受控合成设备、电极制备设备（如制备流程声明需要）以及数据记录与版本化工具 作为工具，并将 precursor_loading_range 的取值或规则确定为 从已声明制备配方读取、将 thermal_chemical_treatment 的取值或规则确定为 从已声明制备配方读取以及将 reaction_condition 的取值或规则确定为 严格使用声明值，不改变 target_product 或 temperature_K，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 sample_preparation.py:run_process_matrix 为入口，由 ProcessMatrixBuilder（负责 生成样品制备工艺矩阵并记录批次与参数偏离）以及SynthesisBatchRecord（负责 保存单批次前驱体、负载、处理条件和可追溯记录） 承担实现，完成 制备载体/异质界面、受控前驱体负载、热/化学处理、批次与偏离登记以及形成可追溯工艺矩阵，并将阶段产物写入 sample_preparation_records.json以及process_matrix.csv。",
+                        "result_verification": "本阶段的正确结果应包含 样品制备记录（保存为 sample_preparation_records.json）以及合成参数窗口与工艺矩阵（保存为 process_matrix.csv），并且 产物结构与配置达到 entrypoint 可解析为 module-or-file:callable以及输出 file_name 为相对路径且不含阶段序号前缀、执行状态达到 输入文件存在、字段完整性和批次编号唯一以及记录工艺参数单位、时间戳、操作者及偏离原因、科学结果达到 核对 Pt 前驱体、负载范围及热/化学处理条件与确认范围一致以及竞争反应未被忽略并保留空白/对照需求以及数据使用不得 使用后续表征或性能结果反向修改预先声明的工艺参数以及将关联论文或历史数据当作本批次新结果，同时 文件证据包括 sample_preparation_records.json以及process_matrix.csv、日志证据包括 sample_preparation.log、指标证据包括 batch_count、precursor_loading_range以及thermal_chemical_treatment_deviation以及哈希证据包括 sha256:待生成；只有在 每个候选批次均有完整制备记录、参数窗口和偏离；活性位、目标产物及竞争反应均已明确或明确标记 BLOCKED 时才可认定为通过（PASS），若出现“缺少可执行合成窗口、关键前驱体/载体流程，或批次与偏离无法追溯；活性位、目标产物或竞争反应定义不完整”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "结构与组成表征",
+                        "task_understanding": "本阶段的任务是用成分、价态、配位和分散度表征排除 Pt 团簇及批次失控，并形成可核查的单原子证据，以 前序产物 process_matrix.csv（对应 候选样品及批次工艺矩阵）、计算或表征配置 所指定的 {\"method\":\"experiment_or_user_confirmed_simulation\"}以及前序产物 sample_preparation_records.json（对应 原始样品制备记录） 为输入，预期形成 结构与组成表征汇总（保存为 characterization_summary.json）以及单原子分散与团簇排除证据（保存为 single_atom_evidence.json）；若出现“缺少互补表征、对照、校准或单原子判据，无法排除 Pt 团簇或批次失控”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是采集 HAADF-STEM、XAS/XPS、ICP-MS、XRD 等互补表征、进行谱图拟合、组成定量和配位/价态分析、用空白、Pt 纳米颗粒、商业 Pt/C 或其他规定对照排除团簇以及记录参考态、校准、样本范围和不确定度，并选用 谱图拟合模型、配位/价态分析模型以及法拉第效率和质量/几何活性归一化模型 作为模型，并配备 HAADF-STEM、XAS/XPS、ICP-MS、XRD以及谱图拟合和不确定度分析工具 作为工具，并将 characterization_method 的取值或规则确定为 严格使用 experiment_or_user_confirmed_simulation；其他方法需用户确认、将 single_atom_criteria 的取值或规则确定为 按已确认单原子判据执行；判据缺失时标记 BLOCKED以及将 sample_batch_source 的取值或规则确定为 读取 process_matrix.csv 中的样品和批次，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 characterization.py:run_complementary_characterization 为入口，由 ComplementaryCharacterizationRunner（负责 编排多手段结构与组成表征并汇总跨手段证据）以及SingleAtomEvidenceEvaluator（负责 依据互补表征和对照评估单原子分散、配位及团簇排除状态） 承担实现，完成 HAADF-STEM 成像、XAS/XPS 谱图采集与拟合、ICP-MS 含量测定、XRD 结构检查以及互补证据与团簇排除判定，并将阶段产物写入 characterization_summary.json以及single_atom_evidence.json。",
+                        "result_verification": "本阶段的正确结果应包含 结构与组成表征汇总（保存为 characterization_summary.json）以及单原子分散与团簇排除证据（保存为 single_atom_evidence.json），并且 产物结构与配置达到 所有输出为唯一相对固定文件名以及entrypoint 和 required_classes 模块路径可解析、执行状态达到 原始谱图、校准文件、仪器日志和样品批次一一对应以及谱图拟合收敛、残差和不确定度记录、科学结果达到 单原子分散证据和 Pt 含量与判据一致以及比较测试前后或不同批次的结构差异，无法完成时标记 BLOCKED以及数据使用不得 表征人员和分析流程不得读取未解盲的性能排名来选择性解释谱图以及将模型预测写入原始表征数据，同时 文件证据包括 characterization_raw_data/、characterization_summary.json以及single_atom_evidence.json、日志证据包括 characterization.log以及spectra_fit.log、指标证据包括 Pt_content、oxidation_state_distribution、coordination_number、dispersion_fraction以及cluster_exclusion_status以及哈希证据包括 sha256:待生成；只有在 至少两类互补结构/组成证据与规定对照一致，Pt 含量、价态、配位和分散度均有定义、单位、样本范围和不确定度 时才可认定为通过（PASS），若出现“缺少互补表征、对照、校准或单原子判据，无法排除 Pt 团簇或批次失控”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "电化学性能测试",
+                        "task_understanding": "本阶段的任务是按预注册协议进行碱性 HER 极化、Tafel、EIS、稳定性和产气分析，获得可比较的实测电化学指标，以 反应条件 所指定的 {\"target_product\":\"specified product\",\"temperature_K\":298}、前序产物 characterization_summary.json（对应 结构与组成表征汇总）以及前序产物 single_atom_evidence.json（对应 单原子分散与团簇排除证据） 为输入，预期形成 极化、Tafel 与 EIS 结果（保存为 polarization_tafel_eis.json）以及稳定性与产气分析结果（保存为 stability_gas_analysis.json）；若出现“关键电极/工况协议、目标指标、稳定性时长或统计重复数未确认；面积、iR 校正或气体定量不一致”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是按预注册协议制备电极并定义几何/质量活性归一化、进行碱性 HER 极化、Tafel、EIS、长期恒电流或恒电位测试、执行 iR 校正、气体定量和法拉第效率计算以及使用空白、Pt 纳米颗粒、商业 Pt/C 或其他规定对照并记录重复，并选用 电化学极化模型、Tafel 模型、EIS 等效电路模型、法拉第效率模型以及质量/几何活性归一化模型 作为模型，并配备 电化学工作站、受控电极制备设备、气相/质谱产物分析仪、温度与气体管理设备以及数据统计和不确定度分析工具 作为工具，并将 reaction_condition 的取值或规则确定为 严格使用声明的 target_product 和 temperature_K、将 electrode_protocol 的取值或规则确定为 电极配方、面积、参比电极、碱浓度、气体管理必须已确认，否则 BLOCKED以及将 target_metrics_and_replicates 的取值或规则确定为 目标电流密度/过电位、稳定性时长、法拉第效率和统计重复数必须已声明，否则 BLOCKED，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 electrochemistry.py:run_alkaline_her_testing 为入口，由 AlkalineHERTester（负责 执行统一电极协议下的极化、Tafel、EIS 和稳定性测试）以及GasAndFaradaicAnalyzer（负责 定量产气并计算法拉第效率及不确定度） 承担实现，完成 碱性 HER 极化、Tafel 拟合、EIS 测量与等效电路拟合、长期恒电流/恒电位稳定性、气相/质谱产物分析以及iR 校正与面积归一化，并将阶段产物写入 polarization_tafel_eis.json以及stability_gas_analysis.json。",
+                        "result_verification": "本阶段的正确结果应包含 极化、Tafel 与 EIS 结果（保存为 polarization_tafel_eis.json）以及稳定性与产气分析结果（保存为 stability_gas_analysis.json），并且 产物结构与配置达到 禁止输出文件覆盖前序阶段文件以及entrypoint 使用 module-or-file:callable 形式、执行状态达到 电极面积、参比电极、温度、碱浓度和气体流量记录以及工作站、EIS 和气体分析仪校准及时间同步、科学结果达到 报告过电位、Tafel 参数、EIS 参数、稳定性保持率和法拉第效率及不确定度以及长期测试前后安排结构对比或明确标记 BLOCKED以及数据使用不得 电化学测试和参数拟合不得读取后续统计优化结果来调整采样以及选择性删除不利重复或异常而不记录理由，同时 文件证据包括 electrochemical_raw_data/、polarization_tafel_eis.json以及stability_gas_analysis.json、日志证据包括 electrochemical_workstation.log、gas_analysis.log以及stability_test.log、指标证据包括 overpotential_mV、tafel_slope_mV_dec、eis_parameters、stability_retention_percent以及faradaic_efficiency_percent以及哈希证据包括 sha256:待生成；只有在 同一面积定义、iR 校正和气体定量协议下完成规定重复、空白和对照；极化、Tafel、EIS、长期稳定性和法拉第效率均有原始证据 时才可认定为通过（PASS），若出现“关键电极/工况协议、目标指标、稳定性时长或统计重复数未确认；面积、iR 校正或气体定量不一致”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    },
+                    {
+                        "check_name": "统计优化与验证",
+                        "task_understanding": "本阶段的任务是通过重复样、对照样和统计设计确定工艺-结构-性能关系，验证并确定最优配方，同时明确证据边界，以 前序产物 polarization_tafel_eis.json（对应 极化、Tafel 与 EIS 结果）、前序产物 stability_gas_analysis.json（对应 稳定性与产气分析结果）、前序产物 characterization_summary.json（对应 结构与组成表征汇总）以及前序产物 single_atom_evidence.json（对应 单原子分散与团簇排除证据） 为输入，预期形成 工艺-结构-性能统计关联（保存为 doe_anova_results.json）、最优配方与验证报告（保存为 optimization_validation_report.json）以及测试前后结构对比（保存为 pre_post_structure_comparison.json）；若出现“缺少独立批次、空白、规定对照、统计重复数或长期验证；预测与实验未分列；存在未关闭的关键 PARTIAL、REJECT 或 BLOCKED”所描述的情形，应保留问题状态并阻止依赖该结果的后续执行。",
+                        "reasoning_decision": "本阶段的正确决策是建立 DOE/ANOVA 或层级统计模型、使用独立批次、空白和规定对照估计工艺-结构-性能效应、进行候选排序、最优配方验证和预测-实验分列以及汇总前后结构对比、适用范围、不确定度和证据血缘，并选用 DOE/ANOVA 模型、层级统计模型、预测不确定度与置信区间模型以及法拉第效率和质量/几何活性归一化模型 作为模型，并配备 数据统计工具、谱图拟合和不确定度分析计算资源、电化学工作站及产物分析工具（用于验证复测）以及结构表征设备（用于前后对比） 作为工具，并将 statistical_design 的取值或规则确定为 采用 DOE/ANOVA 或层级统计模型；具体设计需确认、将 replicate_count_and_controls 的取值或规则确定为 独立批次、空白、规定对照和统计重复数均需声明；缺失则 BLOCKED以及将 performance_inputs 的取值或规则确定为 读取 polarization_tafel_eis.json 与 stability_gas_analysis.json，不改写原始值，且上述方法、模型、工具与参数均应在执行前确定。",
+                        "execution_process": "正确执行方式是以 optimization.py:run_doe_anova_validation 为入口，由 DOEANOVAOptimizer（负责 拟合工艺-结构-性能统计模型并计算效应、显著性和不确定度）以及ValidationStudy（负责 执行独立批次、空白、规定对照及长期验证并分列预测与实验结果） 承担实现，完成 独立批次与对照设计、工艺-结构-性能关联分析、候选排序与最优配方确定、长期恒电流/恒电位验证、测试前后结构比较以及PASS/PARTIAL/REJECT/BLOCKED 判定，并将阶段产物写入 doe_anova_results.json、optimization_validation_report.json以及pre_post_structure_comparison.json。",
+                        "result_verification": "本阶段的正确结果应包含 工艺-结构-性能统计关联（保存为 doe_anova_results.json）、最优配方与验证报告（保存为 optimization_validation_report.json）以及测试前后结构对比（保存为 pre_post_structure_comparison.json），并且 产物结构与配置达到 所有输出 file_name 唯一且为安全相对路径以及entrypoint、class module_path 和 provenance 符合约束、执行状态达到 每个样品的批次、对照、重复和缺失值记录以及模型收敛、残差、置信区间和多重比较处理、科学结果达到 结构、组成、界面和性能关联不混入负载量、润湿性、导电性或传质差异的未控制影响以及报告已证实、探索性、限制和无法回答的问题以及数据使用不得 统计模型不得使用验证批次标签或最终结论反向选择特征以及候选排序必须在验证数据解盲前冻结分析规则，同时 文件证据包括 doe_anova_results.json、optimization_validation_report.json以及pre_post_structure_comparison.json、日志证据包括 statistical_model.log以及validation_runs.log、指标证据包括 effect_sizes、anova_p_values、confidence_intervals、prediction_error以及optimal_recipe_score以及哈希证据包括 sha256:待生成；只有在 工艺-结构-性能关联、候选排序和最优配方均有可追溯原始数据、效应量和不确定度；预测与实验结果分列；前后结构比较已完成或明确 BLOCKED 时才可认定为通过（PASS），若出现“缺少独立批次、空白、规定对照、统计重复数或长期验证；预测与实验未分列；存在未关闭的关键 PARTIAL、REJECT 或 BLOCKED”所描述的情形则应认定为失败或受阻（FAIL）。"
+                    }
+                ]
+            }
+        }
+    ]
+}

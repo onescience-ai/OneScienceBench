@@ -1,0 +1,15 @@
+python exp_elas.py \
+--gpu 0 \
+--model Functional_Attention_Irregular_Mesh_Shared \
+--n-hidden 128 \
+--n-layers 8 \
+--n-heads 8 \
+--lr 0.001 \
+--mlp_ratio 2 \
+--batch-size 1 \
+--basis_num 64 \
+--unified_pos 0 \
+--ref 8 \
+--eval 0 \
+--save_name elas \
+--weight_decay 1e-5 \

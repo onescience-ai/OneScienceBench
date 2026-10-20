@@ -1,0 +1,315 @@
+{
+  "id": "genscore_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 GenScore 风格蛋白配体亲和力推理",
+  "prompt": "实现独立于 onescience Python 包的轻量 GenScore 风格亲和力模型。GenScoreModel 默认 ligand_features=8、pocket_features=10、hidden_size=32、radial_bins=8、num_layers=2；依次包含 ligand_encoder、pocket_encoder、distance_expansion、ligand_layers、pocket_layers、cross_projection、score_head。用三维坐标距离生成 RBF edge gate，双图消息传递后融合 pooled 图表征、逐元素交互和最近跨图距离；输入为 [B,L,8]/[B,L,3] 与 [B,P,10]/[B,P,3] 及布尔 mask，输出 [B] affinity 且共同平移坐标不改变分数。请在当前工作目录生成且仅生成 genscore_inference.py；模型类命名为 GenScoreModel；脚本必须支持 --complex-npz、--checkpoint、--output、--device，输入 NPZ 含配体/口袋特征、三维坐标和 mask，严格加载 checkpoint，并将 scores 写入 --output 指定的 JSON 文件。",
+  "evaluation_script": "evaluate_genscore_inference.py",
+  "stardard_dir_name": "genscore_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_genscore_infer"
+  },
+  "checks": [
+    {
+      "id": "c0987061a644516c",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "submission_filename": "genscore_inference.py",
+        "candidate_module_name": "genscore_candidate",
+        "reference_module_name": "genscore_reference",
+        "reference_filename": "genscore_inference.py",
+        "standard_config": "inference_config.json",
+        "external_assets": {
+          "mount_required": true,
+          "required_path_keys": [
+            "weights",
+            "dataset"
+          ]
+        }
+      }
+    },
+    {
+      "id": "f13cb8742895a40c",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "c0987061a644516c"
+      ],
+      "params": {
+        "model_class": "GenScoreModel",
+        "constructor_args": {
+          "ligand_features": 8,
+          "pocket_features": 10,
+          "hidden_size": 32,
+          "radial_bins": 8,
+          "num_layers": 2
+        },
+        "strict": true,
+        "reference_state_dict_fixture": true,
+        "checkpoint_fixture": {
+          "filename": "reference.pt",
+          "payload_keys": [
+            "model_state_dict",
+            "config"
+          ],
+          "config_equals_constructor_args": true
+        },
+        "source_requirements": {
+          "contains": [
+            "torch.load"
+          ],
+          "called_attributes": [
+            "load_state_dict"
+          ]
+        }
+      }
+    },
+    {
+      "id": "f61a72356c1df412",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "f13cb8742895a40c"
+      ],
+      "params": {
+        "model_class": "GenScoreModel",
+        "constructor_args": {
+          "ligand_features": 8,
+          "pocket_features": 10,
+          "hidden_size": 32,
+          "radial_bins": 8,
+          "num_layers": 2
+        },
+        "require_nn_module": true,
+        "reference_model": true,
+        "required_component_paths": [
+          "ligand_encoder",
+          "pocket_encoder",
+          "distance_expansion",
+          "ligand_layers",
+          "ligand_layers.0.edge_gate",
+          "pocket_layers",
+          "cross_projection",
+          "score_head"
+        ],
+        "compare_component_type_to_reference": true,
+        "require_state_dict_key_order_and_shapes_match_reference": true,
+        "require_named_children_order_match_reference": true,
+        "required_constructor_parameters": [
+          "ligand_features",
+          "pocket_features",
+          "hidden_size",
+          "radial_bins",
+          "num_layers"
+        ]
+      }
+    },
+    {
+      "id": "41ea24752219ec09",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "f61a72356c1df412"
+      ],
+      "params": {
+        "model_class": "GenScoreModel",
+        "constructor_args": {
+          "ligand_features": 8,
+          "pocket_features": 10,
+          "hidden_size": 32,
+          "radial_bins": 8,
+          "num_layers": 2
+        },
+        "fixture": {
+          "seed": 71,
+          "ligand_features_shape": [
+            2,
+            5,
+            8
+          ],
+          "ligand_coordinates_shape": [
+            2,
+            5,
+            3
+          ],
+          "pocket_features_shape": [
+            2,
+            7,
+            10
+          ],
+          "pocket_coordinates_shape": [
+            2,
+            7,
+            3
+          ],
+          "ligand_mask": [
+            [
+              true,
+              true,
+              true,
+              true,
+              false
+            ],
+            [
+              true,
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          "pocket_mask": [
+            [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              false
+            ],
+            [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true
+            ]
+          ]
+        },
+        "inference_mode": true,
+        "expected_output": {
+          "type": "torch.Tensor",
+          "shape": [
+            2
+          ],
+          "finite": true
+        },
+        "determinism": {
+          "repetitions": 2,
+          "exact_equal": true
+        },
+        "common_coordinate_translation": {
+          "shift": [
+            3.0,
+            -2.0,
+            1.0
+          ],
+          "atol": 1e-06
+        },
+        "invalid_coordinates": {
+          "slice_last_dimension": 2,
+          "exception": "ValueError"
+        }
+      }
+    },
+    {
+      "id": "84e3a12600b13c50",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "41ea24752219ec09"
+      ],
+      "params": {
+        "script_path": "genscore_inference.py",
+        "prohibited_import_roots": [
+          "onescience"
+        ],
+        "required_cli_flags": [
+          "--complex-npz",
+          "--checkpoint",
+          "--output",
+          "--device"
+        ],
+        "required_called_attributes_any": [
+          "inference_mode",
+          "no_grad"
+        ],
+        "npz_fixture": {
+          "filename": "complex.npz",
+          "keys": [
+            "ligand_features",
+            "ligand_coordinates",
+            "pocket_features",
+            "pocket_coordinates",
+            "ligand_mask",
+            "pocket_mask"
+          ]
+        },
+        "command": {
+          "interpreter": "sys.executable",
+          "device": "cpu",
+          "timeout_seconds": 180
+        },
+        "checkpoint": {
+          "filename": "reference.pt",
+          "payload_keys": [
+            "model_state_dict",
+            "config"
+          ]
+        },
+        "output": {
+          "filename": "scores.json",
+          "must_be_regular_file": true
+        },
+        "partial_checkpoint": {
+          "filename": "partial.pt",
+          "construction": "remove_first_state_dict_item",
+          "must_fail": true
+        }
+      }
+    },
+    {
+      "id": "687b423f8ded4d89",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "84e3a12600b13c50"
+      ],
+      "params": {
+        "model_class": "GenScoreModel",
+        "constructor_args": {
+          "ligand_features": 8,
+          "pocket_features": 10,
+          "hidden_size": 32,
+          "radial_bins": 8,
+          "num_layers": 2
+        },
+        "fixture_seed": 71,
+        "inference_mode": true,
+        "forward_reference_equivalence": {
+          "atol": 1e-06,
+          "rtol": 1e-06
+        },
+        "artifact_oracle": {
+          "path": "scores.json",
+          "json_key": "scores",
+          "compare_to": "reference_model_fixture_output",
+          "require_shape_match": true,
+          "atol": 1e-06,
+          "rtol": 1e-06
+        }
+      }
+    }
+  ]
+}

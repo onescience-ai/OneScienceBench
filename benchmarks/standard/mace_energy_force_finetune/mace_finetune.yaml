@@ -1,0 +1,13 @@
+foundation_model:
+  config_path: /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.json
+  weights_path: /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.pt
+training:
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  max_steps: 1
+  energy_weight: 10.0
+  forces_weight: 1000.0
+  grad_clip_norm: 10.0
+  device: cpu
+  seed: 20260804
+checkpoint_path: mace_finetuned.pt

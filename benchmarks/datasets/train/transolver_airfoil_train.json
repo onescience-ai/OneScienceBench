@@ -1,0 +1,565 @@
+{
+  "id": "transolver_airfoil_train",
+  "eval_type": "train",
+  "domain": "cfd",
+  "task": "基于 Transolver 模型开展二维翼型气动场训练任务",
+  "prompt": "基于 Transolver 模型开展二维翼型气动场训练任务。\n    1. 模型脚本命名为 `transolver.py`，默认配置为 `space_dim=7`、`hidden_dim=256`、`layers=8`、`heads=8`、`mlp_ratio=2`、`out_dim=4`、`slice_num=32`、`ref=8`、`unified_pos=True`、`dropout=0`，激活函数为 GELU。`forward(x, pos)` 输入节点特征 `x`（N×7）和坐标 `pos`（N×2），输出 N×4。启用位置编码后，计算节点到 x∈[-2,4]、y∈[-1.5,1.5] 的 8×8 参考网格的 64 维距离特征，并与原始输入拼接。模型经输入 MLP 和 8 个含 Physics-Attention、LayerNorm、残差及 MLP 的 Transolver Block，最终输出 4 维气动场变量。\n    2. 数据集类命名为dataset.py，负责 AirfRANS 数据读取与预处理，读取 .vtu/.vtp 文件并构造 7 维输入（坐标、来流速度、SDF、表面法向量）和 4 维标签（ux、uy、p、νt）。根据 manifest.json 划分数据，取训练集后 10% 作为验证集，并用训练集统计量进行标准化；训练和验证时每个 CFD 样本随机采样 32,000 个网格点。配套数据路径在/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset\n    3. 通过 python train.py config.yaml 启动训练，配置文件统一管理数据路径、任务类型及 Transolver 超参数。默认训练 398 epochs，batch size=1，学习率 1e-3，每个 CFD 样本随机采样 32,000 点，使用 Adam + OneCycleLR，并以 volume MSE + surface MSE 作为损失；每 10 个 epoch 进行 20 次随机重采样验证，最终保存训练记录和模型 checkpoint。",
+  "evaluation_script": "evaluate_transolver_airfoil_train.py",
+  "stardard_dir_name": "transolver_airfoil_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "9ec5ea5d9d94d022",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "transolver.py",
+          "dataset.py",
+          "train.py",
+          "config.yaml"
+        ]
+      }
+    },
+    {
+      "id": "24b4acbc830de8e5",
+      "type": "dataset_pipeline",
+      "method": "check_datasset_pipeline",
+      "phase": "data_analysis",
+      "depends": [
+        "9ec5ea5d9d94d022"
+      ],
+      "params": {
+        "dataset_file": "dataset.py",
+        "config_name": "config.yaml",
+        "data_section_names": [
+          "data",
+          "dataset"
+        ],
+        "training_section_names": [
+          "training",
+          "train"
+        ],
+        "data_root_keys": [
+          "root",
+          "data_root",
+          "data_path",
+          "path"
+        ],
+        "required_data_root_substring": "transolver-airfoil-design/dataset",
+        "manifest_filename": "manifest.json",
+        "split_tokens": [
+          "train",
+          "val"
+        ],
+        "validation_tail_ratio": 0.1,
+        "required_vtk_filenames": [
+          "internal.vtu",
+          "aerofoil.vtp"
+        ],
+        "required_field_tokens": [
+          "implicit_distance",
+          "normal",
+          "nut"
+        ],
+        "point_data_tokens": [
+          "point_data",
+          "point_arrays"
+        ],
+        "input_feature_order": [
+          "x",
+          "y",
+          "u_inf_x",
+          "u_inf_y",
+          "SDF",
+          "normal_x",
+          "normal_y"
+        ],
+        "target_feature_order": [
+          "ux",
+          "uy",
+          "p",
+          "nut"
+        ],
+        "surface_mask_tokens": [
+          "surf",
+          "bool",
+          "mask"
+        ],
+        "normalization_tokens": [
+          "mean",
+          "std"
+        ],
+        "training_statistics_tokens": [
+          "fit_stats",
+          "compute_normal",
+          "training"
+        ],
+        "shared_statistics_tokens": [
+          "stats",
+          "normalization",
+          "coef_norm"
+        ],
+        "sample_point_keys": [
+          "sample_points",
+          "subsampling",
+          "n_points"
+        ],
+        "sample_points": 32000,
+        "random_sampling_tokens": [
+          "random.sample",
+          "randperm",
+          "choice",
+          "randint"
+        ]
+      }
+    },
+    {
+      "id": "43d6d19d1173d3ef",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "24b4acbc830de8e5"
+      ],
+      "params": {
+        "train_file": "train.py",
+        "config_name": "config.yaml",
+        "model_section": "model",
+        "training_section_names": [
+          "training",
+          "train"
+        ],
+        "model_defaults": {
+          "space_dim": 7,
+          "hidden_dim": 256,
+          "layers": 8,
+          "heads": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true,
+          "dropout": 0.0
+        },
+        "model_aliases": {
+          "space_dim": [
+            "space_dim"
+          ],
+          "hidden_dim": [
+            "hidden_dim",
+            "n_hidden"
+          ],
+          "layers": [
+            "layers",
+            "n_layers"
+          ],
+          "heads": [
+            "heads",
+            "n_heads",
+            "n_head"
+          ],
+          "mlp_ratio": [
+            "mlp_ratio"
+          ],
+          "out_dim": [
+            "out_dim"
+          ],
+          "slice_num": [
+            "slice_num"
+          ],
+          "ref": [
+            "ref"
+          ],
+          "unified_pos": [
+            "unified_pos"
+          ],
+          "dropout": [
+            "dropout"
+          ]
+        },
+        "activation_keys": [
+          "act",
+          "activation"
+        ],
+        "activation": "gelu",
+        "training_defaults": {
+          "epochs": 398,
+          "batch_size": 1,
+          "learning_rate": 0.001,
+          "sample_points": 32000,
+          "validation_interval": 10,
+          "validation_repeats": 20
+        },
+        "training_aliases": {
+          "epochs": [
+            "epochs"
+          ],
+          "batch_size": [
+            "batch_size"
+          ],
+          "learning_rate": [
+            "learning_rate",
+            "lr"
+          ],
+          "sample_points": [
+            "sample_points",
+            "subsampling",
+            "n_points"
+          ],
+          "validation_interval": [
+            "validation_interval",
+            "val_interval"
+          ],
+          "validation_repeats": [
+            "validation_repeats",
+            "val_repeats"
+          ]
+        },
+        "config_interface_tokens": [
+          "argparse",
+          "config",
+          "yaml"
+        ],
+        "model_usage_tokens": [
+          "transolver",
+          "model(",
+          "transolver("
+        ],
+        "loss_tokens": [
+          "surface",
+          "volume",
+          "vol_",
+          "mse",
+          "square",
+          "** 2"
+        ],
+        "optimizer_scheduler_tokens": [
+          "torch.optim.adam",
+          "optim.adam",
+          "onecyclelr"
+        ],
+        "optimization_tokens": [
+          "zero_grad",
+          "backward",
+          "optimizer.step"
+        ],
+        "scheduler_step_token": "scheduler.step",
+        "validation_tokens": [
+          "no_grad",
+          "inference_mode",
+          "repeat",
+          "valid",
+          "val_"
+        ],
+        "persistence_tokens": [
+          "torch.save",
+          "checkpoint",
+          "history",
+          "json"
+        ]
+      }
+    },
+    {
+      "id": "25a9d9799ca17bee",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "43d6d19d1173d3ef"
+      ],
+      "params": {
+        "optional_files": [
+          "evaluate.py",
+          "eval.py",
+          "inference.py",
+          "test.py"
+        ],
+        "absence_passes": true,
+        "checkpoint_loading_tokens": [
+          "torch.load",
+          "load_state_dict"
+        ],
+        "eval_mode_token": ".eval(",
+        "no_grad_tokens": [
+          "no_grad",
+          "inference_mode"
+        ],
+        "metric_token": "mse",
+        "aerodynamic_field_tokens": [
+          "ux",
+          "uy",
+          "pressure",
+          "nut"
+        ]
+      }
+    },
+    {
+      "id": "260759675bd6d09f",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "9ec5ea5d9d94d022"
+      ],
+      "params": {
+        "model_file": "transolver.py",
+        "model_class_candidates": [
+          "Transolver",
+          "Model",
+          "Transolver2D"
+        ],
+        "model_defaults": {
+          "space_dim": 7,
+          "hidden_dim": 256,
+          "layers": 8,
+          "heads": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true,
+          "dropout": 0.0,
+          "activation": "gelu"
+        },
+        "block_container_names": [
+          "blocks",
+          "transformer",
+          "layers"
+        ],
+        "assertions": {
+          "torch_module": true,
+          "block_count": 8,
+          "attention_blocks": 8,
+          "residual_mlp_blocks": 8,
+          "minimum_layer_norms": 16,
+          "input_linear_in_features": 71,
+          "hidden_linear_out_features": 256,
+          "head_value": 8,
+          "slice_projection": {
+            "in_features": 32,
+            "out_features": 32
+          },
+          "output_linear_out_features": 4
+        }
+      }
+    },
+    {
+      "id": "a3803bf9c774225b",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "260759675bd6d09f"
+      ],
+      "params": {
+        "model_file": "transolver.py",
+        "model_class_candidates": [
+          "Transolver",
+          "Model",
+          "Transolver2D"
+        ],
+        "model_defaults": {
+          "space_dim": 7,
+          "hidden_dim": 256,
+          "layers": 8,
+          "heads": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true,
+          "dropout": 0.0,
+          "activation": "gelu"
+        },
+        "device": "cpu",
+        "seed": 20260819,
+        "eval_mode": true,
+        "forward_input": {
+          "x_shape": [
+            64,
+            7
+          ],
+          "pos_shape": [
+            64,
+            2
+          ],
+          "pos_x_range": [
+            -2.0,
+            4.0
+          ],
+          "pos_y_range": [
+            -1.5,
+            1.5
+          ]
+        },
+        "expected_output": {
+          "tensor": true,
+          "shape": [
+            64,
+            4
+          ],
+          "finite": true
+        }
+      }
+    },
+    {
+      "id": "8ee4a6535c1a3fb6",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "a3803bf9c774225b"
+      ],
+      "params": {
+        "candidate_model_file": "transolver.py",
+        "reference_model_file": "standard/transolver_airfoil_design_train/transolver.py",
+        "model_class_candidates": [
+          "Transolver",
+          "Model",
+          "Transolver2D"
+        ],
+        "model_defaults": {
+          "space_dim": 7,
+          "hidden_dim": 256,
+          "layers": 8,
+          "heads": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true,
+          "dropout": 0.0,
+          "activation": "gelu"
+        },
+        "device": "cpu",
+        "eval_mode": true,
+        "canonical_initialization": "linear_mod_41_and_other_mod_37",
+        "input": {
+          "point_count": 64,
+          "x_features": 7,
+          "pos_x_range": [
+            -2.0,
+            4.0
+          ],
+          "pos_y_range": [
+            -1.5,
+            1.5
+          ]
+        },
+        "assertions": {
+          "parameter_shape_multiset": "equal",
+          "output_shape": [
+            64,
+            4
+          ],
+          "allclose": {
+            "atol": 1e-05,
+            "rtol": 1e-05
+          }
+        }
+      }
+    },
+    {
+      "id": "75112ae7e9946cf0",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "8ee4a6535c1a3fb6"
+      ],
+      "params": {
+        "model_file": "transolver.py",
+        "model_class_candidates": [
+          "Transolver",
+          "Model",
+          "Transolver2D"
+        ],
+        "model_defaults": {
+          "space_dim": 7,
+          "hidden_dim": 256,
+          "layers": 8,
+          "heads": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true,
+          "dropout": 0.0,
+          "activation": "gelu"
+        },
+        "device": "cpu",
+        "seed": 20260819,
+        "train_mode": true,
+        "optimizer": {
+          "name": "Adam",
+          "learning_rate": 0.001
+        },
+        "batch": {
+          "point_count": 32,
+          "x_features": 7,
+          "pos_features": 2,
+          "target_features": 4,
+          "surface_points": 12
+        },
+        "loss": "volume_mse_plus_surface_mse",
+        "expected_prediction_shape": [
+          32,
+          4
+        ],
+        "require_finite_loss": true,
+        "minimum_finite_gradient_fraction": 0.9,
+        "minimum_parameter_update_fraction": 0.9
+      }
+    },
+    {
+      "id": "43818ca5a15b2721",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "75112ae7e9946cf0"
+      ],
+      "params": {
+        "train_file": "train.py",
+        "dataset_file": "dataset.py",
+        "project_python_source_recursive": true,
+        "checkpoint_assertion": {
+          "required_tokens": [
+            "torch.save",
+            "checkpoint"
+          ],
+          "extensions": [
+            ".pt",
+            ".pth"
+          ]
+        },
+        "history_assertion": {
+          "required_token": "history",
+          "machine_readable_tokens": [
+            "json.dump",
+            "jsonl",
+            "csv"
+          ]
+        },
+        "normalization_state_assertion": {
+          "project_token": "normalization",
+          "dataset_tokens": [
+            "mean",
+            "std"
+          ],
+          "persistence_tokens": [
+            "torch.save",
+            "np.save"
+          ]
+        }
+      }
+    }
+  ]
+}

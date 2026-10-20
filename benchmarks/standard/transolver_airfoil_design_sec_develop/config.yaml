@@ -1,0 +1,38 @@
+# AirfRANS / Transolver secondary-development configuration
+
+data:
+  root: /public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/Dataset
+  task: full
+  val_ratio: 0.10
+
+model:
+  space_dim: 7
+  out_dim: 4
+  hidden_dim: 256
+  layers: 8
+  heads: 8
+  slice_num: 32
+  mlp_ratio: 2
+  dropout: 0.0
+  act: gelu
+  ref: 8
+  unified_pos: true
+
+# Surface/volume + field-wise weighted MSE
+loss:
+  surface_weight: 1.0
+  field_weights:
+    velocity: 1.0
+    pressure: 2.0
+    viscosity: 0.5
+
+training:
+  seed: 0
+  device: auto
+  output_dir: runs/transolver_airfrans_dev
+  epochs: 398
+  batch_size: 1
+  lr: 0.001
+  sample_points: 32000
+  val_interval: 10
+  val_repeats: 20

@@ -1,0 +1,302 @@
+{
+  "id": "nwp_ensemble_emos_calibration",
+  "eval_type": "infer",
+  "domain": "earth",
+  "task": "实现置换不变的 NWP 集合 EMOS 概率校准推理",
+  "prompt": "实现置换不变的 NWP 集合 EMOS 概率校准推理模型文件命名为 nwp_ensemble_emos_calibration.py，定义 NWPEnsembleEMOS，构造参数为 bias、scale 和严格递增的 quantile_levels，默认分位数为 (0.1,0.5,0.9)。predict(ensemble) 接收有限 numpy 数组 [B,M,...] 且 M>=2，输出 mean、正 spread 和最后一维按分位数排列的 quantiles；集合成员置换不得改变输出。实现 load_checkpoint(path)，读取 NPZ 且键只能是 bias、scale。请在当前工作目录生成且仅生成 nwp_ensemble_emos_calibration.py，禁止下载数据或权重。",
+  "evaluation_script": "evaluate_nwp_ensemble_emos_calibration.py",
+  "stardard_dir_name": "nwp_ensemble_emos_calibration",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "4b43b53c5acadfc5",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "nwp_ensemble_emos_calibration.py"
+        ],
+        "legacy_predicate": "is_file"
+      }
+    },
+    {
+      "id": "a7c7d32777de426c",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "4b43b53c5acadfc5"
+      ],
+      "params": {
+        "source_file": "nwp_ensemble_emos_calibration.py",
+        "class_name": "NWPEnsembleEMOS",
+        "constructor_args": {},
+        "checkpoint_format": "npz",
+        "valid_fixture": {
+          "bias": 1.25,
+          "scale": 0.75
+        },
+        "loaded_attributes_equal": {
+          "bias": 1.25,
+          "scale": 0.75
+        },
+        "rejection_fixtures": [
+          {
+            "name": "bias_and_extra_key",
+            "payload": {
+              "bias": 1.25,
+              "extra": 0.75
+            },
+            "requires_exception": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "154594156941afd5",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "4b43b53c5acadfc5"
+      ],
+      "params": {
+        "source_file": "nwp_ensemble_emos_calibration.py",
+        "class_name": "NWPEnsembleEMOS",
+        "constructor_args": {},
+        "attribute_assertions": {
+          "quantile_levels": {
+            "shape": [
+              3
+            ],
+            "allclose_to": [
+              0.1,
+              0.5,
+              0.9
+            ]
+          },
+          "scale": {
+            "finite": true,
+            "greater_than": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "20c328a3142ed711",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "4b43b53c5acadfc5"
+      ],
+      "params": {
+        "files": [
+          "nwp_ensemble_emos_calibration.py"
+        ],
+        "class_name": "NWPEnsembleEMOS",
+        "required_interfaces": [
+          "NWPEnsembleEMOS.predict",
+          "NWPEnsembleEMOS.load_checkpoint"
+        ]
+      }
+    },
+    {
+      "id": "fb41705c92eaae4a",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "154594156941afd5",
+        "20c328a3142ed711"
+      ],
+      "params": {
+        "source_file": "nwp_ensemble_emos_calibration.py",
+        "class_name": "NWPEnsembleEMOS",
+        "constructor_args": {},
+        "probes": [
+          {
+            "name": "output_shapes_and_member_permutation_invariance",
+            "ensemble": {
+              "generator": "arange",
+              "count": 30,
+              "dtype": "float",
+              "shape": [
+                2,
+                5,
+                3
+              ]
+            },
+            "permutation": {
+              "axis": 1,
+              "order": "reverse"
+            },
+            "assertions": {
+              "keys": [
+                "mean",
+                "spread",
+                "quantiles"
+              ],
+              "shapes": {
+                "mean": [
+                  2,
+                  3
+                ],
+                "spread": [
+                  2,
+                  3
+                ],
+                "quantiles": [
+                  2,
+                  3,
+                  3
+                ]
+              },
+              "allclose_each_output_to_permuted": true
+            }
+          },
+          {
+            "name": "spread_positive",
+            "ensemble": {
+              "generator": "arange",
+              "count": 30,
+              "dtype": "float",
+              "shape": [
+                2,
+                5,
+                3
+              ]
+            },
+            "assertions": {
+              "field": "spread",
+              "all_greater_than": 0
+            }
+          },
+          {
+            "name": "quantiles_strictly_ordered",
+            "ensemble": {
+              "generator": "arange",
+              "count": 30,
+              "dtype": "float",
+              "shape": [
+                2,
+                5,
+                3
+              ]
+            },
+            "assertions": {
+              "field": "quantiles",
+              "np_diff_axis": -1,
+              "all_greater_than": 0
+            }
+          },
+          {
+            "name": "member_count_one_rejected",
+            "ensemble": {
+              "shape": [
+                1,
+                1,
+                3
+              ],
+              "fill": 0.0
+            },
+            "expected_exception": "ValueError"
+          },
+          {
+            "name": "nonfinite_rejected",
+            "ensemble_expression": "np.array([[np.nan, 0.0], [1.0, 2.0]])",
+            "expected_exception": "ValueError"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ff4ef66e64a38df9",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "fb41705c92eaae4a"
+      ],
+      "params": {
+        "candidate": {
+          "source_file": "nwp_ensemble_emos_calibration.py",
+          "class_name": "NWPEnsembleEMOS",
+          "constructor_args": {
+            "bias": 0.3,
+            "scale": 0.7
+          },
+          "method": "predict"
+        },
+        "reference": {
+          "source_file": "standard/nwp_ensemble_emos_calibration/nwp_ensemble_emos_calibration.py",
+          "class_name": "NWPEnsembleEMOS",
+          "constructor_args": {
+            "bias": 0.3,
+            "scale": 0.7
+          },
+          "method": "predict"
+        },
+        "input": {
+          "generator": "linspace",
+          "start": -2.0,
+          "stop": 2.0,
+          "num": 48,
+          "dtype": "float",
+          "shape": [
+            2,
+            4,
+            6
+          ]
+        },
+        "reports": [
+          {
+            "name": "mean_rmse",
+            "error": "candidate.mean-reference.mean",
+            "value": "sqrt(mean(error*error))",
+            "pass_condition": "max(abs(error)) <= 1e-10"
+          },
+          {
+            "name": "mean_mae",
+            "error": "candidate.mean-reference.mean",
+            "value": "mean(abs(error))",
+            "pass_condition": "max(abs(error)) <= 1e-10"
+          },
+          {
+            "name": "spread_rmse",
+            "error": "candidate.spread-reference.spread",
+            "value": "sqrt(mean(error*error))",
+            "pass_condition": "max(abs(error)) <= 1e-10"
+          },
+          {
+            "name": "spread_mae",
+            "error": "candidate.spread-reference.spread",
+            "value": "mean(abs(error))",
+            "pass_condition": "max(abs(error)) <= 1e-10"
+          },
+          {
+            "name": "quantiles_rmse",
+            "error": "candidate.quantiles-reference.quantiles",
+            "value": "sqrt(mean(error*error))",
+            "pass_condition": "max(abs(error)) <= 1e-10"
+          },
+          {
+            "name": "quantiles_mae",
+            "error": "candidate.quantiles-reference.quantiles",
+            "value": "mean(abs(error))",
+            "pass_condition": "max(abs(error)) <= 1e-10"
+          }
+        ]
+      }
+    }
+  ]
+}

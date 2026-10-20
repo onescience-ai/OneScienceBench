@@ -1,0 +1,305 @@
+{
+  "id": "transolver_airfoil_infer",
+  "eval_type": "infer",
+  "domain": "cfd",
+  "task": "基于 Transolver 非结构化网格模型，构造一个二维翼型气动场推理模型 Transolver2D",
+  "prompt": "基于 Transolver 非结构化网格模型，构造一个二维翼型气动场推理模型 Transolver2D。\n    模型类命名为 Transolver2D，固定配置为 space_dim=7、fun_dim=0、n_hidden=256、n_layers=8、n_head=8、mlp_ratio=2、out_dim=4、slice_num=32、ref=8、unified_pos=True；输入为 data.x（N×7）和 data.pos（N×2），输出为 N×4。读取 /public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/weight/best.pth 中的 model_state_dict，依据参数名称及形状还原模型层级，确保通过 strict=True 加载。位置编码使用固定 8×8 参考网格，范围为 x∈[-2,4]、y∈[-1.5,1.5]，按 x 为外层、y 为内层展开。\n    数据集类命名为 AirfRANSDataset，接口为 AirfRANSDataset(config, mode=\"train\", coef_norm=None)；从 manifest.json 读取数据划分及 VTU/VTP 样本，构造 [x,y,u_inf·cos(alpha),u_inf·sin(alpha),-implicit_distance,normal_x,normal_y] 七维输入和 [U_x,U_y,p,nut] 四维目标，使用传入的 coef_norm 归一化。测试模式须保留完整网格及原始点序，返回包含 pos、x、y、surf 的 PyG Data，并实现按二维坐标匹配表面法向量的 reorganize 函数。",
+  "evaluation_script": "evaluate_transolver_airfoil_infer.py",
+  "stardard_dir_name": "transolver_airfoil_infer",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "4f1add47c2fc8200",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "Transolver2D.py"
+        ],
+        "phase": "model_structure"
+      }
+    },
+    {
+      "id": "681ed3d976fb3cb0",
+      "type": "data_file",
+      "method": "check_files",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "AirfRANSDataSet.py"
+        ],
+        "phase": "data_analysis"
+      }
+    },
+    {
+      "id": "5e408f4a8f2d9282",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [
+        "4f1add47c2fc8200"
+      ],
+      "params": {
+        "required_files": [
+          "Transolver2D.py"
+        ],
+        "phase": "model_structure",
+        "syntax_parser": "ast.parse"
+      }
+    },
+    {
+      "id": "bcf76dc99267b1d0",
+      "type": "data_file",
+      "method": "check_files",
+      "phase": "data_analysis",
+      "depends": [
+        "681ed3d976fb3cb0"
+      ],
+      "params": {
+        "required_files": [
+          "AirfRANSDataSet.py"
+        ],
+        "phase": "data_analysis",
+        "syntax_parser": "ast.parse"
+      }
+    },
+    {
+      "id": "a9cb820653fbe451",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "4f1add47c2fc8200"
+      ],
+      "params": {
+        "files": [
+          "Transolver2D.py"
+        ],
+        "required_interfaces": [
+          "Transolver2D"
+        ],
+        "phase": "model_structure"
+      }
+    },
+    {
+      "id": "4d7ab84287b35aa1",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "files": [
+          "Transolver2D.py"
+        ],
+        "required_interfaces": [
+          "Transolver2D"
+        ],
+        "phase": "model_structure"
+      }
+    },
+    {
+      "id": "e916f0cecb0e72b6",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [],
+      "params": {
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/weight/best.pth",
+        "state_key": "model_state_dict",
+        "map_location": "cpu",
+        "weights_only": false
+      }
+    },
+    {
+      "id": "1900777cbbac3ab6",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "e916f0cecb0e72b6",
+        "4d7ab84287b35aa1"
+      ],
+      "params": {
+        "model_file": "Transolver2D.py",
+        "model_class": "Transolver2D",
+        "model_args": {
+          "space_dim": 7,
+          "fun_dim": 0,
+          "n_hidden": 256,
+          "n_layers": 8,
+          "n_head": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true
+        },
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/weight/best.pth",
+        "strict": true
+      }
+    },
+    {
+      "id": "13b8807c389c5dea",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "e916f0cecb0e72b6",
+        "a9cb820653fbe451"
+      ],
+      "params": {
+        "model_file": "Transolver2D.py",
+        "model_class": "Transolver2D",
+        "model_args": {
+          "space_dim": 7,
+          "fun_dim": 0,
+          "n_hidden": 256,
+          "n_layers": 8,
+          "n_head": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true
+        },
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onedatasets/Transolver-Airfoil-Design/weight/best.pth",
+        "strict": true
+      }
+    },
+    {
+      "id": "510179f68d69c8b6",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "1900777cbbac3ab6",
+        "13b8807c389c5dea"
+      ],
+      "params": {
+        "model_file": "Transolver2D.py",
+        "model_class": "Transolver2D",
+        "model_args": {
+          "space_dim": 7,
+          "fun_dim": 0,
+          "n_hidden": 256,
+          "n_layers": 8,
+          "n_head": 8,
+          "mlp_ratio": 2,
+          "out_dim": 4,
+          "slice_num": 32,
+          "ref": 8,
+          "unified_pos": true
+        },
+        "forward_args": {
+          "x_shape": [
+            64,
+            7
+          ],
+          "pos_shape": [
+            64,
+            2
+          ]
+        },
+        "seed": 42,
+        "eval": true,
+        "no_grad": true
+      }
+    },
+    {
+      "id": "d998b4a935695919",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "510179f68d69c8b6"
+      ],
+      "params": {
+        "out_shape": [
+          64,
+          4
+        ],
+        "point_count": 64
+      }
+    },
+    {
+      "id": "a24626906aef7a31",
+      "type": "infer_output_validity",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "510179f68d69c8b6"
+      ],
+      "params": {
+        "output": "generated_output",
+        "check_nan_inf": true
+      }
+    },
+    {
+      "id": "790c9763da0ca539",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "510179f68d69c8b6"
+      ],
+      "params": {
+        "candidate_output": "generated_output",
+        "reference_output": "reference_output"
+      }
+    },
+    {
+      "id": "41c334f4c97553a9",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "790c9763da0ca539"
+      ],
+      "params": {
+        "candidate_output": "generated_output",
+        "reference_output": "reference_output",
+        "require_same_shape": true
+      }
+    },
+    {
+      "id": "a0429e064e845e40",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "41c334f4c97553a9"
+      ],
+      "params": {
+        "metrics": [
+          "mse",
+          "mae",
+          "max_abs_error"
+        ],
+        "difference_dtype": "float64"
+      }
+    },
+    {
+      "id": "6567b8f6b28b7849",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "a0429e064e845e40"
+      ],
+      "params": {
+        "candidate": "generated_output",
+        "reference": "reference_output",
+        "comparison": "torch.allclose",
+        "atol": 1e-05,
+        "rtol": 1e-05
+      }
+    }
+  ]
+}

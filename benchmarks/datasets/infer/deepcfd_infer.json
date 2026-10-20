@@ -1,0 +1,356 @@
+{
+  "id": "deepcfd_infer",
+  "eval_type": "infer",
+  "domain": "cfd",
+  "task": "基于 DeepCFD 模型实现二维非均匀稳态层流的速度场与压力场推理任务",
+  "prompt": "基于 DeepCFD 模型实现二维非均匀稳态层流的速度场与压力场推理任务。\n    该任务的输入和输出 shape 均为 (B, 3, 172, 79)，其中 B 为批次大小，172×79 为空间网格尺寸。输入的三个通道依次表示障碍物表面的符号距离函数（SDF）、流动区域标签（障碍物、自由流、壁面、入口和出口）以及上下壁面的 SDF；输出的三个通道依次为水平速度U_x、垂直速度U_y 和压力p。配套的数据集和模型权重在/public/share/sugonhpcapp01/onestore/onedatasets/DeepCFD/下面。请根据模型权重构造模型文件unetex.py。执行`python inference.py --config config.yaml`命令进行推理，inference.py脚本中调用compute_sample_normalized_grid_mse(predictions, targets) 在完整测试集上按通道累加所有网格点平方误差并除以样本数，返回 Ux_MSE、Uy_MSE、p_MSE 及三者之和 Total_MSE，测试指标保存至指定目录下的 result/deepcfd/metrics.json 文件中。",
+  "evaluation_script": "evaluate_deepcfd_infer.py",
+  "stardard_dir_name": "deepcfd_infer",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311"
+  },
+  "checks": [
+    {
+      "id": "db73653c3eb1b2aa",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "unetex.py",
+          "inference.py",
+          "config.yaml"
+        ]
+      }
+    },
+    {
+      "id": "2c7083036e422c4b",
+      "type": "config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "db73653c3eb1b2aa"
+      ],
+      "params": {
+        "config_name": "config.yaml"
+      }
+    },
+    {
+      "id": "aa5df823925d57a1",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "db73653c3eb1b2aa"
+      ],
+      "params": {
+        "files": [
+          "unetex.py"
+        ],
+        "required_interfaces": [
+          "UNetEx",
+          "UNetEx.forward"
+        ]
+      }
+    },
+    {
+      "id": "e491d9544ff0c6ea",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "db73653c3eb1b2aa"
+      ],
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "required_interfaces": [
+          "compute_sample_normalized_grid_mse",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "bff692e7aaf52635",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "aa5df823925d57a1"
+      ],
+      "params": {
+        "rules": [
+          {
+            "id": "decoder_depth",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders",
+              "length": 3
+            }
+          },
+          {
+            "id": "encoder_down_depth",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.down_stages",
+              "length": 4
+            }
+          },
+          {
+            "id": "decoder_0_up_depth",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders.0.decoder.up_stages",
+              "length": 4
+            }
+          },
+          {
+            "id": "decoder_1_up_depth",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders.1.decoder.up_stages",
+              "length": 4
+            }
+          },
+          {
+            "id": "decoder_2_up_depth",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders.2.decoder.up_stages",
+              "length": 4
+            }
+          },
+          {
+            "id": "head_0",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders.0.head.conv",
+              "in_channels": 8,
+              "out_channels": 1,
+              "kernel_size": [
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_1",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders.1.head.conv",
+              "in_channels": 8,
+              "out_channels": 1,
+              "kernel_size": [
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "head_2",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "decoders.2.head.conv",
+              "in_channels": 8,
+              "out_channels": 1,
+              "kernel_size": [
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "encoder_input_projection",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.inc.double_conv.0",
+              "in_channels": 3,
+              "out_channels": 8,
+              "kernel_size": [
+                5,
+                5
+              ],
+              "padding": [
+                2,
+                2
+              ]
+            }
+          },
+          {
+            "id": "first_down_projection",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "encoder.down_stages.0.maxpool_conv.1.double_conv.0",
+              "in_channels": 8,
+              "out_channels": 16,
+              "kernel_size": [
+                5,
+                5
+              ],
+              "padding": [
+                2,
+                2
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "68e5abf9c0f98889",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "aa5df823925d57a1"
+      ],
+      "params": {
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/onedatasets/DeepCFD/weight/best_model.pt"
+      }
+    },
+    {
+      "id": "4d4b3b195b2120b0",
+      "type": "infer_metric_method",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "e491d9544ff0c6ea"
+      ],
+      "params": {
+        "scope": "sample_normalized_grid_mse"
+      }
+    },
+    {
+      "id": "6870651ec5e14435",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "68e5abf9c0f98889"
+      ],
+      "params": {
+        "batch_sizes": [
+          1,
+          2
+        ],
+        "seed": 42,
+        "rtol": 1e-06,
+        "atol": 1e-06
+      }
+    },
+    {
+      "id": "8e45773ffedd62a7",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "e491d9544ff0c6ea"
+      ],
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_functions": [
+            "build_model",
+            "load_checkpoint"
+          ],
+          "model_load_attributes": [
+            "load_state_dict",
+            "load"
+          ],
+          "input_parameter_names": [
+            "inputs",
+            "input_batch",
+            "batch",
+            "data",
+            "x"
+          ],
+          "input_load_functions": [
+            "create_dataloaders",
+            "load_config"
+          ],
+          "input_load_attributes": [
+            "load",
+            "read_text"
+          ],
+          "infer_call_functions": [
+            "main",
+            "inference",
+            "run_inference"
+          ],
+          "infer_call_attributes": [
+            "forward",
+            "eval"
+          ],
+          "output_attributes": [
+            "dump",
+            "write_text",
+            "write"
+          ]
+        }
+      }
+    },
+    {
+      "id": "2c0c6b7df0c41d7f",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "db73653c3eb1b2aa"
+      ],
+      "params": {
+        "timeout": 900
+      }
+    },
+    {
+      "id": "6acb9487d6de7904",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "db73653c3eb1b2aa"
+      ],
+      "params": {
+        "output_path": "result/deepcfd/metrics.json",
+        "check_nan_inf": true
+      }
+    },
+    {
+      "id": "613a9a169c47fd00",
+      "type": "infer_metric",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "68e5abf9c0f98889"
+      ],
+      "params": {
+        "batch_size": 16,
+        "seed": 0,
+        "split_ratio": 0.7,
+        "rtol": 1e-06,
+        "atol": 1e-07,
+        "benchmark_protocol": "reference_deepcfd_datapipe",
+        "forward_rtol": 1e-06,
+        "forward_atol": 1e-06
+      }
+    }
+  ]
+}

@@ -1,0 +1,370 @@
+{
+  "id": "esen_inference",
+  "eval_type": "infer",
+  "domain": "matchem",
+  "task": "使用固定 eSEN MPTrj 权重对 ASE 周期结构推理能量、原子力和应力",
+  "prompt": "独立实现 OneScience eSEN DeNS 模型的本地推理代码，使用固定 MPTrj checkpoint 对 ASE 周期结构输出物理量。候选不得主动导入 onescience、fairchem 或其他外部 eSEN 实现；必须由候选本地 PyTorch 类完成模型构造、周期图、checkpoint 加载和前向计算。固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt`，SHA256 为 `f44aecdfbdb74575f8861c08ee6aa86939cce4571e73ac508666190cb67f064b`；旋转基为 `/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt`，SHA256 为 `b4059c45be246dcb6c49c545670b65c56550eb0c2e7a9c92b4b50a92d370dbe2`。checkpoint 必须使用 `torch.load(..., weights_only=True)` 读取，顶层 `state_dict` 必须完整包含 394 个 tensor entry、30,087,404 个参数；状态键带 `module.` 前缀时只允许去除这一包装前缀，本地模型必须使用完整状态执行 `load_state_dict(..., strict=True)`，不得过滤键、忽略 missing/unexpected key、动态改形或覆盖加载钩子。真实模型结构必须是 `eSEN_DeNS_Backbone` 加 `MLP_EFS_Head`，backbone 参数固定为 max_num_elements=100、sphere_channels=128、lmax=3、mmax=2、cutoff=6.0、edge_channels=128、distance_function=gaussian、num_distance_basis=10、num_layers=10、hidden_channels=128、norm_type=rms_norm_sh、act_type=gate、mlp_type=spectral、use_envelope=true、direct_forces=false、regress_forces=true、regress_stress=true；head 必须包含 energy block 和 denoising force head 以匹配 checkpoint。周期图必须按 cutoff=6.0 构造有序邻居边，edge_index 采用 `[neighbor, center]` 语义，保存整数晶胞偏移，并排除零距离自边。模型前向必须输出 checkpoint 归一化的 energy、forces、stress，再按 checkpoint 中的 normalizers 和 energy element references 还原物理单位。ASE 接口支持单个 `ase.Atoms`、结构序列和 ASE 可读文件；输出键必须且仅为 `energies`、`forces`、`stresses`，分别为 `[B]` eV、每构型 `[N_i,3]` eV/Angstrom 和 `[B,3,3]` eV/Angstrom^3，所有值有限。力和应力必须来自模型物理路径的自动微分，而不是常量或固定 oracle。不得读取评测器、标准实现或旧候选。\n\n请在当前工作目录生成指定的本地实现文件。\n\n必须生成以下相对路径文件：`esen_inference/esen_inference.py`、`esen_inference/run_inference.py`、`esen_inference/esen_inference.yaml`、`esen_inference/portable_esen/__init__.py`、`esen_inference/portable_esen/model.py`、`esen_inference/portable_esen/esen_dens.py`、`esen_inference/portable_esen/graph.py`、`esen_inference/portable_esen/layer/esen/esen_block.py`、`esen_inference/portable_esen/layer/esen/common/rotation.py`、`esen_inference/portable_esen/layer/esen/common/so3.py`、`esen_inference/portable_esen/layer/esen/nn/embedding.py`、`esen_inference/portable_esen/layer/esen/nn/layer_norm.py`、`esen_inference/portable_esen/layer/esen/nn/radial.py`、`esen_inference/portable_esen/layer/esen/nn/so2_layers.py`、`esen_inference/portable_esen/layer/esen/nn/so3_layers.py`、`esen_inference/portable_esen/layer/esen/nn/activation.py`；可增加必要的本地辅助文件，但不得复制或导入外部 OneScience/FairChem 实现。`esen_inference.py` 必须公开 `ESENModel`、`build_model`、`checkpoint_sha256`、`load_checkpoint_payload`、`load_model`、`atoms_to_data`、`evaluate_structure`；`run_inference.py` 必须公开 `load_config`、`load_structures`、`evaluate`、`save_predictions`、`main`，并提供 `--config`、`--checkpoint`、`--input`、`--output`、`--device auto|cpu|cuda`。配置文件必须记录固定 checkpoint、Jd 路径、全部模型结构参数和 energy/forces/stress 输出。",
+  "evaluation_script": "evaluate_esen_inference.py",
+  "stardard_dir_name": "esen_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 16,
+    "memory": "16G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_esen_inference",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "5674fce41eed4bdf",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_discovery": {
+          "environment_variable": "ESEN_INFERENCE_SUBMISSION_DIR",
+          "pythonpath_entries": true,
+          "candidate_marker": "esen_inference.py"
+        },
+        "required_files": [
+          "esen_inference.py",
+          "run_inference.py",
+          "esen_inference.yaml",
+          "portable_esen/__init__.py",
+          "portable_esen/model.py",
+          "portable_esen/esen_dens.py",
+          "portable_esen/graph.py",
+          "portable_esen/layer/esen/esen_block.py",
+          "portable_esen/layer/esen/common/rotation.py",
+          "portable_esen/layer/esen/common/so3.py",
+          "portable_esen/layer/esen/nn/embedding.py",
+          "portable_esen/layer/esen/nn/layer_norm.py",
+          "portable_esen/layer/esen/nn/radial.py",
+          "portable_esen/layer/esen/nn/so2_layers.py",
+          "portable_esen/layer/esen/nn/so3_layers.py",
+          "portable_esen/layer/esen/nn/activation.py"
+        ],
+        "require_regular_files": true,
+        "require_nonempty": false
+      }
+    },
+    {
+      "id": "c411a87a5c995515",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "5674fce41eed4bdf"
+      ],
+      "params": {
+        "source_glob": "**/*.py",
+        "prohibited_import_roots": [
+          "onescience",
+          "fairchem",
+          "mattersim",
+          "mace"
+        ],
+        "required_ast_calls": [
+          {
+            "attribute": "load",
+            "keywords": {
+              "weights_only": true
+            }
+          },
+          {
+            "attribute": "load_state_dict",
+            "keywords": {
+              "strict": true
+            }
+          }
+        ],
+        "checkpoint": {
+          "path": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+          "sha256": "f44aecdfbdb74575f8861c08ee6aa86939cce4571e73ac508666190cb67f064b"
+        },
+        "rotation_basis": {
+          "path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+          "sha256": "b4059c45be246dcb6c49c545670b65c56550eb0c2e7a9c92b4b50a92d370dbe2"
+        },
+        "payload_loader": {
+          "function": "load_checkpoint_payload",
+          "argument": "checkpoint.path",
+          "state_dict_key": "state_dict",
+          "expected_tensor_entries": 394,
+          "expected_parameter_numel": 30087404
+        },
+        "model_loader": {
+          "function": "load_model",
+          "checkpoint_argument": "checkpoint.path",
+          "device": "cpu",
+          "jd_path": "rotation_basis.path",
+          "tuple_result_uses_index": 0
+        },
+        "restored_state_contract": {
+          "expected_key_transform": "remove_the_first_7_characters_from_every_payload_state_key",
+          "ordered_keys_equal": true,
+          "shapes_equal": true,
+          "tensor_values_equal_after_candidate_cpu": true,
+          "expected_model_tensor_entries": 394
+        }
+      }
+    },
+    {
+      "id": "387203a0b9fe7780",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "c411a87a5c995515"
+      ],
+      "params": {
+        "manual_seed": 20260820,
+        "model_loader": {
+          "function": "load_model",
+          "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+          "device": "cpu",
+          "jd_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+          "tuple_result_uses_index": 0
+        },
+        "backbone": {
+          "path": "backbone",
+          "class_name": "eSEN_DeNS_Backbone",
+          "attributes": {
+            "lmax": 3,
+            "mmax": 2,
+            "sphere_channels": 128,
+            "cutoff": 6.0,
+            "num_distance_basis": 10,
+            "direct_forces": false
+          },
+          "ordered_children": [
+            "SO3_grid",
+            "sphere_embedding",
+            "distance_expansion",
+            "source_embedding",
+            "target_embedding",
+            "edge_degree_embedding",
+            "blocks",
+            "norm",
+            "force_embedding"
+          ],
+          "blocks": {
+            "length": 10,
+            "each_ordered_children": [
+              "norm_1",
+              "edge_wise",
+              "norm_2",
+              "atom_wise"
+            ]
+          }
+        },
+        "model_order": [
+          "backbone",
+          "output_heads"
+        ],
+        "head": {
+          "container_path": "output_heads",
+          "key": "mptrj",
+          "class_name": "MLP_EFS_Head",
+          "ordered_children": [
+            "energy_block",
+            "denoising_linear"
+          ]
+        },
+        "probe_calls": {
+          "no_grad": true,
+          "sphere_embedding": {
+            "input": [
+              1,
+              8
+            ],
+            "expected_shape": [
+              2,
+              128
+            ]
+          },
+          "distance_expansion": {
+            "input": [
+              0.5,
+              3.0,
+              5.5
+            ],
+            "expected_shape": [
+              3,
+              10
+            ]
+          },
+          "energy_block": {
+            "input_shape": [
+              2,
+              128
+            ],
+            "input_value": 1.0,
+            "expected_shape": [
+              2,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "b9db88af827e5ff8",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "5674fce41eed4bdf"
+      ],
+      "params": {
+        "run_file": "run_inference.py",
+        "module_name": "esen_inference_submission_run",
+        "required_callable_functions": [
+          "load_config",
+          "load_structures",
+          "evaluate",
+          "save_predictions",
+          "main"
+        ],
+        "ase_input_probe": {
+          "function": "load_structures",
+          "factory": "ase.build.bulk",
+          "factory_args": [
+            "Si",
+            "diamond"
+          ],
+          "factory_kwargs": {
+            "a": 5.43
+          },
+          "expected_length": 1
+        }
+      }
+    },
+    {
+      "id": "d47d844a849346ba",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "c411a87a5c995515",
+        "b9db88af827e5ff8"
+      ],
+      "params": {
+        "manual_seed_before_checkpoint_load": 20260820,
+        "manual_seed_before_evaluation": 20260820,
+        "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+        "jd_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "device": "cpu",
+        "payload_loader": "load_checkpoint_payload",
+        "model_loader": {
+          "function": "load_model",
+          "tuple_result_uses_index": 0,
+          "eval": true
+        },
+        "structure": {
+          "factory": "ase.build.bulk",
+          "args": [
+            "Si",
+            "diamond"
+          ],
+          "kwargs": {
+            "a": 5.43
+          }
+        },
+        "evaluation": {
+          "function": "evaluate_structure",
+          "arguments": [
+            "model",
+            "structure",
+            "payload",
+            "cpu"
+          ]
+        },
+        "exact_output_shapes": {
+          "energy": [
+            1
+          ],
+          "forces": [
+            2,
+            3
+          ],
+          "stress": [
+            1,
+            3,
+            3
+          ]
+        },
+        "require_exact_output_keys": true,
+        "all_output_values_finite": true
+      }
+    },
+    {
+      "id": "7cd940846a719b08",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "c411a87a5c995515",
+        "d47d844a849346ba"
+      ],
+      "params": {
+        "standard_module": {
+          "path": "benchmarks/standard/esen_inference/esen_inference.py",
+          "module_name": "esen_inference_standard"
+        },
+        "candidate_module": "esen_inference_submission",
+        "purge_portable_esen_before_standard_and_candidate_load": true,
+        "structure": {
+          "factory": "ase.build.bulk",
+          "args": [
+            "Si",
+            "diamond"
+          ],
+          "kwargs": {
+            "a": 5.43
+          }
+        },
+        "manual_seed_before_reference_load": 20260820,
+        "manual_seed_before_candidate_load": 20260820,
+        "manual_seed_before_candidate_evaluation": 20260820,
+        "checkpoint": "/public/share/sugonhpcapp01/onestore/onemodels/eSEN/esen_30m_mptrj.pt",
+        "jd_path": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint/Jd.pt",
+        "device": "cpu",
+        "reference_pipeline": {
+          "payload_loader": "load_checkpoint_payload",
+          "model_loader": {
+            "function": "load_model",
+            "tuple_result_uses_index": 0
+          },
+          "evaluation": "evaluate_structure"
+        },
+        "candidate_pipeline": {
+          "payload_loader": "load_checkpoint_payload",
+          "model_loader": {
+            "function": "load_model",
+            "tuple_result_uses_index": 0
+          },
+          "evaluation": "evaluate_structure"
+        },
+        "model_state_contract": {
+          "ordered_keys_equal": true,
+          "shapes_equal": true,
+          "tensor_values_equal": true
+        },
+        "physical_output_oracle": {
+          "iterate_reference_output_keys": true,
+          "max_absolute_error_at_most": 0.0001
+        }
+      }
+    }
+  ]
+}

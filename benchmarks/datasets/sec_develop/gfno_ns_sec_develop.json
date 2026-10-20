@@ -1,0 +1,378 @@
+{
+  "id": "gfno_ns_sec_develop",
+  "eval_type": "sec_develop",
+  "domain": "cfd",
+  "task": "基于 GFNO 模型实现 Navier–Stokes（NS）方程预测任务的二次开发",
+  "prompt": "基于 GFNO 模型实现 Navier–Stokes（NS）方程预测任务的二次开发。  \n    任务输入为 NS 系统前 10 个时间步的二维涡量场，输出为后续 20 个时间步的涡量场预测结果。配套的数据集路径在/public/share/sugonhpcapp01/onestore/onedatasets/FNO_data/fno/data/ns_V1e-3_N5000_T50.mat。\n    原始任务：\n    1. 模型文件命名为 model.py，核心模型类命名为GFNO，模型需要包含输入 lifting、p4 group convolution、group-equivariant Fourier spectral convolution、G-MLP、1×1 group convolution 残差分支以及输出 projection，共使用 4 个 G-Fourier blocks。默认设置 modes=12、width=10，输入形状为 [B, H, W, 10, 1]，每次输出下一时间步 [B, H, W, 1, 1]，并保证模型满足 p4 的 90° 旋转等变性\n    2. dataset.py 负责 MAT 数据读取、预处理、官方 train/validation/test 划分、teacher-forcing 样本生成以及可选 normalization；normalization 的统计量必须只使用训练集计算，默认 normalization=\"none\"。其中训练集取数据前 1000 条，测试集取最后 100 条，验证集取倒数第 200 至倒数第 100 条。\n    3. utils.py 负责实验配置管理、随机种子设置、device 管理、日志记录、checkpoint 保存与加载、JSON 结果保存、模型参数量统计、LpLoss、autoregressive rollout、validation/test 通用评测以及 rotation equivariance error 等通用工具函数。\n    4. train.py 实现完整训练流程：构建 DataLoader 和 GFNO 模型，使用 Adam 优化器，默认 lr=1e-3、weight_decay=1e-4、batch_size=20、epochs=100，配合学习率调度；每训练阶段采用 teacher forcing，每个 epoch 结束后在 validation set 上进行 20 步 autoregressive rollout；保存最佳模型 best.pt 和最后一个 checkpoint last.pt，训练结束后重新加载最佳模型，在 test set 上完成 20 步 autoregressive rollout 评测，同时计算旋转等变性误差，并保存 history.json、summary.json 和 train.log 等实验结果，实验结果默认保存至制定目录下的 results/ns_gfno2d_p4_seed1 目录中/\n    二次开发任务：\n    Loss 改造：将当前单步 teacher-forcing 的 Relative L2 Loss 改为多步自回归 Rollout Loss\n    ",
+  "evaluation_script": "evaluate_gfno_ns_sec_develop.py",
+  "stardard_dir_name": "gfno_ns_sec_develop",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "ntasks_per_node": 1,
+    "cpus_per_task": 4,
+    "time": "00:30:00"
+  },
+    "checks": [
+        {
+            "id": "91f00e9997264f6d",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "dataset.py"
+                ]
+            }
+        },
+        {
+            "id": "a1cc576fbd3f4d40",
+            "type": "dataset_pipeline",
+            "method": "check_data_contract",
+            "phase": "data_analysis",
+            "depends": [
+                "91f00e9997264f6d"
+            ],
+            "params": {
+                "dataset_file": "dataset.py",
+                "variable": "u",
+                "split_counts": [
+                    1000,
+                    100,
+                    100
+                ],
+                "history_steps": 10,
+                "target_steps": 20,
+                "normalization": "none",
+                "reader_fixture": {
+                    "format": "matlab73_hdf5",
+                    "raw_shape": [
+                        50,
+                        64,
+                        64,
+                        65
+                    ],
+                    "dtype": "float32",
+                    "matlab_class": "single"
+                },
+                "reader_calls": [
+                    {
+                        "function": "load_ns_mat",
+                        "args": {
+                            "path": "$fixture"
+                        }
+                    },
+                    {
+                        "function": "_load_ns_mat",
+                        "args": {
+                            "data_path": "$fixture"
+                        }
+                    }
+                ],
+                "dataset_name": "ns_V1e-3_N5000_T50.mat",
+                "project_files": [
+                    "dataset.py",
+                    "train.py",
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "85251bf608664987",
+            "type": "model_file",
+            "method": "check_files",
+            "phase": "model_structure",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "model.py"
+                ]
+            }
+        },
+        {
+            "id": "52729b017e9c46b4",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": [
+                "85251bf608664987"
+            ],
+            "params": {
+                "files": [
+                    "model.py"
+                ],
+                "required_interfaces": [
+                    "GFNO"
+                ]
+            }
+        },
+        {
+            "id": "980c2561c8c84d18",
+            "type": "model_structure",
+            "method": "check_model_structure",
+            "phase": "model_structure",
+            "depends": [
+                "52729b017e9c46b4"
+            ],
+            "params": {
+                "model_file": "model.py",
+                "model_class": "GFNO",
+                "model_args": {},
+                "device": "cpu",
+                "rules": [
+                    {
+                        "id": "gfno_class",
+                        "type": "module_type",
+                        "severity": "error",
+                        "params": {
+                            "expected": "GFNO"
+                        }
+                    }
+                ],
+                "registered_stage_count": 4,
+                "constructor_defaults": {
+                    "modes": 12,
+                    "width": 10
+                },
+                "gfno_source_contract": true
+            }
+        },
+        {
+            "id": "77385322f38849af",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": [
+                "52729b017e9c46b4"
+            ],
+            "params": {
+                "model_file": "model.py",
+                "model_class": "GFNO",
+                "model_args": {},
+                "device": "cpu",
+                "pre_forward_hooks": [
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [
+                                1,
+                                24,
+                                24,
+                                10,
+                                1
+                            ],
+                            "device": "cpu"
+                        },
+                        "save_as": "x"
+                    }
+                ],
+                "forward_args": {
+                    "x": "$x"
+                },
+                "args_as_positional": true,
+                "out_shape": [
+                    1,
+                    24,
+                    24,
+                    1,
+                    1
+                ],
+                "check_nan_inf": true,
+                "rotation": {
+                    "argument": "x",
+                    "k": 1,
+                    "dims": [
+                        1,
+                        2
+                    ],
+                    "rtol": 0.0002,
+                    "denominator_epsilon": 1e-12
+                }
+            }
+        },
+        {
+            "id": "da7e9a88c1ec4a40",
+            "type": "train_file",
+            "method": "check_files",
+            "phase": "train_script",
+            "depends": [],
+            "params": {
+                "required_files": [
+                    "train.py",
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "3657dbd696a44042",
+            "type": "train_config_content",
+            "method": "check_config_content",
+            "phase": "train_script",
+            "depends": [
+                "da7e9a88c1ec4a40"
+            ],
+            "params": {
+                "config_file": "utils.py",
+                "factories": [
+                    {
+                        "function": "get_config",
+                        "attributes": {
+                            "epochs": "train.epochs",
+                            "batch_size": "data.batch_size",
+                            "learning_rate": "train.learning_rate",
+                            "weight_decay": "train.weight_decay",
+                            "evaluation_steps": "data.T_out",
+                            "result_directory": "runtime.output_dir"
+                        }
+                    },
+                    {
+                        "function": "Config",
+                        "attributes": {
+                            "epochs": "epochs",
+                            "batch_size": "batch_size",
+                            "learning_rate": "lr",
+                            "weight_decay": "weight_decay",
+                            "evaluation_steps": "T_out",
+                            "result_directory": "results_dir"
+                        }
+                    }
+                ],
+                "required_config_keys": [
+                    {
+                        "key": "epochs",
+                        "value": 100
+                    },
+                    {
+                        "key": "batch_size",
+                        "value": 20
+                    },
+                    {
+                        "key": "learning_rate",
+                        "value": 0.001
+                    },
+                    {
+                        "key": "weight_decay",
+                        "value": 0.0001
+                    },
+                    {
+                        "key": "evaluation_steps",
+                        "value": 20
+                    },
+                    {
+                        "key": "result_directory",
+                        "value": "results/ns_gfno2d_p4_seed1"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "6c9c08dace9245ea",
+            "type": "train_structure",
+            "method": "check_train_structure",
+            "phase": "train_script",
+            "depends": [
+                "da7e9a88c1ec4a40"
+            ],
+            "params": {
+                "files": [
+                    "train.py",
+                    "utils.py"
+                ],
+                "check_config": {
+                    "entry_names": [
+                        "train",
+                        "main",
+                        "run_training",
+                        "train_model",
+                        "fit"
+                    ],
+                    "model_names": [
+                        "gfno"
+                    ],
+                    "dataloader_names": [
+                        "DataLoader",
+                        "build_dataloaders"
+                    ],
+                    "optimizer_names": [
+                        "Adam"
+                    ],
+                    "loss_names": [
+                        "LpLoss",
+                        "rollout_relative_l2_loss"
+                    ]
+                },
+                "experiment": {
+                    "evaluation_functions": [
+                        "evaluate"
+                    ],
+                    "checkpoint_files": [
+                        "best.pt",
+                        "last.pt"
+                    ],
+                    "dataset_name": "ns_V1e-3_N5000_T50.mat",
+                    "result_files": [
+                        "history.json",
+                        "summary.json",
+                        "train.log"
+                    ],
+                    "result_directory": "results/ns_gfno2d_p4_seed1"
+                }
+            }
+        },
+        {
+            "id": "e865e51427f54bbd",
+            "type": "parameter_update",
+            "method": "check_parameter_update",
+            "phase": "train_script",
+            "depends": [
+                "da7e9a88c1ec4a40"
+            ],
+            "params": {
+                "files": [
+                    "train.py",
+                    "utils.py"
+                ]
+            }
+        },
+        {
+            "id": "cf819c08bbd64e31",
+            "type": "smoke_training",
+            "method": "check_rollout_training_smoke",
+            "phase": "smoke_train",
+            "depends": [
+                "52729b017e9c46b4"
+            ],
+            "params": {
+                "model_file": "model.py",
+                "model_class": "GFNO",
+                "model_args": {},
+                "device": "cpu",
+                "seed": 20260820,
+                "input_shape": [
+                    1,
+                    24,
+                    24,
+                    10,
+                    1
+                ],
+                "target_shape": [
+                    1,
+                    24,
+                    24,
+                    3,
+                    1
+                ],
+                "rollout_steps": 3,
+                "optimizer_args": {
+                    "lr": 0.001,
+                    "weight_decay": 0.0001
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,621 @@
+{
+  "id": "targetdiff_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 TargetDiff 风格口袋条件配体扩散推理",
+  "prompt": "实现一个独立于 onescience Python 包的轻量 TargetDiff 风格口袋条件配体扩散推理入口。模型文件命名为 targetdiff_inference.py，模型类命名为 TargetDiff，读取蛋白 PDB 原子坐标和配体 SDF 原子坐标，使用 protein_atom_emb、ligand_atom_emb、time_embedding 和两层 EGNN 风格坐标感知 refine_net，联合预测 pred_ligand_pos [N_ligand,3] 与 pred_ligand_v [N_ligand,8]，并提供 get_diffusion_loss 和 sample_diffusion。命令行必须支持 --protein-path、--ligand-path、--checkpoint、--out-dir、--num-steps、--seed、--device；checkpoint 支持原始 state_dict 或 model_state_dict 并严格加载，推理使用 eval 和 no_grad/inference_mode，写出 ligand_sample.sdf 和包含 num_steps、seed、final_atom_count 的 scores.json。不得导入 onescience。\n请在当前工作目录生成且仅生成 targetdiff_inference.py；脚本必须支持 --protein-path、--ligand-path、--checkpoint、--out-dir、--num-steps、--seed、--device；所有 ligand_sample.sdf 和 scores.json 必须保存到命令行指定的 --out-dir。",
+  "evaluation_script": "evaluate_targetdiff_inference.py",
+  "stardard_dir_name": "targetdiff_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_targetdiff_inference"
+  },
+  "checks": [
+    {
+      "id": "8ce220d610ce3df0",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "targetdiff_inference.py"
+        ],
+        "nonempty": true,
+        "search_roots": [
+          "TARGETDIFF_SUBMISSION_DIR",
+          "cwd",
+          "PYTHONPATH"
+        ],
+        "legacy_check_names": [
+          "file:targetdiff_inference.py"
+        ]
+      }
+    },
+    {
+      "id": "8fed4ecfb08600f6",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "reference_script": "benchmarks/standard/targetdiff_inference/targetdiff_inference.py",
+        "required_files": [
+          "inference_config.json"
+        ],
+        "config_rules": {
+          "top_level": "mapping",
+          "model_class": "TargetDiff",
+          "hidden_size": 32,
+          "ligand_vocab": 8,
+          "external_assets": {
+            "mount_required": true,
+            "weights_prefix": "/public/share/",
+            "dataset_prefix": "/public/share/"
+          }
+        },
+        "legacy_check_names": [
+          "file:standard:inference_config.json"
+        ]
+      }
+    },
+    {
+      "id": "d74cacde5b8bed5e",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "8ce220d610ce3df0"
+      ],
+      "params": {
+        "files": [
+          "targetdiff_inference.py"
+        ],
+        "forbidden_import_roots": [
+          "onescience"
+        ],
+        "required_called_attributes": [
+          "eval"
+        ],
+        "required_any_called_attributes": [
+          "no_grad",
+          "inference_mode"
+        ],
+        "required_flags": [
+          "--protein-path",
+          "--ligand-path",
+          "--checkpoint",
+          "--out-dir",
+          "--num-steps",
+          "--seed",
+          "--device"
+        ],
+        "required_source_text": [
+          "if __name__ == \"__main__\""
+        ],
+        "required_nn_module_classes": [
+          "EGNNRefineLayer",
+          "TargetDiff"
+        ],
+        "required_callable_functions": [
+          "parse_pdb_coordinates",
+          "parse_sdf_coordinates",
+          "write_sdf"
+        ],
+        "legacy_check_names": [
+          "evaluation_interface:source_and_cli_contract"
+        ]
+      }
+    },
+    {
+      "id": "c73d1ecc92e463c6",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "d74cacde5b8bed5e"
+      ],
+      "params": {
+        "seed": 20260820,
+        "candidate_model": "TargetDiff()",
+        "reference_model": "TargetDiff()",
+        "state_layout": {
+          "require_exact_key_set": true,
+          "require_matching_shapes": true,
+          "require_finite_candidate_tensors": true
+        },
+        "strict_reference_load": {
+          "state_dict_source": "reference_model.state_dict()",
+          "strict": true,
+          "set_both_eval": true
+        },
+        "checkpoint_fixtures": {
+          "raw": {
+            "filename": "reference_weights.pt",
+            "payload": "reference_state_dict"
+          },
+          "wrapped": {
+            "filename": "wrapped_reference_weights.pt",
+            "payload": {
+              "model_state_dict": "reference_state_dict",
+              "step": 1
+            }
+          },
+          "invalid": {
+            "filename": "invalid_reference_weights.pt",
+            "payload": "reference_state_dict_with_first_key_removed"
+          }
+        },
+        "legacy_check_names": [
+          "checkpoint_loading:strict_reference_state_layout",
+          "checkpoint_loading:raw_and_wrapped_state_dict"
+        ]
+      }
+    },
+    {
+      "id": "e36cf2fb8a69a299",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "c73d1ecc92e463c6"
+      ],
+      "params": {
+        "model_file": "targetdiff_inference.py",
+        "model_class": "TargetDiff",
+        "required_modules": {
+          "protein_atom_emb": "reference_type",
+          "ligand_atom_emb": "reference_type",
+          "time_embedding": "reference_type",
+          "refine_net": "reference_type",
+          "position_head": "reference_type",
+          "atom_type_head": "reference_type"
+        },
+        "refine_net": {
+          "module_type": "torch.nn.ModuleList",
+          "reference_length": true,
+          "per_layer_required_attributes": [
+            "edge_mlp",
+            "node_mlp",
+            "coordinate_gate"
+          ],
+          "coordinate_gate_out_features": 1
+        },
+        "attributes": {
+          "hidden_size": "reference_value",
+          "ligand_vocab": "reference_value"
+        },
+        "heads": {
+          "position_head_out_features": 3,
+          "atom_type_head_out_features": 8
+        },
+        "legacy_check_names": [
+          "model_structure:targetdiff_modules"
+        ]
+      }
+    },
+    {
+      "id": "aef1c56924ea778f",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "e36cf2fb8a69a299"
+      ],
+      "params": {
+        "reference_comparison": {
+          "rtol": 1e-06,
+          "atol": 1e-07,
+          "require_tensor_type_shape_dtype_and_finite": true
+        },
+        "refinement_layer": {
+          "class": "EGNNRefineLayer",
+          "hidden_size": 16,
+          "seed": 20260821,
+          "load_reference_state_strict": true,
+          "hidden_fixture": {
+            "linspace": [
+              -1.0,
+              1.0
+            ],
+            "shape": [
+              4,
+              16
+            ]
+          },
+          "position_fixture": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "output_shapes": [
+            [
+              4,
+              16
+            ],
+            [
+              4,
+              3
+            ]
+          ]
+        },
+        "forward": {
+          "fixture_helper": "make_tensor_fixture",
+          "time_steps": [
+            0.0,
+            0.25,
+            0.5,
+            1.0,
+            0.75
+          ],
+          "alternate_case": {
+            "protein_offset": 0.5,
+            "ligand_offset": -0.25,
+            "ligand_types": [
+              2,
+              1,
+              0
+            ]
+          },
+          "required_keys": [
+            "pred_ligand_pos",
+            "pred_ligand_v",
+            "final_h",
+            "final_ligand_h"
+          ],
+          "output_shapes": {
+            "pred_ligand_pos": "[ligand_atoms,3]",
+            "pred_ligand_v": "[ligand_atoms,8]",
+            "final_h": "[protein_atoms+ligand_atoms,32]",
+            "final_ligand_h": "[ligand_atoms,32]"
+          }
+        },
+        "intermediate_activations": {
+          "time_step": 0.5,
+          "stage_names": [
+            "protein_atom_emb",
+            "ligand_atom_emb",
+            "time_embedding",
+            "refine_net.0",
+            "refine_net.1",
+            "position_head",
+            "atom_type_head"
+          ],
+          "remove_hooks": true
+        },
+        "atom_count_sweep": {
+          "counts": [
+            1,
+            2,
+            3,
+            5
+          ],
+          "time_step": 0.5,
+          "five_atom_types": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "legacy_check_names": [
+          "model_structure:egnn_refinement_layers",
+          "forward_executable:multi_time_forward",
+          "forward_executable:intermediate_activations",
+          "forward_executable:atom_count_sweep"
+        ]
+      }
+    },
+    {
+      "id": "2c1e1822c61574c2",
+      "type": "train_loss",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "aef1c56924ea778f"
+      ],
+      "params": {
+        "model_class": "TargetDiff",
+        "method": "get_diffusion_loss",
+        "fixture_helper": "make_tensor_fixture",
+        "time_steps": [
+          0.1,
+          0.5,
+          0.9
+        ],
+        "reference_comparison": {
+          "rtol": 1e-06,
+          "atol": 1e-07,
+          "require_tensor_type_shape_dtype_and_finite": true
+        },
+        "required_keys": [
+          "loss_pos",
+          "loss_v",
+          "loss"
+        ],
+        "per_loss": {
+          "rank": 0,
+          "non_negative": true
+        },
+        "invariant": "loss == loss_pos + loss_v",
+        "gradient_check": {
+          "time_step": 0.5,
+          "loss_key": "loss",
+          "requires_grad": true,
+          "require_nonempty_finite_parameter_gradients": true,
+          "zero_grad_set_to_none_before_and_after": true
+        },
+        "legacy_check_names": [
+          "forward_executable:diffusion_loss_gradients"
+        ]
+      }
+    },
+    {
+      "id": "a0646abda2b7584c",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "aef1c56924ea778f"
+      ],
+      "params": {
+        "model_class": "TargetDiff",
+        "method": "sample_diffusion",
+        "fixture_helper": "make_tensor_fixture",
+        "num_steps": [
+          1,
+          2,
+          4,
+          6
+        ],
+        "seeds": [
+          0,
+          7,
+          31
+        ],
+        "reference_comparison": {
+          "rtol": 1e-06,
+          "atol": 1e-07,
+          "require_tensor_type_shape_dtype_and_finite": true
+        },
+        "required_keys": [
+          "pos",
+          "v",
+          "pos_traj"
+        ],
+        "trajectory_shape": "[num_steps,ligand_atoms,3]",
+        "atom_type_range": "0 <= v < candidate_model.ligand_vocab",
+        "determinism": {
+          "num_steps": 4,
+          "same_seed": 9,
+          "different_seed": 10,
+          "same_seed_rtol": 0.0,
+          "same_seed_atol": 0.0,
+          "different_seed_requires_different_pos": true
+        },
+        "legacy_check_names": [
+          "metric:multi_seed_sampling"
+        ]
+      }
+    },
+    {
+      "id": "e1b84d3a7fae157a",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "aef1c56924ea778f"
+      ],
+      "params": {
+        "model_class": "TargetDiff",
+        "fixture_helper": "make_tensor_fixture",
+        "must_raise": [
+          {
+            "name": "invalid protein coordinate width",
+            "protein_pos_width": 2
+          },
+          {
+            "name": "invalid ligand coordinate width",
+            "ligand_pos_width": 2
+          },
+          {
+            "name": "invalid ligand type length",
+            "ligand_type_length": 2
+          },
+          {
+            "name": "invalid ligand type rank",
+            "ligand_type_shape": "[3,1]"
+          },
+          {
+            "name": "out-of-range ligand type",
+            "ligand_type_value": "candidate_model.ligand_vocab"
+          },
+          {
+            "name": "zero-step diffusion sampling",
+            "method": "sample_diffusion",
+            "num_steps": 0,
+            "seed": 0
+          }
+        ],
+        "state_integrity": {
+          "all_modules_eval": true,
+          "forward_time_step": 0.5,
+          "repeats": 3,
+          "context": "torch.inference_mode",
+          "repeat_comparison": {
+            "rtol": 1e-06,
+            "atol": 1e-07,
+            "require_exact_output_keys": true
+          },
+          "state_dict_unchanged": {
+            "rtol": 0.0,
+            "atol": 0.0
+          }
+        },
+        "legacy_check_names": [
+          "evaluation_interface:invalid_inputs",
+          "evaluation_interface:state_integrity"
+        ]
+      }
+    },
+    {
+      "id": "4e9017c6003c5dd2",
+      "type": "infer_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "infer_script",
+      "depends": [
+        "d74cacde5b8bed5e"
+      ],
+      "params": {
+        "candidate_file": "targetdiff_inference.py",
+        "reference_file": "benchmarks/standard/targetdiff_inference/targetdiff_inference.py",
+        "fixture_helper": "write_input_fixture",
+        "parsers": [
+          {
+            "candidate": "parse_pdb_coordinates",
+            "reference": "parse_pdb_coordinates",
+            "expected_shape": [
+              4,
+              3
+            ],
+            "malformed_filename": "malformed.pdb",
+            "malformed_content": "ATOM invalid coordinates\n"
+          },
+          {
+            "candidate": "parse_sdf_coordinates",
+            "reference": "parse_sdf_coordinates",
+            "expected_shape": [
+              3,
+              3
+            ],
+            "malformed_filename": "malformed.sdf",
+            "malformed_content": "not an sdf\n"
+          }
+        ],
+        "comparison": {
+          "rtol": 1e-06,
+          "atol": 1e-07,
+          "require_tensor_type_shape_dtype_and_finite": true
+        },
+        "malformed_inputs_must_raise": true,
+        "legacy_check_names": [
+          "evaluation_interface:input_parsers"
+        ]
+      }
+    },
+    {
+      "id": "2a961470b0cfecf4",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "c73d1ecc92e463c6",
+        "4e9017c6003c5dd2",
+        "a0646abda2b7584c"
+      ],
+      "params": {
+        "script": "targetdiff_inference.py",
+        "executor": "subprocess.run",
+        "timeout_seconds": 180,
+        "device": "cpu",
+        "fixture_helper": "write_input_fixture",
+        "runs": [
+          {
+            "checkpoint_fixture": "reference_weights.pt",
+            "label": "raw",
+            "num_steps": 2,
+            "seed": 3
+          },
+          {
+            "checkpoint_fixture": "wrapped_reference_weights.pt",
+            "label": "wrapped",
+            "num_steps": 4,
+            "seed": 9
+          }
+        ],
+        "arguments": [
+          "--protein-path",
+          "--ligand-path",
+          "--checkpoint",
+          "--out-dir",
+          "--num-steps",
+          "--seed",
+          "--device"
+        ],
+        "expected_output_files": [
+          "ligand_sample.sdf",
+          "scores.json"
+        ],
+        "sdf": {
+          "parser": "parse_sdf_coordinates",
+          "shape": [
+            3,
+            3
+          ],
+          "finite": true,
+          "reference_comparison": {
+            "reference_method": "sample_diffusion",
+            "ligand_types": "zeros_like(fixture_ligand_types)",
+            "rtol": 0.0,
+            "atol": 5e-05
+          }
+        },
+        "scores": {
+          "exact_keys": [
+            "num_steps",
+            "seed",
+            "final_atom_count"
+          ],
+          "final_atom_count": 3
+        },
+        "must_fail": [
+          {
+            "name": "zero-step CLI validation",
+            "num_steps": 0
+          },
+          {
+            "name": "strict invalid-checkpoint validation",
+            "checkpoint_fixture": "invalid_reference_weights.pt",
+            "num_steps": 2
+          },
+          {
+            "name": "malformed PDB CLI validation",
+            "protein_content": "ATOM invalid coordinates\n",
+            "num_steps": 2
+          }
+        ],
+        "failure_requires_stdout_or_stderr": true,
+        "legacy_check_names": [
+          "metric:cli_outputs"
+        ]
+      }
+    }
+  ]
+}

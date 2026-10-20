@@ -1,0 +1,24 @@
+paths:
+  data: /public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz
+model:
+  name: NequIPGNNModel
+  r_max: 4.0
+  type_names: [Cu]
+  num_layers: 2
+  l_max: 1
+  parity: false
+  num_features: 8
+  radial_mlp_depth: 1
+  radial_mlp_width: 16
+  num_bessels: 4
+  avg_num_neighbors: 18.0
+training:
+  optimizer: Adam
+  lr: 0.01
+  eps: 1.0e-8
+  energy_weight: 0.5
+  force_weight: 0.5
+  gradient_clip_norm: 10.0
+  max_steps: 1
+  structure_index: 0
+  seed: 456

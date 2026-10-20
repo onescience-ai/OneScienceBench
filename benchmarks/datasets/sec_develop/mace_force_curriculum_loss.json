@@ -1,0 +1,356 @@
+{
+  "id": "mace_force_curriculum_loss",
+  "eval_type": "sec-develop",
+  "domain": "matchem",
+  "task": "为 MACE 能量-力联合损失增加力项预热调度",
+  "prompt": "完成一次 MACE 训练损失组件二次开发：在保持 MACE 原生构型权重、逐原子能量归一化、逐构型力权重和分布式归约语义的基础上，为能量-力联合损失增加 force curriculum。训练步数不大于 0 时不计入力损失，预热区间内力项权重从 0 线性增长，达到预热步数后保持完整力项权重；能量项权重始终不变。生成文件必须保存为 mace_force_curriculum_loss.py，并定义继承 torch.nn.Module 的公开类 MACEForceCurriculumLoss；构造参数为 energy_weight=1.0、forces_weight=1.0、warmup_steps=100，forward 参数为 reference、prediction、step、ddp=None，并返回可反向传播的标量损失。warmup_steps 必须为正数。",
+  "evaluation_script": "evaluate_mace_force_curriculum_loss.py",
+  "stardard_dir_name": "mace_force_curriculum_loss",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G"
+  },
+  "checks": [
+    {
+      "id": "dd1e73ec1e6c2e4e",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "phase": "model_structure",
+        "required_files": [
+          "mace_force_curriculum_loss.py"
+        ],
+        "submission_resolution": {
+          "environment_variable": "MACE_FORCE_CURRICULUM_LOSS_SUBMISSION_DIR",
+          "explicit_file_supported": true,
+          "search_roots": [
+            "cwd",
+            "PYTHONPATH entries",
+            "evaluator parent submissions"
+          ],
+          "selection": "first regular file found"
+        },
+        "assertion": "Path.is_file()"
+      }
+    },
+    {
+      "id": "b6dd36a1cc6b69bc",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "dd1e73ec1e6c2e4e"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "mace_force_curriculum_loss.py"
+        ],
+        "required_interfaces": [
+          "MACEForceCurriculumLoss"
+        ],
+        "assertions": {
+          "object_is_type": true,
+          "issubclass": "torch.nn.Module"
+        },
+        "legacy_module_name": "mace_force_curriculum_loss_submission"
+      }
+    },
+    {
+      "id": "4f065c0806dffe6f",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "dd1e73ec1e6c2e4e",
+        "b6dd36a1cc6b69bc"
+      ],
+      "params": {
+        "model_file": "mace_force_curriculum_loss.py",
+        "model_class": "MACEForceCurriculumLoss",
+        "required_init_parameters": [
+          "energy_weight",
+          "forces_weight",
+          "warmup_steps"
+        ],
+        "constructor_defaults": {
+          "energy_weight": 1.0,
+          "forces_weight": 1.0,
+          "warmup_steps": 100
+        },
+        "required_forward_parameters": [
+          "reference",
+          "prediction",
+          "step",
+          "ddp"
+        ],
+        "legacy_signature_validation": "inspect.signature"
+      }
+    },
+    {
+      "id": "c167faad7cfce937",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "dd1e73ec1e6c2e4e"
+      ],
+      "params": {
+        "file": "mace_force_curriculum_loss.py",
+        "encoding": "utf-8",
+        "ast_parse": true,
+        "forbidden_exact_imports": [
+          "evaluate_mace_force_curriculum_loss",
+          "mace_force_curriculum_loss_standard"
+        ],
+        "forbidden_prefixes": [
+          "evaluation.eval_datasets.codegen.evaluators",
+          "evaluation.eval_datasets.codegen.standard"
+        ],
+        "assertion": "no imported module matches exact names or prefixes"
+      }
+    },
+    {
+      "id": "c80675f4cfcbf91d",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "dd1e73ec1e6c2e4e",
+        "4f065c0806dffe6f"
+      ],
+      "params": {
+        "model_file": "mace_force_curriculum_loss.py",
+        "model_class": "MACEForceCurriculumLoss",
+        "constructor": {
+          "energy_weight": 1.75,
+          "forces_weight": 3.5,
+          "warmup_steps": 8,
+          "dtype": "torch.float64"
+        },
+        "reference": {
+          "ptr": [
+            0,
+            2,
+            5
+          ],
+          "weight": [
+            1.5,
+            0.5
+          ],
+          "energy_weight": [
+            1.0,
+            1.0
+          ],
+          "forces_weight": [
+            0.25,
+            2.0
+          ],
+          "energy": [
+            4.0,
+            -2.0
+          ],
+          "forces": [
+            [
+              0.2,
+              -0.1,
+              0.3
+            ],
+            [
+              -0.4,
+              0.5,
+              0.1
+            ],
+            [
+              1.0,
+              -0.2,
+              0.0
+            ],
+            [
+              0.3,
+              0.7,
+              -0.5
+            ],
+            [
+              -0.1,
+              0.4,
+              0.9
+            ]
+          ],
+          "dtype": "torch.float64"
+        },
+        "prediction": {
+          "energy": [
+            3.25,
+            -0.5
+          ],
+          "forces": [
+            [
+              0.0,
+              0.1,
+              0.2
+            ],
+            [
+              -0.2,
+              0.3,
+              -0.1
+            ],
+            [
+              0.4,
+              -0.1,
+              0.2
+            ],
+            [
+              0.0,
+              0.2,
+              -0.4
+            ],
+            [
+              0.3,
+              0.1,
+              0.5
+            ]
+          ],
+          "dtype": "torch.float64",
+          "requires_grad": false
+        },
+        "steps": [
+          {
+            "name": "negative",
+            "value": -3
+          },
+          {
+            "name": "start",
+            "value": 0
+          },
+          {
+            "name": "quarter",
+            "value": 2
+          },
+          {
+            "name": "half",
+            "value": "torch.tensor(4)"
+          },
+          {
+            "name": "complete",
+            "value": 8
+          },
+          {
+            "name": "after",
+            "value": 20
+          }
+        ],
+        "assertions": {
+          "output_type": "torch.Tensor",
+          "output_ndim": 0,
+          "finite": true
+        },
+        "invalid_constructor": {
+          "warmup_steps": 0,
+          "accepted_exception_types": [
+            "ValueError"
+          ]
+        }
+      }
+    },
+    {
+      "id": "47d2fc1031700a40",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "c80675f4cfcbf91d"
+      ],
+      "params": {
+        "candidate_class": "MACEForceCurriculumLoss",
+        "reference_class": "mace_force_curriculum_loss_standard.MACEForceCurriculumLoss",
+        "constructor": {
+          "energy_weight": 1.75,
+          "forces_weight": 3.5,
+          "warmup_steps": 8
+        },
+        "steps": [
+          -3,
+          0,
+          2,
+          "torch.tensor(4)",
+          8,
+          20
+        ],
+        "comparison": {
+          "operation": "torch.testing.assert_close",
+          "rtol": 1e-07,
+          "atol": 1e-10
+        },
+        "report": "max_loss_abs_error"
+      }
+    },
+    {
+      "id": "7f618ca7519a7837",
+      "type": "train_loss",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "c80675f4cfcbf91d",
+        "47d2fc1031700a40"
+      ],
+      "params": {
+        "loss": "MACEForceCurriculumLoss",
+        "steps": {
+          "negative": -3,
+          "start": 0,
+          "quarter": 2,
+          "half": "torch.tensor(4)",
+          "complete": 8,
+          "after": 20
+        },
+        "assertions": {
+          "negative_equals_start": true,
+          "start_less_than_quarter_less_than_half_less_than_complete": true,
+          "complete_equals_after": true
+        },
+        "warmup_steps": 8
+      }
+    },
+    {
+      "id": "c3e81aa57a751c60",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "c80675f4cfcbf91d"
+      ],
+      "params": {
+        "loss_class": "MACEForceCurriculumLoss",
+        "constructor": {
+          "energy_weight": 1.75,
+          "forces_weight": 3.5,
+          "warmup_steps": 8
+        },
+        "prediction": {
+          "factory": "_prediction",
+          "dtype": "torch.float64",
+          "requires_grad": true
+        },
+        "step": 4,
+        "backward": "gradient_loss.backward()",
+        "assertions": {
+          "energy_gradient_non_none": true,
+          "energy_gradient_finite": true,
+          "energy_gradient_nonzero": true,
+          "forces_gradient_non_none": true,
+          "forces_gradient_finite": true,
+          "forces_gradient_nonzero": true
+        }
+      }
+    }
+  ]
+}

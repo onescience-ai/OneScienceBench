@@ -1,0 +1,293 @@
+{
+  "id": "aurora_lora_weather_finetune",
+  "eval_type": "train",
+  "domain": "earth",
+  "task": "基于官方 Microsoft Aurora （microsoft-aurora==2.0.0）实现一个可审计的 LoRA-only 天气预报微调启动器",
+  "prompt": "请完成以下任务：基于官方 Microsoft Aurora（microsoft-aurora==2.0.0）实现可审计的 LoRA-only 天气预报微调启动器，代码保存为提交目录根部的 aurora_lora_finetune.py。模型实例由调用方传入，必须通过官方 Aurora 的 load_checkpoint_local(checkpoint_path, strict=False) 加载预训练 checkpoint，并只更新名称包含 lora_A 或 lora_B 的参数，所有主干参数必须冻结。实现 latitude_weighted_mse、weather_metrics 和 AuroraLoRAFineTuner：构造函数接收 model、checkpoint_path、output_dir、learning_rate、weight_decay、max_steps、grad_clip_norm、device、use_activation_checkpointing 和 seed；train_step(input_batch,target_batch) 使用官方 Batch、反向传播、梯度裁剪和 AdamW 完成一次真实更新并返回有限的 step、epoch、train_loss、rmse、mae、grad_norm；fit(train_batches) 按调用方给定的 max_steps 循环执行，并生成对应数量的 JSONL 指标记录，在 output_dir 下保存 metrics.jsonl、aurora_lora_finetuned.pt、predictions.json 和 targets.json。checkpoint 必须包含 format=aurora-lora-finetune-v1、model_state_dict、optimizer_state_dict、trainable_parameter_names 和 completed_steps；预测与目标 JSON 必须分别包含一维 predictions 和 targets 数组。训练不得下载数据或硬编码数据集路径，输入 Batch 和 checkpoint 路径必须由调用方提供。实现必须能在官方 AuroraSmallPretrained 的 17x32、两历史帧、四气压层合成 Batch 上按给定 max_steps 完成 CUDA/DCU 微调。latitude_weighted_mse 和 weather_metrics 还必须支持包含 surf_vars、atmos_vars、metadata.lat 的等价 mapping，并使用 mapping 中的纬度。",
+  "evaluation_script": "evaluate_aurora_lora_weather_finetune.py",
+  "stardard_dir_name": "aurora_lora_weather_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "3fbd139acb1e8f2a",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "aurora_lora_finetune.py"
+        ]
+      }
+    },
+    {
+      "id": "07ba280b8943ab0d",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "3fbd139acb1e8f2a"
+      ],
+      "params": {
+        "phase": "data_analysis",
+        "batch_type": "aurora.Batch",
+        "surface_keys": [
+          "2t",
+          "10u",
+          "10v",
+          "msl"
+        ],
+        "atmos_keys": [
+          "z",
+          "u",
+          "v",
+          "t",
+          "q"
+        ],
+        "surface_shape": [
+          1,
+          2,
+          17,
+          32
+        ],
+        "atmos_shape": [
+          1,
+          2,
+          4,
+          17,
+          32
+        ],
+        "surface_ndim": 4,
+        "atmos_ndim": 5,
+        "metadata_atmos_levels": [
+          100,
+          250,
+          500,
+          850
+        ]
+      }
+    },
+    {
+      "id": "b87fdf1ab032e542",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "3fbd139acb1e8f2a"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "aurora_lora_finetune.py"
+        ],
+        "required_interfaces": [
+          "AuroraLoRAFineTuner.train_step",
+          "AuroraLoRAFineTuner.fit",
+          "latitude_weighted_mse",
+          "weather_metrics"
+        ],
+        "constructor_parameters": [
+          "model",
+          "checkpoint_path",
+          "output_dir",
+          "learning_rate",
+          "weight_decay",
+          "max_steps",
+          "grad_clip_norm",
+          "device",
+          "use_activation_checkpointing",
+          "seed"
+        ],
+        "train_step_parameters": [
+          "input_batch",
+          "target_batch"
+        ],
+        "fit_parameters": [
+          "train_batches"
+        ]
+      }
+    },
+    {
+      "id": "58f8d521bd8fa087",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "b87fdf1ab032e542"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "model_class": "AuroraSmallPretrained",
+        "model_args": {
+          "use_lora": true,
+          "autocast": false
+        },
+        "module_type": "torch.nn.Module",
+        "required_lora_markers": [
+          "lora_A",
+          "lora_B"
+        ],
+        "required_forward_callable": true,
+        "trainer_constructor_parameters": [
+          "model",
+          "checkpoint_path",
+          "output_dir",
+          "learning_rate",
+          "weight_decay",
+          "max_steps",
+          "grad_clip_norm",
+          "device",
+          "use_activation_checkpointing",
+          "seed"
+        ]
+      }
+    },
+    {
+      "id": "2c60645c4287ccdd",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "58f8d521bd8fa087",
+        "07ba280b8943ab0d"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "model_class": "AuroraSmallPretrained",
+        "model_args": {
+          "use_lora": true,
+          "autora": false
+        },
+        "batch_builder": "build_real_batch",
+        "eval": true,
+        "no_grad": true,
+        "surface_keys": [
+          "2t",
+          "10u",
+          "10v",
+          "msl"
+        ],
+        "atmos_keys": [
+          "z",
+          "u",
+          "v",
+          "t",
+          "q"
+        ],
+        "allowed_output_ndim": [
+          4,
+          5
+        ],
+        "finite_output": true
+      }
+    },
+    {
+      "id": "d0b27c9fdf075f64",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "b87fdf1ab032e542",
+        "2c60645c4287ccdd"
+      ],
+      "params": {
+        "phase": "train",
+        "run_train_file": "aurora_lora_finetune.py",
+        "train_function": "AuroraLoRAFineTuner.fit",
+        "aurora_package_version": "2.0.0",
+        "checkpoint_filename": "aurora-0.25-small-pretrained.ckpt",
+        "checkpoint_size_bytes": 451339106,
+        "checkpoint_sha256": "f80f78de1524a9faba8c9053e4a8ce6a2114ec01cff7f7b4efe9377200d50621",
+        "cuda_or_dcu_required": true,
+        "max_steps": 10,
+        "seed": 20260804,
+        "learning_rate": 1e-06,
+        "weight_decay": 0.0,
+        "grad_clip_norm": 1.0,
+        "checkpoint_load_strict": false,
+        "lora_markers": [
+          "lora_A",
+          "lora_B"
+        ],
+        "target_offset": 0.1,
+        "mapping_probe_loss": 7.0,
+        "required_metric_keys": [
+          "rmse",
+          "mae"
+        ],
+        "expected_step_sequence": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "finite_metrics": true,
+        "frozen_base_unchanged": true,
+        "adapter_updated": true,
+        "finite_nonzero_gradient": true
+      }
+    },
+    {
+      "id": "d51c2a2b2eefd23e",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "d0b27c9fdf075f64"
+      ],
+      "params": {
+        "phase": "smoke_train",
+        "artifacts": {
+          "files": [
+            "metrics.jsonl",
+            "aurora_lora_finetuned.pt",
+            "predictions.json",
+            "targets.json"
+          ]
+        },
+        "metrics_record_count": 10,
+        "metric_fields": [
+          "step",
+          "epoch",
+          "train_loss",
+          "rmse",
+          "mae",
+          "grad_norm"
+        ],
+        "finite_metric_values": true,
+        "prediction_key": "predictions",
+        "target_key": "targets",
+        "aligned_nonempty_finite_one_dimensional_lists": true,
+        "checkpoint_required_keys": [
+          "format",
+          "model_state_dict",
+          "optimizer_state_dict",
+          "trainable_parameter_names",
+          "completed_steps"
+        ],
+        "checkpoint_format": "aurora-lora-finetune-v1",
+        "completed_steps": 10,
+        "checkpoint_lora_scope_matches": true,
+        "strict_reload": true,
+        "reload_compare": "torch.allclose",
+        "reload_rtol": 0.0001,
+        "reload_atol": 0.001,
+        "finite_reloaded_output": true
+      }
+    }
+  ]
+}

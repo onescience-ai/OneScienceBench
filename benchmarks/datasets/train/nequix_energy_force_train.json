@@ -1,0 +1,299 @@
+{
+  "id": "nequix_energy_force_train",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "独立实现 NequIX 等变原子间势模型并在真实 mptrj batch 上完成确定性单步能量-力从头训练",
+  "prompt": "独立实现 NequIX（E(3) 等变图神经网络原子间势，PyTorch 后端，JAX-free）模型并完成一次真实的从头能量-力训练更新。计分模型必须由当前目录中的本地 PyTorch/e3nn 类实现，不得主动导入 `onescience`、外部 `nequip`、`mace`、`mattersim` 或 `nequix`，不得读取评测器、标准答案或旧候选。NequIX 可预测能量、原子力和应力；力由能量对位置求梯度得到，应力由能量对晶格应变求梯度除以体积得到。\n\n模型按固定架构配置构造（89 元素、cutoff=6.0、4 层、hidden_irreps=128x0e+64x1o+32x2e+32x3o、lmax=3、radial_basis_size=8、radial_mlp_size=64、radial_mlp_layers=2、radial_polynomial_p=6.0、mlp_init_scale=4.0、index_weights=false、layer_norm=true、shift=0.16502578765761478、scale=0.8066479563713074、avg_n_neighbors=57.413687022442645），完整 state_dict 为 107 项、732710 个元素、38 个参数张量；顶层模块顺序为 layers、readout，每层卷积模块顺序为 linear_1、tp、sort、radial_mlp、linear_2、skip、layer_norm、gate。模型必须以 seed=456 确定性初始化：两次相同 seed 构造必须产生逐项完全一致的 state_dict。架构配置由任务提供的 `nequix_arch_config.json` 给出，本地模型类按 `NequixTorch(...)` 构造。\n\n训练数据固定为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb`，SHA256 为 `b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b`，共 16 个周期结构；使用 index=0 的真实 energy 与 forces 标签（28 原子结构），并由本地 ASE 周期邻居图在 cutoff=6.0 下构造 batch。训练损失为 total-energy MSE 与 force MSE 各乘权重 1.0 与 5.0。固定使用 AdamW、lr=1e-3、weight_decay=1e-8、max_steps=1、gradient_clip_norm=1e6；`train_step` 必须执行 zero_grad、真实前向、loss.backward、梯度裁剪和 optimizer.step，不能用预计算输出或伪造 metrics。一次训练必须生成 `nequix_trained.pt`、`metrics.jsonl`、`train.log`；checkpoint 包含完整更新后的模型、非空优化器状态、completed_steps=1、解析配置和 history，并可由同架构 `strict=True` 重新加载。\n\n请在指定目录生成 `nequix_energy_force_train.py`、`train_nequix_from_scratch.py`、`nequix_train.yaml`、`nequix_arch_config.json` 和独立包 `portable_nequix/`。`nequix_energy_force_train.py` 必须公开 `load_arch_config`、`build_model`、`load_training_structures`、`build_train_batch`、`predict_energy_forces`；`train_nequix_from_scratch.py` 必须公开 `load_config`、`trainable_named_parameters`、`build_model`、`build_trainer`、`train_step`、`train`、`main`。",
+  "evaluation_script": "evaluate_nequix_energy_force_train.py",
+  "stardard_dir_name": "nequix_energy_force_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+    "time_limit": "00:20:00",
+    "job_name": "eval_nequix_train",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "e695767130dd6f80",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "phase": "task_artifacts",
+        "required_files": [
+          "nequix_energy_force_train.py",
+          "train_nequix_from_scratch.py",
+          "nequix_train.yaml",
+          "nequix_arch_config.json"
+        ],
+        "legacy_regular_file_rule": true,
+        "legacy_submission_env": "NEQUIX_TRAIN_SUBMISSION_DIR",
+        "legacy_pythonpath_fallback": true,
+        "prohibited_import_roots": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim",
+          "nequix"
+        ],
+        "scan_prohibited_imports_only_when_no_missing": true,
+        "legacy_ast_scan": "submission.rglob('*.py')",
+        "skip_path_substrings": [
+          "portable_nequix"
+        ]
+      }
+    },
+    {
+      "id": "a6f481d300e5624f",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "e695767130dd6f80"
+      ],
+      "params": {
+        "candidate": {
+          "file": "nequix_energy_force_train.py",
+          "functions": [
+            "load_training_structures",
+            "build_train_batch"
+          ],
+          "data_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mptrj_smoke/data_00000.aselmdb",
+          "frame_index": 0,
+          "device": "cpu"
+        },
+        "data_sha256": "b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b",
+        "structures_min_count": 1,
+        "energy_shape": [
+          1,
+          1
+        ],
+        "forces_shape": [
+          28,
+          3
+        ],
+        "positions_shape": [
+          28,
+          3
+        ],
+        "expected_energy": -170.60565946,
+        "energy_atol": 0.01,
+        "forces_finite": true
+      }
+    },
+    {
+      "id": "d02fc2c879d14674",
+      "type": "train_config_content",
+      "method": "check_config_content",
+      "phase": "train_script",
+      "depends": [
+        "e695767130dd6f80"
+      ],
+      "params": {
+        "config_name": "nequix_train.yaml",
+        "required_config_keys": [
+          "optimizer",
+          "lr",
+          "weight_decay",
+          "energy_weight",
+          "force_weight",
+          "gradient_clip_norm",
+          "max_steps",
+          "structure_index",
+          "seed"
+        ],
+        "expected_values": {
+          "training.optimizer": "AdamW",
+          "training.lr": 0.001,
+          "training.max_steps": 1,
+          "training.structure_index": 0,
+          "training.seed": 456
+        },
+        "required_interfaces": [
+          "load_config",
+          "trainable_named_parameters",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ],
+        "interface_file": "train_nequix_from_scratch.py",
+        "config_loader": "load_config"
+      }
+    },
+    {
+      "id": "a1a0ff59a41c5ee4",
+      "type": "optional_eval",
+      "method": "check_eval_script_contract",
+      "phase": "eval_script",
+      "depends": [
+        "d02fc2c879d14674"
+      ],
+      "params": {
+        "always_pass": true,
+        "detail": "optional evaluation script is not part of this task"
+      }
+    },
+    {
+      "id": "a052c7c2cd704bf2",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "d02fc2c879d14674"
+      ],
+      "params": {
+        "model_class": "NequixTorch",
+        "model_factory": "build_model(config,'cpu')",
+        "top_level_module_order": [
+          "layers",
+          "readout"
+        ],
+        "layer_count": 4,
+        "state_count": 107,
+        "state_numel": 732710,
+        "parameter_count": 38,
+        "cutoff": 6.0,
+        "cutoff_atol": 1e-09,
+        "n_species": 89
+      }
+    },
+    {
+      "id": "a60a32aa6c99b6f3",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "a052c7c2cd704bf2"
+      ],
+      "params": {
+        "model_class": "NequixTorch",
+        "helper": "predict_energy_forces",
+        "mode": "train",
+        "device": "cpu",
+        "frame_index": 0,
+        "expected": {
+          "energy_shape": [
+            1
+          ],
+          "forces_shape": [
+            28,
+            3
+          ],
+          "finite": true
+        }
+      }
+    },
+    {
+      "id": "4e47d8b119b4ffa6",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "a052c7c2cd704bf2",
+        "a60a32aa6c99b6f3"
+      ],
+      "params": {
+        "candidate_model": "ctx['model']",
+        "reference_module": "benchmarks/standard/nequix_energy_force_train/nequix_energy_force_train.py",
+        "reference_arch_config": "benchmarks/standard/nequix_energy_force_train/nequix_arch_config.json",
+        "reference_factory": "standard.build_model(ref_config,'cpu')",
+        "reference_config": {
+          "paths": {
+            "arch_config": "standard/nequix_arch_config.json"
+          },
+          "training": {
+            "seed": 456
+          }
+        },
+        "seed": 456,
+        "require_same_keys": true,
+        "require_same_shapes": true,
+        "require_exact_state_values": true
+      }
+    },
+    {
+      "id": "359bb2b30a9fac72",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "a6f481d300e5624f",
+        "d02fc2c879d14674",
+        "a052c7c2cd704bf2"
+      ],
+      "params": {
+        "candidate_train_module": "train_nequix_from_scratch.py",
+        "config": "nequix_train.yaml",
+        "device": "cpu",
+        "build_trainer": "build_trainer(config,'cpu')",
+        "second_model": "build_model(config,'cpu')",
+        "batch_builder": "nequix_energy_force_train.build_train_batch(DATA_PATH,int(config['training']['structure_index']),'cpu')",
+        "train_step": "train_step(model,optimizer,batch,config)",
+        "seed": 456,
+        "require_deterministic_initial_state": true,
+        "require_finite_record": true,
+        "require_optimizer_parameter_ids_equal_trainable_ids": true,
+        "expected_trainable_parameter_count": 38,
+        "minimum_changed_parameters": 38
+      }
+    },
+    {
+      "id": "c7fdbe3fae687797",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "d02fc2c879d14674",
+        "359bb2b30a9fac72"
+      ],
+      "params": {
+        "train_function": "train",
+        "config_name": "nequix_train.yaml",
+        "output_directory": {
+          "kind": "TemporaryDirectory",
+          "prefix": "nequix_train_eval_"
+        },
+        "output_files": [
+          "nequix_trained.pt",
+          "metrics.jsonl",
+          "train.log"
+        ],
+        "checkpoint_load": {
+          "map_location": "cpu",
+          "weights_only": true
+        },
+        "required_checkpoint_keys": [
+          "format",
+          "model_name",
+          "model",
+          "optimizer",
+          "completed_steps",
+          "trainable_parameter_names",
+          "data_sha256",
+          "config",
+          "history"
+        ],
+        "format": "nequix-energy-force-train-v1",
+        "data_sha256": "b32cfaec1fdefb3a823e0bd19b7fab32d3a0c325e644dd388c5cc75117b4143b",
+        "completed_steps": 1,
+        "trainable_parameter_count": 38,
+        "optimizer_nonempty": true,
+        "history_length": 1,
+        "strict_reload": true
+      }
+    }
+  ]
+}

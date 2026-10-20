@@ -1,0 +1,65 @@
+experiment:
+  name: rno_darcy_paper_rep
+  seed: 0
+  output_dir: ./results/rno_darcy_paper_rep_seed0
+  device: auto
+
+data:
+  root: /public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy
+  train_file: piececonst_r421_N1024_smooth1.mat
+  test_file: piececonst_r421_N1024_smooth2.mat
+  input_key: coeff
+  target_key: sol
+  native_resolution: 421
+  downsample: 5
+  resolution: 85
+  n_train: 1000
+  n_test: 200
+  num_workers: 0
+
+model:
+  name: RNO2D
+  hidden_dim: 128
+  num_heads: 8
+  num_layers: 8
+  num_angles: 32
+  num_radon_blocks: 4
+  angle_weighting: paper_conv
+  angle_conv_channels: 16
+  angle_conv_kernel_size: 3
+  include_pi_endpoint: true
+  slice_num: 64
+  ref_grid_size: 8
+  unified_pos: true
+  dropout: 0.0
+  mlp_ratio: 1
+  input_dim: 1
+  output_dim: 1
+
+training:
+  epochs: 500
+  batch_size: 4
+  optimizer: AdamW
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  scheduler: one_cycle
+  max_grad_norm: 0.1
+  amp: false
+  eval_every: 1
+  checkpoint_every: 100
+
+loss:
+  data: relative_l2
+  gradient: relative_l2
+  gradient_weight: 0.1
+
+paper_reference:
+  metric: relative_l2
+  darcy_main_result: 0.00510
+  source: NeurIPS_2025_Table_1_and_Table_8
+
+provenance:
+  repository: https://github.com/wenbin-lu/Radon-Neural-Operator
+  repository_commit: 8fde20e58682870435b8a79aff399d62ea35601b
+  paper: https://proceedings.neurips.cc/paper_files/paper/2025/file/e66233a208ef32f56df6312263239fa0-Paper-Conference.pdf
+

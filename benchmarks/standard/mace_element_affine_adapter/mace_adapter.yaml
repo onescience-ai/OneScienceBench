@@ -1,0 +1,11 @@
+foundation_model:
+  config_path: /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.json
+  weights_path: /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.pt
+adapter:
+  trainable: true
+  freeze_base: true
+  energy_scale_init: 1.0
+  element_shift_init: 0.0
+training:
+  lr: 0.001
+  weight_decay: 0.00001

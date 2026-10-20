@@ -1,0 +1,453 @@
+{
+  "id": "mattersim_energy_force_finetune",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "基于固定 MatterSim 1M 权重和 ASE 水数据实现能量-力全量微调",
+  "prompt": "基于固定 MatterSim v1.0.0 1M checkpoint 和 high_level_water.xyz，独立实现 M3GNet 能量-力全量微调流程。固定权重为 `/public/share/sugonhpcapp01/onestore/onemodels/mattersim/mattersim-v1.0.0-1M.pth`，SHA256 为 `28b0b0b0f13efefee06b47ea4c9105a26bd3e2c8396da193430da96b3b49a8be`；固定训练数据为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mattersim/high_level_water.xyz`，SHA256 为 `46c7ad6375ca6596a39fc5c15c8a0a76e7ead90ec74189b370fae3fcc726e779`，包含 10 个各 192 原子的周期水构型以及总能量和逐原子力标签。不得下载、替换、裁剪或伪造权重和数据。\n\n候选必须使用本地 PyTorch 类完整实现 MatterSim M3GNet，不得主动导入 `onescience` 或外部 `mattersim` 包，不得读取评测器、标准实现或旧候选。固定模型参数为 `num_blocks=3`、`units=128`、`max_l=4`、`max_n=4`、`cutoff=5.0`、`max_z=94`、`threebody_cutoff=4.0`。本地结构必须包含 SmoothBessel 径向基、SphericalBasis 三体角基、4 到 128 维 edge encoder、95 到 128 维原子 one-hot embedding、三个顺序执行的 MainBlock、gated energy readout 和逐元素 AtomScaling；每个 MainBlock 必须实际完成三体边更新、边消息更新和原子消息更新。`sbf.coef` 为 shape `[4,9,4]` 的非持久化解析系数 buffer。\n\ncheckpoint 顶层必须且仅含 `model_name`、`model`、`model_args`、`optimizer`、`ema`、`scheduler`、`last_epoch`、`validation_metrics`、`description`，其中 `model_name=m3gnet`，`model` 有 89 个 tensor entry、890246 个元素。必须使用 `torch.load(..., weights_only=True)` 读取纯张量 checkpoint，并把完整 `model` 状态加载到本地模型的 `load_state_dict(..., strict=True)`；不得过滤键、忽略 missing/unexpected key、动态改写 tensor shape 或覆盖加载钩子绕过严格加载。受评前向、loss、反向传播和更新必须由本地模型完成。\n\n数据入口必须使用 ASE 读取固定 extxyz 的全部构型和标签，根据晶胞及 PBC 构造 5.0 Angstrom 周期邻居图，并在 4.0 Angstrom 内构造同中心、排除自配对的有序三体边对。`build_finetune_batch` 必须选择指定构型并返回图、总能量 `[1]`、逐原子力 `[192,3]`、原子数和构型索引。模型前向输出总能量 `[1]`，力必须由总能量对坐标的负梯度得到并保持训练所需高阶求导图。损失采用 delta=0.01 的 Huber loss：能量分支先按原子数归一化，力分支比较全部逐原子分量，总损失为 `energy_loss + 1.0 * force_loss`。\n\n执行全量微调：所有模型参数均可训练，使用 Adam、`lr=2e-4`、`eps=1e-7`，每步依次执行真实 forward、loss、backward、全参数梯度范数裁剪至 1.0 和 `optimizer.step()`；固定最小流程使用 seed=20260819、structure_index=0、max_steps=1。训练后所有可训练参数张量都必须发生更新。训练结果必须保存 `mattersim_finetuned.pth`、`metrics.jsonl`、`train.log`；checkpoint 必须且仅含 `format`、`model_name`、`model`、`model_args`、`optimizer`、`completed_steps`、`trainable_parameter_names`、`config`、`history`，其中 format 为 `mattersim-1m-energy-force-finetune-v1`，完整模型状态必须能够 `strict=True` 重载，optimizer state 非空；两个 JSONL 日志必须与 checkpoint 中的一步 history 完全一致。\n\nmattersim_finetune.yaml 必须包含以下顶层字段：`checkpoint`（字符串路径）、`train_data_path`（字符串路径）、`model`（对象）和 `training`（对象）；不得用 `checkpoint.path`、`data.path` 或 `dataset` 替代。`training` 必须包含 `optimizer`、`lr`、`huber_delta`、`force_loss_ratio`、`gradient_clip_norm`、`max_steps`、`structure_index` 和 `seed`，并使用上述固定值。\n\n请在当前工作目录生成 `mattersim_energy_force_finetune/mattersim_energy_force_finetune.py`、`mattersim_energy_force_finetune/train_mattersim_finetune.py`、`mattersim_energy_force_finetune/mattersim_finetune.yaml`、`mattersim_energy_force_finetune/portable_mattersim/__init__.py`、`mattersim_energy_force_finetune/portable_mattersim/model.py`、`mattersim_energy_force_finetune/portable_mattersim/blocks.py`、`mattersim_energy_force_finetune/portable_mattersim/layers.py`、`mattersim_energy_force_finetune/portable_mattersim/embeddings.py`、`mattersim_energy_force_finetune/portable_mattersim/scaling.py`、`mattersim_energy_force_finetune/portable_mattersim/graph.py`；其余本地文件可按实现需要自行组织。模型脚本必须公开 `M3Gnet`、`MatterSimEnergyForceFineTuner`、`load_checkpoint_payload`、`build_model`、`load_pretrained_model`、`load_training_structures`、`build_finetune_batch`、`predict_energy_forces`、`compute_energy_force_loss`；训练脚本必须公开 `load_config`、`build_model`、`build_trainer`、`train_step`、`train`、`main`，并提供 `--config`、`--output-dir`、`--device auto|cpu|cuda`。所有生成文件都必须位于上述相对目录，不能写入固定的开发者提交目录。",
+  "evaluation_script": "evaluate_mattersim_energy_force_finetune.py",
+  "stardard_dir_name": "mattersim_energy_force_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "24G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_mattersim_energy_force_finetune",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "f2aff0067cfa6c5c",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "mattersim_energy_force_finetune.py",
+          "train_mattersim_finetune.py",
+          "mattersim_finetune.yaml",
+          "portable_mattersim/__init__.py",
+          "portable_mattersim/model.py",
+          "portable_mattersim/blocks.py",
+          "portable_mattersim/layers.py",
+          "portable_mattersim/embeddings.py",
+          "portable_mattersim/scaling.py",
+          "portable_mattersim/graph.py"
+        ]
+      }
+    },
+    {
+      "id": "9cbbc84866e9126d",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "f2aff0067cfa6c5c"
+      ],
+      "params": {
+        "config_name": "mattersim_finetune.yaml",
+        "config_loader": "load_config",
+        "checkpoint_key": "checkpoint",
+        "train_data_key": "train_data_path",
+        "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattersim/mattersim-v1.0.0-1M.pth",
+        "dataset_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mattersim/high_level_water.xyz",
+        "checkpoint_sha256": "28b0b0b0f13efefee06b47ea4c9105a26bd3e2c8396da193430da96b3b49a8be",
+        "dataset_sha256": "46c7ad6375ca6596a39fc5c15c8a0a76e7ead90ec74189b370fae3fcc726e779",
+        "structures_loader": "load_training_structures",
+        "expected_structure_count": 10,
+        "expected_atoms_per_structure": 192,
+        "batch_builder": "build_finetune_batch",
+        "structure_index": 0,
+        "device": "cpu",
+        "graph_key": "graph",
+        "energy_shape": [
+          1
+        ],
+        "forces_shape": [
+          192,
+          3
+        ],
+        "atom_pos_shape": [
+          192,
+          3
+        ],
+        "cell_shape": [
+          1,
+          3,
+          3
+        ],
+        "edge_index": {
+          "ndim": 2,
+          "shape_0": 2
+        },
+        "three_body_indices": {
+          "ndim": 2,
+          "shape_1": 2
+        },
+        "finite_label_keys": [
+          "energy",
+          "forces"
+        ]
+      }
+    },
+    {
+      "id": "d0b8d938043d5993",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "9cbbc84866e9126d"
+      ],
+      "params": {
+        "model_module": "mattersim_energy_force_finetune.py",
+        "train_module": "train_mattersim_finetune.py",
+        "forbid_import_roots": [
+          "onescience"
+        ],
+        "forbid_import_prefixes": [
+          "mattersim."
+        ],
+        "forbid_dynamic_imports": [
+          "__import__",
+          "import_module"
+        ],
+        "forbidden_source_fragments": [
+          "benchmarks/standard",
+          "benchmarks/evaluators",
+          "benchmarks/submissions"
+        ],
+        "require_weights_only_load": true,
+        "require_strict_load_state_dict": true,
+        "required_model_api": [
+          "load_checkpoint_payload",
+          "build_model",
+          "load_pretrained_model",
+          "load_training_structures",
+          "build_finetune_batch",
+          "predict_energy_forces",
+          "compute_energy_force_loss"
+        ],
+        "required_train_api": [
+          "load_config",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ],
+        "required_class": "MatterSimEnergyForceFineTuner",
+        "train_function": "train",
+        "required_train_parameters": [
+          "config",
+          "output_dir",
+          "device"
+        ],
+        "training_key": "training",
+        "expected_training": {
+          "optimizer": "Adam",
+          "lr": 0.0002,
+          "huber_delta": 0.01,
+          "force_loss_ratio": 1.0,
+          "gradient_clip_norm": 1.0,
+          "max_steps": 1,
+          "structure_index": 0,
+          "seed": 20260819
+        },
+        "build_model_function": "build_model",
+        "build_model_device": "cpu",
+        "require_nn_module": true,
+        "require_all_parameters_trainable": true
+      }
+    },
+    {
+      "id": "e380ca55f43ceead",
+      "type": "eval_script_requirement",
+      "method": "check_eval_script_contract",
+      "phase": "eval_script",
+      "depends": [],
+      "params": {
+        "required": false
+      }
+    },
+    {
+      "id": "d830cf6d8151ce79",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "d0b8d938043d5993"
+      ],
+      "params": {
+        "seed": 20260819,
+        "model_from_context": "candidate_model_cpu",
+        "required_module_base": "torch.nn.Module",
+        "model_class_name": "M3Gnet",
+        "top_level_child_order": [
+          "rbf",
+          "sbf",
+          "edge_encoder",
+          "graph_conv",
+          "final",
+          "atom_embedding",
+          "normalizer"
+        ],
+        "block_collection": "graph_conv",
+        "block_count": 3,
+        "block_class_name": "MainBlock",
+        "block_required_modules": [
+          "three_body",
+          "gated_mlp_edge",
+          "edge_layer_edge",
+          "gated_mlp_atom",
+          "edge_layer_atom"
+        ],
+        "top_level_type_contract": {
+          "rbf": "SmoothBesselBasis",
+          "sbf": "SphericalBasisLayer",
+          "edge_encoder": "MLP",
+          "final": "GatedMLP",
+          "atom_embedding": "MLP",
+          "normalizer": "AtomScaling"
+        },
+        "model_args": {
+          "num_blocks": 3,
+          "units": 128,
+          "max_l": 4,
+          "max_n": 4,
+          "cutoff": 5.0,
+          "max_z": 94,
+          "threebody_cutoff": 4.0
+        },
+        "tensor_shapes": {
+          "atom_embedding.mlp.0.linear.weight": [
+            128,
+            95
+          ],
+          "edge_encoder.mlp.0.linear.weight": [
+            128,
+            4
+          ],
+          "sbf.coef": [
+            4,
+            9,
+            4
+          ]
+        },
+        "nonpersistent_buffer": {
+          "module": "sbf",
+          "name": "coef"
+        },
+        "state_dict": {
+          "entries": 89,
+          "numel": 890246
+        },
+        "model_source_must_be_under_submission": true,
+        "public_class_attribute": "M3Gnet"
+      }
+    },
+    {
+      "id": "9ff7dc3aeef893ff",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "9cbbc84866e9126d",
+        "d830cf6d8151ce79"
+      ],
+      "params": {
+        "seed": 20260819,
+        "build_model_function": "build_model",
+        "config_from_context": "config",
+        "device_from_context": "device",
+        "batch_builder": "build_finetune_batch",
+        "dataset_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mattersim/high_level_water.xyz",
+        "structure_index": 0,
+        "predict_function": "predict_energy_forces",
+        "create_graph": true,
+        "required_output_keys": [
+          "energy",
+          "forces"
+        ],
+        "energy_shape": [
+          1
+        ],
+        "forces_shape": [
+          192,
+          3
+        ],
+        "require_finite": true,
+        "require_nonzero": true,
+        "loss_function": "compute_energy_force_loss",
+        "loss_args": {
+          "force_loss_ratio": 1.0,
+          "huber_delta": 0.01
+        },
+        "loss_component_keys": [
+          "energy_loss",
+          "force_loss"
+        ],
+        "require_finite_loss": true,
+        "require_loss_requires_grad": true
+      }
+    },
+    {
+      "id": "1b187a102e982f90",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "9cbbc84866e9126d",
+        "9ff7dc3aeef893ff"
+      ],
+      "params": {
+        "comparison_device": "cpu",
+        "num_threads": 1,
+        "deterministic_algorithms": true,
+        "seed": 20260819,
+        "candidate_config_from_context": "config",
+        "candidate_train_module": "train_mattersim_finetune.py",
+        "candidate_model_module": "mattersim_energy_force_finetune.py",
+        "reference_config": "standard_dir/mattersim_finetune.yaml",
+        "batch_builder": "build_finetune_batch",
+        "dataset_path": "/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mattersim/high_level_water.xyz",
+        "structure_index": 0,
+        "predict_function": "predict_energy_forces",
+        "create_graph": false,
+        "state_dict_requirements": {
+          "keys_equal": true,
+          "shapes_equal": true,
+          "values_equal": true
+        },
+        "output_keys": [
+          "energy",
+          "forces"
+        ],
+        "max_abs_atol": 1e-06
+      }
+    },
+    {
+      "id": "a804cc6556dbe6cd",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "9cbbc84866e9126d",
+        "1b187a102e982f90"
+      ],
+      "params": {
+        "seed": 20260819,
+        "temporary_directory_prefix": "mattersim-finetune-eval-",
+        "device_from_context": "device",
+        "candidate_config_from_context": "config",
+        "candidate_output_subdir": "candidate",
+        "reference_config": "standard_dir/mattersim_finetune.yaml",
+        "reference_output_subdir": "standard",
+        "build_model_function": "build_model",
+        "train_function": "train",
+        "require_return_mapping": true,
+        "required_return_keys": [
+          "model",
+          "optimizer",
+          "history",
+          "checkpoint_path",
+          "metrics_path",
+          "log_path"
+        ],
+        "required_history_length": 1,
+        "finite_history_record_keys": [
+          "step",
+          "loss",
+          "energy_loss",
+          "force_loss",
+          "grad_norm"
+        ],
+        "compare_history_keys": [
+          "loss",
+          "energy_loss",
+          "force_loss",
+          "grad_norm"
+        ],
+        "max_abs_atol": 1e-06,
+        "parameter_requirements": {
+          "names_equal_to_standard_and_initial": true,
+          "max_abs_difference_to_standard": 1e-06,
+          "every_parameter_tensor_must_update": true,
+          "all_parameters_require_grad": true
+        }
+      }
+    },
+    {
+      "id": "fd0edb924cd32665",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "a804cc6556dbe6cd"
+      ],
+      "params": {
+        "training_result_from_context": "training_result",
+        "temporary_directory_from_context": "training_temporary",
+        "output_subdir": "candidate",
+        "result_path_keys": {
+          "checkpoint": "checkpoint_path",
+          "metrics": "metrics_path",
+          "log": "log_path"
+        },
+        "required_artifact_names": {
+          "checkpoint": "mattersim_finetuned.pth",
+          "metrics": "metrics.jsonl",
+          "log": "train.log"
+        },
+        "checkpoint_load": {
+          "map_location": "cpu",
+          "weights_only": true
+        },
+        "checkpoint_required_keys": [
+          "format",
+          "model_name",
+          "model",
+          "model_args",
+          "optimizer",
+          "completed_steps",
+          "trainable_parameter_names",
+          "config",
+          "history"
+        ],
+        "format": "mattersim-1m-energy-force-finetune-v1",
+        "model_name": "m3gnet",
+        "model_args": {
+          "num_blocks": 3,
+          "units": 128,
+          "max_l": 4,
+          "max_n": 4,
+          "cutoff": 5.0,
+          "max_z": 94,
+          "threebody_cutoff": 4.0
+        },
+        "state_dict": {
+          "entries": 89,
+          "numel": 890246,
+          "strict": true,
+          "build_model_device": "cpu"
+        },
+        "trainable_parameter_names_must_match": true,
+        "completed_steps": 1,
+        "optimizer_state_must_be_nonempty": true,
+        "jsonl_paths": [
+          "metrics.jsonl",
+          "train.log"
+        ],
+        "history_must_equal_both_jsonl": true,
+        "history_length": 1
+      }
+    }
+  ]
+}

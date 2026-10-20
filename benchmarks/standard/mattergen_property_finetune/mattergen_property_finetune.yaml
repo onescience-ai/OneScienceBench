@@ -1,0 +1,31 @@
+model:
+  hidden_dim: 512
+  denoise_atom_types: true
+  atom_type_diffusion: mask
+  gemnet:
+    num_targets: 1
+    cutoff: 7.0
+    emb_size_atom: 512
+    emb_size_edge: 512
+    max_neighbors: 50
+    max_cell_images_per_dim: 5
+    num_blocks: 4
+    regress_stress: true
+    otf_graph: true
+finetuning:
+  property_name: dft_mag_density
+  checkpoint_path: /public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt
+  full_finetuning: false
+  seed: 20260819
+  optimizer: Adam
+  learning_rate: 0.000005
+  steps: 2
+  gradient_clip_val: 0.5
+  loss_weights:
+    pos: 0.1
+    cell: 1.0
+    atomic_numbers: 1.0
+artifacts:
+  checkpoint: mattergen_property_finetuned.pt
+  metrics: metrics.jsonl
+  log: train.log

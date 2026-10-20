@@ -1,0 +1,485 @@
+{
+  "id": "mace_energy_force_finetune",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "基于真实 MACE-MP-0 权重实现能量-力微调",
+  "prompt": "基于固定的 MACE-MP-0 medium 可移植配置与权重，实现一个不依赖 OneScience 或外部 MACE 包的能量-力微调流程。允许使用 PyTorch、e3nn 和 PyYAML 等通用基础库；不得使用近似、占位或只匹配 state_dict 键名、shape 与参数量的伪实现，固定权重 strict load 后必须在真实原子图上完成数值 forward。生成代码必须独立实现可由配置重建的完整 ScaleShiftMACE 模型结构，包括 Bessel 径向基、球谐函数、残差交互块、对称收缩、逐层 readout、原子参考能量、图能量聚合以及由能量梯度得到的力；使用 torch.load(..., weights_only=True) 严格加载纯 state_dict 权重。微调损失保持 MACE 的构型权重、逐构型每原子能量归一化、逐构型能量/力权重语义，使用 AdamW、梯度裁剪和 max_steps 执行真实参数更新。固定配置文件为 /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.json，固定权重为 /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.pt。请在 mace_energy_force_finetune 目录生成 mace_energy_force_finetune.py、train_mace_finetune.py、eval_mace_finetune.py、mace_finetune.yaml 和完整的 portable_mace 本地实现包。模型入口公开 ScaleShiftMACE、load_foundation_model 和 MACEEnergyForceFineTuner；ScaleShiftMACE.forward 除 data、training 和 compute_force 外，还须兼容 compute_virials、compute_stress、compute_displacement 三个可选布尔参数，并返回 energy、node_energy、interaction_energy、forces、node_feats，其中 node_feats 是拼接两层交互节点特征得到的 640 维特征；训练脚本公开 load_config、foundation_paths、build_model、build_trainer、train，其中 foundation_paths(config) 返回配置路径和权重路径二元组；评估脚本公开 checkpoint_path_from_args(config, override)、load_model_state(config, checkpoint_path)、evaluate(model, batches)，evaluate 返回 energy_mae 和 forces_mae；energy_mae 按每个构型的总能量绝对误差除以该构型原子数后再对构型取平均，forces_mae 按所有原子的三个笛卡尔力分量绝对误差取平均。微调器公开 train_step、fit、save_checkpoint，写出 metrics.jsonl 和 mace_finetuned.pt，checkpoint 至少包含 model_state_dict、optimizer_state_dict、trainable_parameter_names、completed_steps、energy_weight、forces_weight。候选代码不得导入 onescience、外部 mace 包、评测器或标准实现。",
+  "evaluation_script": "evaluate_mace_energy_force_finetune.py",
+  "stardard_dir_name": "mace_energy_force_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "cpus_per_task": 8,
+    "memory": "24G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_mace_energy_force_finetune",
+    "required_env_vars": []
+  },
+  "checks": [
+    {
+      "id": "e03ef0c93716ce16",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "mace_energy_force_finetune.py",
+          "train_mace_finetune.py",
+          "eval_mace_finetune.py",
+          "mace_finetune.yaml",
+          "portable_mace/__init__.py"
+        ],
+        "must_be_regular_file": true,
+        "recursive_python_glob": "**/*.py",
+        "source_encoding": "utf-8",
+        "parse_python_ast": true,
+        "forbidden_import_roots": [
+          "onescience",
+          "mace",
+          "evaluation.eval_datasets.codegen.standard",
+          "evaluation.eval_datasets.codegen.evaluators"
+        ],
+        "reject_dynamic_import_calls": [
+          "__import__",
+          "importlib.import_module",
+          "import_module_alias"
+        ]
+      }
+    },
+    {
+      "id": "a2295ea206d6090d",
+      "type": "checkpoint_file",
+      "method": "check_checkpoint_file",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "e03ef0c93716ce16"
+      ],
+      "params": {
+        "train_module": "train_mace_finetune.py",
+        "resolver": "foundation_paths",
+        "resolver_argument": "submission_config",
+        "required_return": {
+          "accepted_types": [
+            "tuple",
+            "list"
+          ],
+          "length": 2
+        },
+        "path_resolution": {
+          "expanduser": true,
+          "resolve": true,
+          "config_env_override": "MACE_MP0_PORTABLE_CONFIG_PATH",
+          "weights_env_override": "MACE_MP0_PORTABLE_WEIGHTS_PATH",
+          "default_config_path": "/public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.json",
+          "default_weights_path": "/public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.pt"
+        },
+        "require_existing_paths": true,
+        "portable_config": {
+          "encoding": "utf-8",
+          "format": "mace-portable-state-dict-v1",
+          "source_sha256": "81b87e94b1a2e5faf6a683af75bedaafa168a69de7099d2f54f616fc8d08af26"
+        },
+        "portable_weights": {
+          "torch_load": {
+            "map_location": "cpu",
+            "weights_only": true
+          },
+          "format": "mace-portable-state-dict-v1",
+          "source_sha256": "81b87e94b1a2e5faf6a683af75bedaafa168a69de7099d2f54f616fc8d08af26",
+          "sha256": "dfb8e7cf1c4de2b8faaeef97bcb50514bb9950d61970c75af556cdb964a9d1a9",
+          "state_dict_entry_count": 79,
+          "require_all_state_dict_values_torch_tensor": true
+        }
+      }
+    },
+    {
+      "id": "8b08498ad72ad050",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "fixture_builder": "build_real_batch(torch)",
+        "dtype": "torch.float64",
+        "graph_count": 10,
+        "base_positions": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.9572,
+            0.0,
+            0.0
+          ],
+          [
+            -0.239,
+            0.9266,
+            0.0
+          ]
+        ],
+        "atoms_per_graph": 3,
+        "atomic_attribute_width": 89,
+        "element_indices_per_graph": [
+          7,
+          0,
+          0
+        ],
+        "directed_edges_per_graph": 6,
+        "expected": {
+          "ptr_graph_count": 10,
+          "positions_shape": [
+            30,
+            3
+          ],
+          "node_attrs_shape": [
+            30,
+            89
+          ],
+          "edge_index_shape": [
+            2,
+            60
+          ],
+          "all_floating_tensors_finite": true
+        }
+      }
+    },
+    {
+      "id": "0cfd79d91efe7d4b",
+      "type": "data_interface",
+      "method": "check_interface",
+      "phase": "data_analysis",
+      "depends": [
+        "e03ef0c93716ce16",
+        "a2295ea206d6090d"
+      ],
+      "params": {
+        "train_module": {
+          "file": "train_mace_finetune.py",
+          "required_callables": [
+            "load_config",
+            "foundation_paths",
+            "build_model",
+            "build_trainer",
+            "train"
+          ],
+          "train_signature": {
+            "function": "train",
+            "required_parameter_names": [
+              "config",
+              "train_batches",
+              "output_dir"
+            ]
+          },
+          "source_encoding": "utf-8",
+          "whole_submission_python_source_contains": "AdamW",
+          "module_source_contains": "MACEEnergyForceFineTuner",
+          "build_model_result_type": "torch.nn.Module"
+        },
+        "eval_module": {
+          "file": "eval_mace_finetune.py",
+          "required_callables": [
+            "checkpoint_path_from_args",
+            "load_model_state",
+            "evaluate"
+          ],
+          "signatures": [
+            {
+              "function": "checkpoint_path_from_args",
+              "required_parameter_names": [
+                "config",
+                "override"
+              ]
+            },
+            {
+              "function": "load_model_state",
+              "required_parameter_names": [
+                "config",
+                "checkpoint_path"
+              ]
+            },
+            {
+              "function": "evaluate",
+              "required_parameter_names": [
+                "model",
+                "batches"
+              ]
+            }
+          ],
+          "source_encoding": "utf-8",
+          "required_source_substring": "strict=True"
+        }
+      }
+    },
+    {
+      "id": "c8e606f2e99805dd",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "a2295ea206d6090d",
+        "0cfd79d91efe7d4b"
+      ],
+      "params": {
+        "candidate_model_source": "train_mace_finetune.build_model(submission_config)",
+        "required_model_class": "ScaleShiftMACE",
+        "required_tuner_class": "MACEEnergyForceFineTuner",
+        "assertions": {
+          "is_torch_nn_module": true,
+          "is_instance_of_required_model_class": true,
+          "parameter_count": 4688656,
+          "state_dict_entry_count": 79,
+          "all_floating_parameters_dtype": "torch.float64",
+          "atomic_numbers_count": 89,
+          "r_max": {
+            "value": 6.0,
+            "rel_tol": 0.0,
+            "abs_tol": 1e-12
+          },
+          "interaction_count": 2,
+          "product_count": 2,
+          "readout_count": 2,
+          "tuner_required_methods": [
+            "train_step",
+            "fit",
+            "save_checkpoint"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ba96588ca62ac11f",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "8b08498ad72ad050",
+        "c8e606f2e99805dd"
+      ],
+      "params": {
+        "model_mode": "eval",
+        "input": "reference_batch.clone().to_dict()",
+        "forward_kwargs": {
+          "training": false,
+          "compute_force": true,
+          "compute_virials": false,
+          "compute_stress": false,
+          "compute_displacement": false
+        },
+        "required_return_type": "dict",
+        "outputs": {
+          "energy": [
+            10
+          ],
+          "node_energy": [
+            30
+          ],
+          "interaction_energy": [
+            10
+          ],
+          "forces": [
+            30,
+            3
+          ],
+          "node_feats": [
+            30,
+            640
+          ]
+        },
+        "require_each_output_torch_tensor": true,
+        "require_each_output_finite": true
+      }
+    },
+    {
+      "id": "ebace6112b559116",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "8b08498ad72ad050",
+        "c8e606f2e99805dd",
+        "ba96588ca62ac11f"
+      ],
+      "params": {
+        "candidate_model": "candidate_model",
+        "reference_model": "standard_model",
+        "model_mode": "eval",
+        "input": "reference_batch.clone().to_dict()",
+        "forward_kwargs": {
+          "training": false,
+          "compute_force": true,
+          "compute_virials": false,
+          "compute_stress": false,
+          "compute_displacement": false
+        },
+        "output_keys": [
+          "energy",
+          "node_energy",
+          "interaction_energy",
+          "forces",
+          "node_feats"
+        ],
+        "require_candidate_and_reference_tensor": true,
+        "require_candidate_and_reference_finite": true,
+        "require_candidate_and_reference_nonzero": true,
+        "require_equal_shapes": true,
+        "max_abs_diff_atol": 1e-08
+      }
+    },
+    {
+      "id": "8268109ad9d96338",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "8b08498ad72ad050",
+        "0cfd79d91efe7d4b",
+        "c8e606f2e99805dd",
+        "ebace6112b559116"
+      ],
+      "params": {
+        "candidate_train_module": "train_mace_finetune.py",
+        "standard_train_module": "benchmarks/standard/mace_energy_force_finetune/train_mace_finetune.py",
+        "candidate_config_source": "submission_config",
+        "standard_config_source": "standard/mace_energy_force_finetune/mace_finetune.yaml",
+        "training_config": "replace candidate.training with standard.training, then set max_steps=1",
+        "train_call": {
+          "function": "train",
+          "train_batches": "(reference_batch.clone().to_dict(),)",
+          "output_dirs": [
+            "temporary/candidate",
+            "temporary/standard"
+          ]
+        },
+        "required_result_keys": [
+          "model",
+          "history",
+          "checkpoint_path",
+          "metrics_path"
+        ],
+        "required_history_type": "list",
+        "required_history_length": 1,
+        "finite_metric_contract": {
+          "required_keys": [
+            "train_loss",
+            "energy_loss",
+            "forces_loss",
+            "grad_norm"
+          ],
+          "require_every_bool_int_float_value_finite": true
+        },
+        "standard_metric_keys": [
+          "train_loss",
+          "energy_loss",
+          "forces_loss",
+          "grad_norm"
+        ],
+        "metric_compare": {
+          "rel_tol": 0.0,
+          "abs_tol": 1e-08
+        },
+        "parameter_compare": {
+          "require_equal_parameter_name_sets": true,
+          "max_abs_diff_atol": 1e-08
+        },
+        "update_contract": {
+          "require_every_nonempty_trainable_parameter_max_abs_change_gt": 0.0,
+          "require_every_frozen_parameter_exactly_unchanged": true
+        }
+      }
+    },
+    {
+      "id": "1239ed3754b7e166",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "8268109ad9d96338",
+        "0cfd79d91efe7d4b"
+      ],
+      "params": {
+        "training_artifacts_source": "one_step_reference_training",
+        "candidate_output_dir": "temporary/candidate",
+        "required_paths": {
+          "checkpoint": "mace_finetuned.pt",
+          "metrics": "metrics.jsonl"
+        },
+        "require_files_exist": true,
+        "checkpoint_load": {
+          "map_location": "cpu",
+          "weights_only": true
+        },
+        "required_checkpoint_keys": [
+          "format",
+          "model_state_dict",
+          "optimizer_state_dict",
+          "trainable_parameter_names",
+          "completed_steps",
+          "energy_weight",
+          "forces_weight"
+        ],
+        "checkpoint_schema": {
+          "format": "mace-mp0-energy-force-finetune-v1",
+          "model_state_dict_type": "dict",
+          "optimizer_state_dict_type": "dict",
+          "trainable_parameter_names": "exact set of candidate trained model requires_grad parameter names",
+          "completed_steps": 1,
+          "energy_weight": {
+            "standard_config_key": "training.energy_weight",
+            "rel_tol": 0.0,
+            "abs_tol": 0.0
+          },
+          "forces_weight": {
+            "standard_config_key": "training.forces_weight",
+            "rel_tol": 0.0,
+            "abs_tol": 0.0
+          }
+        },
+        "metrics_jsonl": {
+          "encoding": "utf-8",
+          "parse_nonblank_lines_as_json": true,
+          "must_equal_candidate_history": true,
+          "record_count": 1,
+          "finite_metric_contract": {
+            "required_keys": [
+              "train_loss",
+              "energy_loss",
+              "forces_loss",
+              "grad_norm"
+            ],
+            "require_every_bool_int_float_value_finite": true
+          }
+        },
+        "when_checkpoint_schema_passes": {
+          "saved_state_must_exactly_equal_candidate_trained_model": true,
+          "reload": {
+            "module": "eval_mace_finetune.py",
+            "function": "load_model_state",
+            "args": [
+              "candidate_config",
+              "candidate_checkpoint_path"
+            ],
+            "loaded_state_must_exactly_equal_saved_state": true
+          },
+          "evaluation": {
+            "function": "evaluate",
+            "batches": "(reference_batch.clone().to_dict(),)",
+            "candidate_metric_keys_exactly": [
+              "energy_mae",
+              "forces_mae"
+            ],
+            "require_candidate_metrics_finite": true,
+            "reference": "standard_eval.load_model_state(standard_config, standard_checkpoint_path) then standard_eval.evaluate",
+            "compare": {
+              "rel_tol": 0.0,
+              "abs_tol": 1e-08
+            }
+          }
+        }
+      }
+    }
+  ]
+}

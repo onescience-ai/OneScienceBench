@@ -1,0 +1,487 @@
+{
+  "id": "pinto_kovasznay_flow",
+  "eval_type": "paper-repro",
+  "domain": "cfd",
+  "task": "复现 PINTO 论文中的 Kovasznay steady Navier-Stokes 解析流场实验",
+  "prompt": "复现 PINTO: Physics-informed transformer neural operator for learning generalized solutions of partial differential equations for any initial and boundary condition（https://arxiv.org/abs/2412.09009）论文中的 Kovasznay steady Navier-Stokes flow 实验。实现过程以论文描述为准，仅在论文未明确说明的细节处参考官方 Git 仓库代码补充，禁止直接下载或复制官方 Git 仓库代码。该实验不读取外部数据文件，需按 Kovasznay 解析解生成训练和测试样本；计算区域为 x∈[-0.5,1.0]、y∈[-0.5,1.5]，本评测训练配置包含 grid_size=64、domain_samples=2000、seq_len=20、train_nue=[1/20,1/30,1/50,1/80]、test_nue=[1/10,1/20,1/30,1/40,1/50]。生成的模型文件为 model.py，主类为 PINTOModel；数据和解析解函数写在 data.py，必须包含 kovasznay_solution、latin_hypercube_2d 和 build_kovasznay_batch；训练脚本为 train.py，必须包含 load_config、build_model、pde_residual_loss、train_one_step 和 main；推理脚本为 inference.py，结果汇总脚本为 result.py，配置文件为 config.yaml。PINTOModel 的 forward(query_xy, boundary_xy, boundary_values) 必须接收 query_xy [B,N,2]、boundary_xy [B,S,2]、boundary_values [B,S,3]，输出 [B,N,3]，通道顺序为 [u,v,p]。模型结构需包含 query_lifting、boundary_position_encoder、boundary_value_encoder、num_heads=2 的 cross_attention、post_attention，以及 u_head、v_head、p_head 三个输出头，激活函数使用 swish/SiLU。训练过程使用 Adam、learning_rate=5e-4、MSE、边界条件损失和 steady incompressible Navier-Stokes PDE residual，checkpoint 保存至 weight/best_model.pt，训练历史和测试指标保存至 results 目录，并通过 print 实时输出 train_loss、data_loss、boundary_loss、residual_loss 和 relative_l2 指标。",
+  "evaluation_script": "evaluate_pinto_kovasznay_flow.py",
+  "stardard_dir_name": "pinto_kovasznay_flow",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "cpus_per_task": 4,
+    "memory": "8G",
+    "dcu": 1
+  },
+  "checks": [
+    {
+      "id": "a17c5b9e10000001",
+      "check_type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "model.py",
+          "data.py",
+          "train.py",
+          "inference.py",
+          "result.py",
+          "config.yaml"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e10000002",
+      "check_type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "a17c5b9e10000001"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "required_config_keys": [
+          {
+            "key": "data",
+            "type": "dict"
+          },
+          {
+            "key": "model",
+            "type": "dict"
+          },
+          {
+            "key": "training",
+            "type": "dict"
+          },
+          {
+            "key": "inference",
+            "type": "dict"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e10000014",
+      "check_type": "data_pinto_kovasznay_contract_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "a17c5b9e10000002"
+      ],
+      "params": {
+        "contract": "pinto_data",
+        "data_file": "data.py",
+        "config_name": "config.yaml",
+        "seed": 1234
+      }
+    },
+    {
+      "id": "a17c5b9e10000003",
+      "check_type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "a17c5b9e10000001"
+      ],
+      "params": {
+        "files": [
+          "model.py"
+        ],
+        "required_interfaces": [
+          "PINTOModel",
+          "PINTOModel.forward"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e10000004",
+      "check_type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "a17c5b9e10000003"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "PINTOModel",
+        "config_name": "config.yaml",
+        "model_args": {
+          "hidden_dim": 16,
+          "num_heads": 2,
+          "activation": "swish"
+        },
+        "rules": [
+          {
+            "id": "root_model_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "expected": "PINTOModel"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e10000005",
+      "check_type": "model_pinto_structure_contract_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "a17c5b9e10000004"
+      ],
+      "params": {
+        "contract": "pinto_model",
+        "model_file": "model.py",
+        "model_class": "PINTOModel",
+        "config_name": "config.yaml",
+        "model_args": {
+          "hidden_dim": 16,
+          "num_heads": 2,
+          "activation": "swish"
+        },
+        "seed": 1234
+      }
+    },
+    {
+      "id": "a17c5b9e10000006",
+      "check_type": "model_forward",
+      "method": "check_model_forward_execution",
+      "phase": "model_structure",
+      "depends": [
+        "a17c5b9e10000003",
+        "a17c5b9e10000005"
+      ],
+      "params": {
+        "model_file": "model.py",
+        "model_class": "PINTOModel",
+        "config_name": "config.yaml",
+        "model_args": {
+          "hidden_dim": 16,
+          "num_heads": 2,
+          "activation": "swish"
+        },
+        "shapes": [
+          [2, 11, 12],
+          [1, 7, 8]
+        ],
+        "check_backward": true,
+        "seed": 1234
+      }
+    },
+    {
+      "id": "a17c5b9e10000007",
+      "check_type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e10000001"
+      ],
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "build_model",
+          "pde_residual_loss",
+          "train_one_step",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e10000008",
+      "check_type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e10000007"
+      ],
+      "params": {
+        "files": [
+          "train.py",
+          "data.py"
+        ],
+        "check_config": {
+          "entry_names": [
+            "main",
+            "train_one_step"
+          ],
+          "model_names": [
+            "pintomodel",
+            "build_model"
+          ],
+          "model_attributes": [
+            "train",
+            "forward"
+          ],
+          "dataloader_names": [
+            "build_kovasznay_batch"
+          ],
+          "optimizer_names": [
+            "Adam"
+          ],
+          "loss_names": [
+            "MSELoss",
+            "mse_loss",
+            "pde_residual_loss"
+          ]
+        }
+      }
+    },
+    {
+      "id": "a17c5b9e10000009",
+      "check_type": "train_pinto_training_protocol_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e10000014",
+        "a17c5b9e10000007"
+      ],
+      "params": {
+        "contract": "pinto_training",
+        "config_name": "config.yaml",
+        "files": [
+          "train.py"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e1000000a",
+      "check_type": "train_loss",
+      "method": "check_train_loss",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e10000006",
+        "a17c5b9e10000007"
+      ],
+      "params": {
+        "train_file": "train.py",
+        "data_file": "data.py",
+        "model_file": "model.py",
+        "model_class": "PINTOModel",
+        "config_name": "config.yaml",
+        "model_args": {
+          "hidden_dim": 16,
+          "num_heads": 2,
+          "activation": "swish"
+        },
+        "seed": 1234
+      }
+    },
+    {
+      "id": "a17c5b9e1000000b",
+      "check_type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e10000007"
+      ],
+      "params": {
+        "files": [
+          "train.py"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e1000000c",
+      "check_type": "infer_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e10000001"
+      ],
+      "params": {
+        "files": [
+          "inference.py",
+          "result.py"
+        ],
+        "required_interfaces": [
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e1000000d",
+      "check_type": "infer_pinto_evaluation_protocol_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "train_script",
+      "depends": [
+        "a17c5b9e1000000c"
+      ],
+      "params": {
+        "contract": "pinto_inference",
+        "config_name": "config.yaml",
+        "files": [
+          "inference.py",
+          "result.py"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e1000000e",
+      "check_type": "smoke_training",
+      "method": "check_smoke_training",
+      "phase": "smoke_train",
+      "depends": [
+        "a17c5b9e10000014",
+        "a17c5b9e10000006",
+        "a17c5b9e1000000a",
+        "a17c5b9e1000000b"
+      ],
+      "params": {
+        "run_file": "train.py",
+        "config_name": "config.yaml",
+        "train_fn_name": "train_one_step",
+        "seed": 1234
+      }
+    },
+    {
+      "id": "a17c5b9e1000000f",
+      "check_type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "a17c5b9e1000000c"
+      ],
+      "params": {
+        "files": [
+          "inference.py",
+          "result.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main",
+            "run_inference",
+            "evaluate"
+          ],
+          "model_load_functions": [
+            "build_model",
+            "PINTOModel"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "config",
+            "query_xy",
+            "boundary_xy",
+            "boundary_values"
+          ],
+          "input_load_functions": [
+            "build_kovasznay_batch",
+            "load_config"
+          ],
+          "input_load_attributes": [
+            "load"
+          ],
+          "infer_call_functions": [
+            "run_inference",
+            "evaluate",
+            "predict"
+          ],
+          "infer_call_attributes": [
+            "forward"
+          ],
+          "output_attributes": [
+            "save",
+            "savez",
+            "dump",
+            "write",
+            "write_text"
+          ]
+        }
+      }
+    },
+    {
+      "id": "a17c5b9e10000010",
+      "check_type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "a17c5b9e10000014",
+        "a17c5b9e10000006",
+        "a17c5b9e1000000f"
+      ],
+      "params": {
+        "run_file": "inference.py",
+        "data_file": "data.py",
+        "model_file": "model.py",
+        "model_class": "PINTOModel",
+        "config_name": "config.yaml",
+        "model_args": {
+          "hidden_dim": 16,
+          "num_heads": 2,
+          "activation": "swish"
+        },
+        "output_path": "eval_outputs/pinto_kovasznay_smoke.json",
+        "seed": 1234
+      }
+    },
+    {
+      "id": "a17c5b9e10000011",
+      "check_type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "a17c5b9e10000010"
+      ],
+      "params": {
+        "output_path": "eval_outputs/pinto_kovasznay_smoke.json",
+        "output_shape": [
+          1,
+          16,
+          3
+        ],
+        "check_nan_inf": true
+      }
+    },
+    {
+      "id": "a17c5b9e10000012",
+      "check_type": "infer_output_validity",
+      "method": "check_infer_output_validity",
+      "phase": "infer_execution",
+      "depends": [
+        "a17c5b9e10000011"
+      ],
+      "params": {
+        "output_path": "eval_outputs/pinto_kovasznay_smoke.json",
+        "expected_shape": [
+          1,
+          16,
+          3
+        ],
+        "metric_names": [
+          "relative_l2_u",
+          "relative_l2_v",
+          "relative_l2_p",
+          "relative_l2_mean"
+        ]
+      }
+    },
+    {
+      "id": "a17c5b9e10000013",
+      "check_type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "a17c5b9e1000000c",
+        "a17c5b9e10000012"
+      ],
+      "params": {
+        "output_path": "eval_outputs/pinto_kovasznay_smoke.json",
+        "channel_order": [
+          "u",
+          "v",
+          "p"
+        ],
+        "mode": "min"
+      }
+    }
+  ]
+}

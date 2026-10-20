@@ -1,0 +1,409 @@
+{
+  "id": "dnabert2_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现 DNABERT-2 风格 DNA 序列 embedding 推理",
+  "prompt": "实现独立于 onescience Python 包的轻量 DNABERT-2 风格 DNA embedding 模型与推理入口。使用 A/C/G/T/N 固定词表和 CLS token；DNABert2Encoder 默认 vocab_size=7、hidden_size=32、num_heads=4、num_layers=2，依次包含 token_embedding、blocks（每层有带距离偏置的 ALiBi 自注意力与残差 MLP）、final_norm；forward 输入 [B,T] token 与 padding mask，输出 [B,T,32]，embed 支持排除 CLS/padding 的 mean/max 和 CLS pooling，输出 [B,32]。请在当前工作目录生成且仅生成 dnabert2_inference.py；模型类命名为 DNABert2Encoder；脚本必须支持 --input-fasta、--checkpoint、--output、--pooling、--device，严格加载 checkpoint，并将 identifiers 与 embeddings 保存到 --output 指定的 NPZ 文件。",
+  "evaluation_script": "evaluate_dnabert2_inference.py",
+  "stardard_dir_name": "dnabert2_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_dnabert2_infer"
+  },
+  "checks": [
+    {
+      "id": "f8a77397f55c62de",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "dnabert2_inference.py",
+          "benchmarks/standard/dnabert2_inference/inference_config.json"
+        ],
+        "phase": "task_artifacts"
+      }
+    },
+    {
+      "id": "fc7705ef954d41f6",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "f8a77397f55c62de"
+      ],
+      "params": {
+        "model_file": "dnabert2_inference.py",
+        "model_class": "DNABert2Encoder",
+        "model_args": {
+          "vocab_size": 7,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2
+        },
+        "checkpoint_file": "reference.pt",
+        "strict": true
+      }
+    },
+    {
+      "id": "35becdf3d0b77cac",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "fc7705ef954d41f6"
+      ],
+      "params": {
+        "model_file": "dnabert2_inference.py",
+        "model_class": "DNABert2Encoder",
+        "model_args": {
+          "vocab_size": 7,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2
+        },
+        "rules": [
+          {
+            "id": "token_embedding_type",
+            "type": "module_type",
+            "params": {
+              "target_path": "token_embedding",
+              "expected_type": "Embedding"
+            }
+          },
+          {
+            "id": "blocks_type",
+            "type": "module_type",
+            "params": {
+              "target_path": "blocks",
+              "expected_type": "ModuleList"
+            }
+          },
+          {
+            "id": "attention_type",
+            "type": "module_type",
+            "params": {
+              "target_path": "blocks.0.attention",
+              "expected_type": "ALiBiSelfAttention"
+            }
+          },
+          {
+            "id": "qkv_type",
+            "type": "module_type",
+            "params": {
+              "target_path": "blocks.0.attention.qkv",
+              "expected_type": "Linear"
+            }
+          },
+          {
+            "id": "final_norm_type",
+            "type": "module_type",
+            "params": {
+              "target_path": "final_norm",
+              "expected_type": "LayerNorm"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fae1a47532dd0113",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "35becdf3d0b77cac"
+      ],
+      "params": {
+        "model_file": "dnabert2_inference.py",
+        "model_class": "DNABert2Encoder",
+        "model_args": {
+          "vocab_size": 7,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2
+        },
+        "forward_args": {
+          "tokens": [
+            [
+              6,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            [
+              6,
+              4,
+              3,
+              2,
+              1,
+              0
+            ]
+          ],
+          "attention_mask": [
+            [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true,
+              true,
+              true,
+              false
+            ]
+          ]
+        },
+        "out_shape": [
+          2,
+          6,
+          32
+        ]
+      }
+    },
+    {
+      "id": "fcd1bd8acf4facc6",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "fae1a47532dd0113"
+      ],
+      "params": {
+        "files": [
+          "dnabert2_inference.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_functions": [
+            "load_checkpoint"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "input_fasta",
+            "checkpoint",
+            "output"
+          ],
+          "input_load_functions": [
+            "read_fasta",
+            "pad_sequences"
+          ],
+          "input_load_attributes": [
+            "read_text"
+          ],
+          "infer_call_functions": [
+            "embed"
+          ],
+          "infer_call_attributes": [
+            "embed"
+          ],
+          "output_attributes": [
+            "savez_compressed"
+          ]
+        },
+        "phase": "infer_script"
+      }
+    },
+    {
+      "id": "50ad1a15eb16b299",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "fcd1bd8acf4facc6"
+      ],
+      "params": {
+        "run_file": "dnabert2_inference.py",
+        "infer_function": "main",
+        "output_path": "embeddings.npz",
+        "cli_flags": [
+          "--input-fasta",
+          "--checkpoint",
+          "--output",
+          "--pooling",
+          "--device"
+        ]
+      }
+    },
+    {
+      "id": "0c13056e287228cd",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "fc7705ef954d41f6",
+        "50ad1a15eb16b299"
+      ],
+      "params": {
+        "model_file": "dnabert2_inference.py",
+        "model_class": "DNABert2Encoder",
+        "model_args": {
+          "vocab_size": 7,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2
+        },
+        "checkpoint_file": "partial.pt",
+        "strict": true
+      }
+    },
+    {
+      "id": "c8641094ed0653b8",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "fae1a47532dd0113"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "dnabert2_inference.py",
+          "model_class": "DNABert2Encoder",
+          "model_args": {
+            "vocab_size": 7,
+            "hidden_size": 32,
+            "num_heads": 4,
+            "num_layers": 2
+          },
+          "forward_args": {
+            "tokens": [
+              [
+                6,
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              [
+                6,
+                4,
+                3,
+                2,
+                1,
+                0
+              ]
+            ],
+            "attention_mask": [
+              [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              [
+                true,
+                true,
+                true,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        "reference": {
+          "model_file": "benchmarks/standard/dnabert2_inference/dnabert2_inference.py",
+          "model_class": "DNABert2Encoder",
+          "model_args": {
+            "vocab_size": 7,
+            "hidden_size": 32,
+            "num_heads": 4,
+            "num_layers": 2
+          },
+          "forward_args": {
+            "tokens": [
+              [
+                6,
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              [
+                6,
+                4,
+                3,
+                2,
+                1,
+                0
+              ]
+            ],
+            "attention_mask": [
+              [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              [
+                true,
+                true,
+                true,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        "compare_atol": 1e-06,
+        "compare_rtol": 1e-06
+      }
+    },
+    {
+      "id": "48269644586d427d",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "50ad1a15eb16b299",
+        "c8641094ed0653b8"
+      ],
+      "params": {
+        "candidate": {
+          "run_file": "dnabert2_inference.py",
+          "infer_function": "main",
+          "output_path": "embeddings.npz"
+        },
+        "reference": {
+          "run_file": "benchmarks/standard/dnabert2_inference/dnabert2_inference.py",
+          "infer_function": "main",
+          "output_path": "embeddings.npz"
+        },
+        "compare_atol": 1e-06,
+        "compare_rtol": 1e-06,
+        "artifact_keys": [
+          "embeddings",
+          "identifiers"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,863 @@
+{
+    "id": "fourcastnet_probabilistic_head",
+    "eval_type": "sec_develop",
+    "domain": "earth",
+    "task": "为 FourCastNet 增加输出高斯均值与尺度的概率预测头",
+    "prompt": "完成 FourCastNet 概率预测头的二次开发。在指定目录中生成 fourcastnet_probabilistic_head.py、train.py 和 evaluate.py。主文件定义 AFNOBlock 和 torch.nn.Module 子类 FourCastNetProbabilisticHead(in_channels, out_channels, hidden_channels=16, depth=2, min_scale=1e-4)。模型必须包含输入投影、depth 个保持空间分辨率的 AFNO 风格频域残差块，以及独立的 mean_head 和 log_scale_head；输入为 [B,C,H,W]，forward 返回键严格为 mean、scale 的字典，两者均为 [B,out_channels,H,W]，scale 使用 softplus 加 min_scale 保证有限且严格为正。实现 gaussian_nll(prediction,target)，按 mean((target-mean)^2/(2*scale^2)+log(scale)) 计算可微标量并校验 shape 和尺度。train.py 提供 build_model(config=None) 与 train_step(model,inputs,targets,optimizer)；evaluate.py 提供无梯度 evaluate(model,inputs,targets)，返回有限的 rmse 和 nll。通道数、depth、min_scale、输入 rank 或尺度非法时抛出明确异常。",
+    "evaluation_script": "evaluate_fourcastnet_probabilistic_head.py",
+    "stardard_dir_name": "fourcastnet_probabilistic_head",
+    "evaluation_execution_mode": "scnet",
+    "evaluation_backend": "slurm",
+    "evaluation_env": {
+        "conda_env": "onescience311",
+        "partition": "hx1hdnormal01",
+        "nodes": 1,
+        "dcu": 1,
+        "ntasks_per_node": 1,
+        "cpus_per_task": 4,
+        "time": "00:30:00"
+    },
+    "checks": [
+        {
+            "id": "cc963d01acfb540d",
+            "type": "model_file",
+            "method": "check_files",
+            "phase": "model_structure",
+            "depends": [],
+            "params": {
+                "required_files": ["fourcastnet_probabilistic_head.py"]
+            }
+        },
+        {
+            "id": "5555655c2a937e35",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": ["cc963d01acfb540d"],
+            "params": {
+                "files": ["fourcastnet_probabilistic_head.py"],
+                "required_interfaces": ["AFNOBlock", "FourCastNetProbabilisticHead", "gaussian_nll"]
+            }
+        },
+        {
+            "id": "a84c6d6955815954",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "files": ["fourcastnet_probabilistic_head.py"],
+                "required_interfaces": ["FourCastNetProbabilisticHead", "FourCastNetProbabilisticHead.forward"],
+                "input_contracts": [
+                    {
+                        "candidate": {
+                            "file": "fourcastnet_probabilistic_head.py",
+                            "function": "FourCastNetProbabilisticHead",
+                            "args": {"in_channels": 3, "out_channels": 2, "hidden_channels": 8, "depth": 2, "min_scale": 0.0001}
+                        },
+                        "invalid_values": {
+                            "in_channels": [0],
+                            "out_channels": [0],
+                            "hidden_channels": [0],
+                            "depth": [0],
+                            "min_scale": [0.0]
+                        }
+                    },
+                    {
+                        "candidate": {
+                            "file": "fourcastnet_probabilistic_head.py",
+                            "function": "model",
+                            "pre_hooks": [
+                                {
+                                    "function": "FourCastNetProbabilisticHead",
+                                    "args": {"in_channels": 3, "out_channels": 2, "hidden_channels": 8, "depth": 2, "min_scale": 0.0001},
+                                    "save_as": "model"
+                                },
+                                {
+                                    "function": "randn",
+                                    "args": {
+                                        "size": [2, 3, 8, 10],
+                                        "dtype": "$dtype",
+                                        "device": "$device"
+                                    },
+                                    "save_as": "x"
+                                }
+                            ],
+                            "args": {"x": "$x"}
+                        },
+                        "invalid_inputs": {
+                            "rank": {
+                                "pre_hooks": [
+                                    {
+                                        "function": "randn",
+                                        "args": {
+                                            "size": [3, 8, 10],
+                                            "dtype": "$dtype",
+                                            "device": "$device"
+                                        },
+                                        "save_as": "invalid_x"
+                                    }
+                                ],
+                                "args": {"x": "$invalid_x"}
+                            },
+                            "channels": {
+                                "pre_hooks": [
+                                    {
+                                        "function": "randn",
+                                        "args": {
+                                            "size": [2, 4, 8, 10],
+                                            "dtype": "$dtype",
+                                            "device": "$device"
+                                        },
+                                        "save_as": "invalid_x"
+                                    }
+                                ],
+                                "args": {"x": "$invalid_x"}
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "c6878dc82a20526f",
+            "type": "model_structure",
+            "method": "check_model_structure",
+            "phase": "model_structure",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "model_file": "fourcastnet_probabilistic_head.py",
+                "model_class": "FourCastNetProbabilisticHead",
+                "model_args": {
+                    "in_channels": 3,
+                    "out_channels": 2,
+                    "hidden_channels": 8,
+                    "depth": 2,
+                    "min_scale": 0.0001
+                },
+                "device": "cpu",
+                "rules": [
+                    {"id": "root_model_type", "type": "module_type", "severity": "error", "params": {"expected": "FourCastNetProbabilisticHead"}},
+                    {"id": "afno_blocks", "type": "module_count", "severity": "error", "params": {"selector": {"class_name": "AFNOBlock"}, "count": 2}},
+                    {"id": "mean_head_registered", "type": "module_type", "severity": "error", "params": {"selector": {"registered_name": "mean_head"}, "expected": "*"}},
+                    {"id": "log_scale_head_registered", "type": "module_type", "severity": "error", "params": {"selector": {"registered_name": "log_scale_head"}, "expected": "*"}}
+                ],
+                "input_projection": {
+                    "in_channels": 3,
+                    "out_channels": 8
+                },
+                "distinct_modules": ["mean_head", "log_scale_head"]
+            }
+        },
+        {
+            "id": "bc54a6661c2c5446",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "model_file": "fourcastnet_probabilistic_head.py",
+                "model_class": "FourCastNetProbabilisticHead",
+                "model_args": {
+                    "in_channels": 3,
+                    "out_channels": 2,
+                    "hidden_channels": 8,
+                    "depth": 2,
+                    "min_scale": 0.0001
+                },
+                "device": "cpu",
+                "pre_forward_hooks": [
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "x"
+                    }
+                ],
+                "forward_args": {
+                    "x": "$x"
+                },
+                "block_validation": {
+                    "class_name": "AFNOBlock",
+                    "count": 2,
+                    "shape": [2, 8, 8, 10],
+                    "check_spectral_path": true
+                },
+                "args_as_positional": true
+            }
+        },
+        {
+            "id": "cbaa30a24e235641",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "model_file": "fourcastnet_probabilistic_head.py",
+                "model_class": "FourCastNetProbabilisticHead",
+                "model_args": {
+                    "in_channels": 3,
+                    "out_channels": 2,
+                    "hidden_channels": 8,
+                    "depth": 2,
+                    "min_scale": 0.0001
+                },
+                "pre_forward_hooks": [
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "x"
+                    }
+                ],
+                "forward_args": {
+                    "x": "$x"
+                },
+                "out_shape": {
+                    "mean": [2, 2, 8, 10],
+                    "scale": [2, 2, 8, 10]
+                },
+                "check_nan_inf": true,
+                "positive_outputs": ["scale"],
+                "args_as_positional": true
+            }
+        },
+        {
+            "id": "10aa376e4cb87181",
+            "type": "model_forward",
+            "method": "check_model_forward_executable",
+            "phase": "model_structure",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "model_file": "fourcastnet_probabilistic_head.py",
+                "model_class": "FourCastNetProbabilisticHead",
+                "model_args": {
+                    "in_channels": 3,
+                    "out_channels": 2,
+                    "hidden_channels": 8,
+                    "depth": 2,
+                    "min_scale": 0.05
+                },
+                "pre_forward_hooks": [
+                    {
+                        "function": "linspace",
+                        "args": {"start": -1.0, "end": 1.0, "steps": 480, "dtype": "$dtype", "device": "$device"},
+                        "save_as": "x"
+                    },
+                    {
+                        "function": "reshape",
+                        "args": {
+                            "input": "$x",
+                            "shape": [2, 3, 8, 10]
+                        },
+                        "save_as": "x"
+                    }
+                ],
+                "forward_args": {
+                    "x": "$x"
+                },
+                "scale_transform": {
+                    "head": "log_scale_head",
+                    "min_scale": 0.05,
+                    "atol": 1e-06,
+                    "rtol": 1e-05
+                },
+                "args_as_positional": true
+            }
+        },
+        {
+            "id": "f62da25e017d5886",
+            "type": "train_file",
+            "method": "check_files",
+            "phase": "train_script",
+            "depends": [],
+            "params": {
+                "required_files": ["train.py"]
+            }
+        },
+        {
+            "id": "1f8bb6c99a16c1ba",
+            "type": "train_interface",
+            "method": "check_interface",
+            "phase": "train_script",
+            "depends": ["f62da25e017d5886", "cc963d01acfb540d"],
+            "params": {
+                "files": ["train.py"],
+                "required_interfaces": ["build_model", "train_step"]
+            }
+        },
+        {
+            "id": "39bf227a1fb55719",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "train_script",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "files": ["fourcastnet_probabilistic_head.py"],
+                "required_interfaces": ["gaussian_nll"],
+                "candidate": {
+                    "file": "fourcastnet_probabilistic_head.py",
+                    "function": "gaussian_nll",
+                    "pre_hooks": [
+                        {
+                            "function": "full",
+                            "args": {
+                                "size": [1, 2, 3, 4],
+                                "fill_value": 0.0,
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "mean"
+                        },
+                        {
+                            "function": "full",
+                            "args": {
+                                "size": [1, 2, 3, 4],
+                                "fill_value": 1.0,
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "scale"
+                        },
+                        {
+                            "function": "full",
+                            "args": {
+                                "size": [1, 2, 3, 4],
+                                "fill_value": 0.0,
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "target"
+                        }
+                    ],
+                    "args": {
+                        "prediction": {
+                            "mean": "$mean",
+                            "scale": "$scale"
+                        },
+                        "target": "$target"
+                    }
+                },
+                "invalid_inputs": {
+                    "shape": {
+                        "pre_hooks": [
+                            {
+                                "function": "full",
+                                "args": {
+                                    "size": [1, 2, 3, 3],
+                                    "fill_value": 0.0,
+                                    "dtype": "$dtype",
+                                    "device": "$device"
+                                },
+                                "save_as": "invalid_mean"
+                            }
+                        ],
+                        "args": {
+                            "prediction": {
+                                "mean": "$invalid_mean",
+                                "scale": "$scale"
+                            },
+                            "target": "$target"
+                        }
+                    },
+                    "scale": {
+                        "pre_hooks": [
+                            {
+                                "function": "full",
+                                "args": {
+                                    "size": [1, 2, 3, 4],
+                                    "fill_value": 0.0,
+                                    "dtype": "$dtype",
+                                    "device": "$device"
+                                },
+                                "save_as": "invalid_scale"
+                            }
+                        ],
+                        "args": {
+                            "prediction": {
+                                "mean": "$mean",
+                                "scale": "$invalid_scale"
+                            },
+                            "target": "$target"
+                        }
+                    },
+                    "scale_nan": {
+                        "pre_hooks": [
+                            {
+                                "function": "_convert_arg_to_type",
+                                "args": {
+                                    "value": "nan",
+                                    "target_type": "float"
+                                },
+                                "save_as": "invalid_scale_value"
+                            },
+                            {
+                                "function": "full",
+                                "args": {
+                                    "size": [1, 2, 3, 4],
+                                    "fill_value": "$invalid_scale_value",
+                                    "dtype": "$dtype",
+                                    "device": "$device"
+                                },
+                                "save_as": "invalid_scale"
+                            }
+                        ],
+                        "args": {
+                            "prediction": {
+                                "mean": "$mean",
+                                "scale": "$invalid_scale"
+                            },
+                            "target": "$target"
+                        }
+                    },
+                    "scale_posinf": {
+                        "pre_hooks": [
+                            {
+                                "function": "_convert_arg_to_type",
+                                "args": {
+                                    "value": "inf",
+                                    "target_type": "float"
+                                },
+                                "save_as": "invalid_scale_value"
+                            },
+                            {
+                                "function": "full",
+                                "args": {
+                                    "size": [1, 2, 3, 4],
+                                    "fill_value": "$invalid_scale_value",
+                                    "dtype": "$dtype",
+                                    "device": "$device"
+                                },
+                                "save_as": "invalid_scale"
+                            }
+                        ],
+                        "args": {
+                            "prediction": {
+                                "mean": "$mean",
+                                "scale": "$invalid_scale"
+                            },
+                            "target": "$target"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "id": "a3382f4e654cf681",
+            "type": "train_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "train_script",
+            "depends": ["1f8bb6c99a16c1ba", "5555655c2a937e35"],
+            "params": {
+                "candidate": {
+                    "file": "train.py",
+                    "function": "build_model",
+                    "args": {
+                        "config": {
+                            "in_channels": 3,
+                            "out_channels": 2,
+                            "hidden_channels": 8,
+                            "depth": 2,
+                            "min_scale": 0.0001
+                        }
+                    },
+                    "expected": {
+                        "type": "nn.Module"
+                    }
+                }
+            }
+        },
+        {
+            "id": "2ec227a3aa975798",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "train_script",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "candidate": {
+                    "file": "fourcastnet_probabilistic_head.py",
+                    "function": "gaussian_nll",
+                    "pre_hooks": [
+                        {
+                            "function": "FourCastNetProbabilisticHead",
+                            "args": {"in_channels": 3, "out_channels": 2, "hidden_channels": 8, "depth": 2, "min_scale": 0.0001},
+                            "save_as": "model"
+                        },
+                        {
+                            "function": "randn",
+                            "args": {
+                                "size": [2, 3, 8, 10],
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "x"
+                        },
+                        {
+                            "function": "randn",
+                            "args": {
+                                "size": [2, 2, 8, 10],
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "target"
+                        },
+                        {
+                            "function": "model",
+                            "args": {"x": "$x"},
+                            "save_as": "prediction"
+                        }
+                    ],
+                    "args": {"prediction": "$prediction", "target": "$target"},
+                    "expected": {
+                        "type": "tensor",
+                        "shape": [],
+                        "atol": 1e-06,
+                        "rtol": 1e-05
+                    }
+                },
+                "reference": {
+                    "file": "fourcastnet_probabilistic_head.py",
+                    "function": "gaussian_nll",
+                    "args": {"prediction": "$prediction", "target": "$target"}
+                }
+            }
+        },
+        {
+            "id": "bd4af6d52c492aa7",
+            "type": "parameter_update",
+            "method": "check_parameter_update",
+            "phase": "train_script",
+            "depends": ["f62da25e017d5886"],
+            "params": {
+                "files": ["train.py"],
+                "train_fn_name": "train_step",
+                "optimizer_param_index": 3
+            }
+        },
+        {
+            "id": "7ffd88754bc5e690",
+            "type": "smoke_training",
+            "method": "check_smoke_training",
+            "phase": "smoke_train",
+            "depends": ["5555655c2a937e35"],
+            "params": {
+                "run_file": "fourcastnet_probabilistic_head.py",
+                "train_fn_name": "gaussian_nll",
+                "pre_train_hooks": [
+                    {
+                        "function": "linspace",
+                        "args": {"start": -0.8, "end": 0.9, "steps": 24, "dtype": "$dtype", "device": "$device"},
+                        "save_as": "mean"
+                    },
+                    {
+                        "function": "reshape",
+                        "args": {
+                            "input": "$mean",
+                            "shape": [1, 2, 3, 4]
+                        },
+                        "save_as": "mean"
+                    },
+                    {
+                        "function": "linspace",
+                        "args": {"start": 0.5, "end": 1.5, "steps": 24, "dtype": "$dtype", "device": "$device"},
+                        "save_as": "scale"
+                    },
+                    {
+                        "function": "reshape",
+                        "args": {
+                            "input": "$scale",
+                            "shape": [1, 2, 3, 4]
+                        },
+                        "save_as": "scale"
+                    },
+                    {
+                        "function": "linspace",
+                        "args": {"start": 0.3, "end": -0.4, "steps": 24, "dtype": "$dtype", "device": "$device"},
+                        "save_as": "target"
+                    },
+                    {
+                        "function": "reshape",
+                        "args": {
+                            "input": "$target",
+                            "shape": [1, 2, 3, 4]
+                        },
+                        "save_as": "target"
+                    }
+                ],
+                "train_args": {
+                    "prediction": {
+                        "mean": "$mean",
+                        "scale": "$scale"
+                    },
+                    "target": "$target"
+                },
+                "gradient_inputs": {
+                    "mean": "$mean",
+                    "scale": "$scale"
+                }
+            }
+        },
+        {
+            "id": "9c4465d4620eeb8b",
+            "type": "smoke_training",
+            "method": "check_smoke_training",
+            "phase": "smoke_train",
+            "depends": ["5555655c2a937e35", "1f8bb6c99a16c1ba"],
+            "params": {
+                "run_file": "train.py",
+                "train_fn_name": "train_step",
+                "smoke_config": {},
+                "pre_train_hooks": [
+                    {
+                        "file": "train.py",
+                        "function": "build_model",
+                        "args": {
+                            "config": {
+                                "in_channels": 3,
+                                "out_channels": 2,
+                                "hidden_channels": 8,
+                                "depth": 2,
+                                "min_scale": 0.0001
+                            }
+                        },
+                        "save_as": "model"
+                    },
+                    {
+                        "function": "torch.randn",
+                        "args": {
+                            "size": [2, 3, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "inputs"
+                    },
+                    {
+                        "function": "torch.randn",
+                        "args": {
+                            "size": [2, 2, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "targets"
+                    },
+                    {
+                        "function": "model.parameters",
+                        "args": {},
+                        "save_as": "parameters"
+                    },
+                    {
+                        "function": "torch.optim.AdamW",
+                        "args": {"params": "$parameters", "lr": 0.001, "weight_decay": 0.01},
+                        "save_as": "optimizer"
+                    }
+                ],
+                "train_args": {
+                    "model": "$model",
+                    "inputs": "$inputs",
+                    "targets": "$targets",
+                    "optimizer": "$optimizer"
+                },
+                "args_as_positional": true
+            }
+        },
+        {
+            "id": "339b67dc8e2b59e0",
+            "type": "infer_file",
+            "method": "check_files",
+            "phase": "infer_script",
+            "depends": [],
+            "params": {
+                "required_files": ["evaluate.py"]
+            }
+        },
+        {
+            "id": "05ae745f275d0edc",
+            "type": "infer_interface",
+            "method": "check_interface",
+            "phase": "infer_script",
+            "depends": ["339b67dc8e2b59e0", "cc963d01acfb540d"],
+            "params": {
+                "files": ["evaluate.py"],
+                "required_interfaces": ["evaluate"]
+            }
+        },
+        {
+            "id": "7f90fe1ea4af555c",
+            "type": "infer_execution",
+            "method": "check_infer_execution",
+            "phase": "infer_execution",
+            "depends": ["5555655c2a937e35", "05ae745f275d0edc", "f62da25e017d5886"],
+            "params": {
+                "run_file": "evaluate.py",
+                "infer_function": "evaluate",
+                "pre_infer_hooks": [
+                    {
+                        "file": "train.py",
+                        "function": "build_model",
+                        "args": {
+                            "config": {
+                                "in_channels": 3,
+                                "out_channels": 2,
+                                "hidden_channels": 8,
+                                "depth": 2,
+                                "min_scale": 0.0001
+                            }
+                        },
+                        "save_as": "model"
+                    },
+                    {
+                        "function": "torch.randn",
+                        "args": {
+                            "size": [2, 3, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "inputs"
+                    },
+                    {
+                        "function": "torch.randn",
+                        "args": {
+                            "size": [2, 2, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "targets"
+                    }
+                ],
+                "infer_args": {
+                    "model": "$model",
+                    "inputs": "$inputs",
+                    "targets": "$targets"
+                },
+                "args_as_positional": true,
+                "output_path": "outputs/fourcastnet_v15_result.pkl",
+                "output_fields": ["rmse", "nll"]
+            }
+        },
+        {
+            "id": "0eba10ec3dfdcf85",
+            "type": "infer_execution",
+            "method": "check_infer_execution",
+            "phase": "infer_execution",
+            "depends": ["5555655c2a937e35", "05ae745f275d0edc"],
+            "params": {
+                "run_file": "evaluate.py",
+                "infer_function": "evaluate",
+                "model_file": "fourcastnet_probabilistic_head.py",
+                "model_class": "FourCastNetProbabilisticHead",
+                "model_args": {
+                    "in_channels": 3,
+                    "out_channels": 2,
+                    "hidden_channels": 8,
+                    "depth": 2,
+                    "min_scale": 0.0001
+                },
+                "pre_infer_hooks": [
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 3, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "inputs"
+                    },
+                    {
+                        "function": "randn",
+                        "args": {
+                            "size": [2, 2, 8, 10],
+                            "dtype": "$dtype",
+                            "device": "$device"
+                        },
+                        "save_as": "targets"
+                    }
+                ],
+                "infer_args": {
+                    "model": "$model",
+                    "inputs": "$inputs",
+                    "targets": "$targets"
+                },
+                "args_as_positional": true,
+                "check_no_grad": true
+            }
+        },
+        {
+            "id": "47316a3f3afe5ac7",
+            "type": "infer_output_schema",
+            "method": "check_infer_output_schema",
+            "phase": "infer_execution",
+            "depends": ["7f90fe1ea4af555c"],
+            "params": {
+                "output_path": "outputs/fourcastnet_v15_result.pkl",
+                "output_shape": [2],
+                "check_nan_inf": true
+            }
+        },
+        {
+            "id": "b8e3e3c53f4dd254",
+            "type": "infer_metric",
+            "method": "check_evaluate_oracle",
+            "phase": "infer_metric",
+            "depends": ["5555655c2a937e35", "05ae745f275d0edc"],
+            "params": {
+                "candidate": {
+                    "run_file": "evaluate.py",
+                    "infer_function": "evaluate",
+                    "model_file": "fourcastnet_probabilistic_head.py",
+                    "model_class": "FourCastNetProbabilisticHead",
+                    "model_args": {
+                        "in_channels": 3,
+                        "out_channels": 2,
+                        "hidden_channels": 8,
+                        "depth": 2,
+                        "min_scale": 0.0001
+                    },
+                    "pre_infer_hooks": [
+                        {
+                            "function": "randn",
+                            "args": {
+                                "size": [2, 3, 8, 10],
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "inputs"
+                        },
+                        {
+                            "function": "randn",
+                            "args": {
+                                "size": [2, 2, 8, 10],
+                                "dtype": "$dtype",
+                                "device": "$device"
+                            },
+                            "save_as": "targets"
+                        }
+                    ],
+                    "infer_args": {
+                        "model": "$model",
+                        "inputs": "$inputs",
+                        "targets": "$targets"
+                    },
+                    "args_as_positional": true
+                },
+                "reference": {
+                    "run_file": "evaluate.py",
+                    "infer_function": "evaluate",
+                    "import_files": ["fourcastnet_probabilistic_head.py"],
+                    "args_as_positional": true
+                },
+                "seed": 17,
+                "atol": 1e-06,
+                "rtol": 1e-05,
+                "output_fields": ["rmse", "nll"],
+                "scalar_outputs": true,
+                "share_candidate_args": true
+            }
+        }
+    ]
+}

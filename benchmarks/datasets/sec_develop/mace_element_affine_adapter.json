@@ -1,0 +1,497 @@
+{
+  "id": "mace_element_affine_adapter",
+  "eval_type": "sec_develop",
+  "domain": "matchem",
+  "task": "为真实 MACE-MP-0 增加元素能量仿射适配层",
+  "prompt": "基于固定的 MACE-MP-0 medium 可移植配置与权重完成元素能量仿射二次开发。生成代码必须独立实现可由配置重建的完整 ScaleShiftMACE 模型结构，并使用 torch.load(..., weights_only=True) 读取固定 .pt 文件。该 .pt 是 portable envelope，顶层包含 format、source_sha256 和 state_dict；必须从 payload['state_dict'] 取出张量字典，再由本地模型通过 load_state_dict(state_dict, strict=True) 加载，禁止反序列化或调用任何保存的 nn.Module。严格加载前，新模型不得以普通 Python 属性、parameter 或 buffer 占用 state_dict 顶层键；例如 checkpoint 含 r_max 时，内部运行配置必须使用 _r_max 等不冲突字段，确保全新模型可直接 strict load。不得依赖 OneScience 或外部 MACE 包。固定主干使用 89 元素、128 通道、l=0/1 hidden irreps、l_max=3、两层 RealAgnosticResidualInteractionBlock 和 correlation=3；两层 interaction 的 target irreps 必须独立于 product 输出 irreps，且两层 interaction 都以 `128x0e + 128x1o + 128x2e + 128x3o` 作为 target irreps，由输入 irreps 与球谐 edge irreps 按标准张量积指令构造中间 irreps；因此固定 checkpoint 的两个 `interactions.*.conv_tp_weights` 最终宽度必须分别匹配 TensorProduct.weight_numel=512 和 1280，不能把 256 或 product 的 512/128 误用为 interaction target，也不能硬编码或截断 radial MLP 输出。每层 radial MLP 必须按实际 TensorProduct.weight_numel 构造最终输出宽度并在加载时校验 checkpoint 最后一层宽度。e3nn TensorProduct 不得直接以去重后的 interaction target irreps 作为输出。必须对每条允许的输入 irrep 与球谐 irrep 耦合路径逐条追加 `(input multiplicity, output irrep)` 形成 MACE `irreps_mid`，收集 instructions 后排序 `irreps_mid` 并重映射每条 instruction 的输出索引；`conv_tp` 输出 `irreps_mid`，再由 `o3.Linear(irreps_mid, interaction_target_irreps)` 映射回四阶 target。固定 state_dict 形状必须为：第一层 `conv_tp.output_mask=(2048,)`、`linear.weight=(65536,)`、`linear.bias=(0,)`、`linear.output_mask=(2048,)`；第二层 `conv_tp.output_mask=(5120,)`、`linear.weight=(163840,)`、`linear.bias=(0,)`、`linear.output_mask=(2048,)`。径向嵌入还必须逐字匹配 checkpoint 的持久化 buffer：`radial_embedding.bessel_fn.bessel_weights` 形状为 `(10,)`，`radial_embedding.bessel_fn.r_max`、`radial_embedding.bessel_fn.prefactor`、`radial_embedding.cutoff_fn.p`、`radial_embedding.cutoff_fn.r_max` 均为标量 buffer；这些项目必须注册进本地模型 state_dict，不能只保存成普通 Python 数值。本地新建模型必须与 envelope 中全部 79 个 tensor entry 严格一一匹配，不得过滤 checkpoint 键、忽略 unexpected key、动态改写形状或覆盖加载钩子来绕过 strict=True。两层 product 输出依次为 128x0e+128x1o（512 维）与 128x0e（128 维），node_feats 仅拼接这两层 product 输出，结果为 640 维，不拼接初始 embedding。interaction 消息按 avg_num_neighbors 归一化。对称收缩必须实现 MACE Eq.10/11 的相关阶递归：先由最高阶 U_matrix 和 weights_max 得到高阶中间量，再逐阶把当前阶 U_matrix/weights 的元素条件收缩加到该中间量，并与一份节点特征继续收缩；不得把各相关阶的独立多项式结果直接相加。MACEElementAffineAdapter 包装真实主干，增加全局 energy_scale 和 89 元素 element_shift：scale 同步作用于 energy、node_energy、interaction_energy 及已有导数量；元素常数偏移根据 node_attrs 加到 node_energy 并按 batch 聚合到构型 energy，且不改变力；保留主干输出 key，并支持冻结主干只训练适配器。固定配置文件为 /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.json，固定权重为 /public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.pt。请在指定目录生成 mace_element_affine_adapter.py、train_mace_adapter.py、eval_mace_adapter.py、mace_adapter.yaml 和完整的 portable_mace 本地实现包。模型入口公开 ScaleShiftMACE、load_foundation_model 和 MACEElementAffineAdapter；适配器构造参数为 model、atomic_numbers、trainable、freeze_base、energy_scale_init、element_shift_init，并保持 MACE data 字典和 forward 控制参数契约。训练脚本公开 load_config、foundation_paths、build_model、train_step、train，其中 foundation_paths(config) 返回配置路径和权重路径二元组，使用 AdamW 对适配器执行真实能量-力更新。train(config, batches, output_dir) 必须把 output_dir 作为调用方传入的输出目录，返回包含 model、history、checkpoint_path、metrics_path 的字典；保存 mace_element_affine_adapter.pt 和 metrics.json。checkpoint 必须包含 format=mace-element-affine-adapter-v1、model_state_dict、optimizer_state_dict、trainable_parameter_names 和 history，trainable_parameter_names 只能是 energy_scale 与 element_shift；metrics.json 必须包含与返回值一致的有限 history。评估脚本公开 load_model_state(config, state_dict)、evaluate(model, batches)，evaluate 返回 energy_mae 和 forces_mae。候选代码不得导入 onescience、外部 mace 包、评测器或标准实现。",
+  "evaluation_script": "evaluate_mace_element_affine_adapter.py",
+  "stardard_dir_name": "mace_element_affine_adapter",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "cpus_per_task": 8,
+    "memory": "24G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_mace_element_affine_adapter",
+    "required_env_vars": []
+  },
+  "checks": [
+    {
+      "id": "57714c93b616f359",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "submission_resolution": {
+          "environment_variable": "MACE_ELEMENT_AFFINE_ADAPTER_SUBMISSION_DIR",
+          "pythonpath_hints": [
+            "mace_element_affine_adapter",
+            "mace_element_affine_adapter_V1"
+          ],
+          "version_prefix": "mace_element_affine_adapter_V",
+          "selection": "last matching candidate; raise FileNotFoundError when none"
+        },
+        "required_files": [
+          "mace_element_affine_adapter.py",
+          "train_mace_adapter.py",
+          "eval_mace_adapter.py",
+          "mace_adapter.yaml"
+        ],
+        "assertion": "(submission_dir / rel).is_file()"
+      }
+    },
+    {
+      "id": "aa7980c43e77f147",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "57714c93b616f359"
+      ],
+      "params": {
+        "scan": "sorted(submission_dir.rglob('*.py'))",
+        "dynamic_import_calls": [
+          "__import__",
+          "import_module",
+          "importlib.import_module"
+        ],
+        "forbidden_prefixes": [
+          "onescience",
+          "mace",
+          "evaluation.eval_datasets.codegen.standard",
+          "evaluation.eval_datasets.codegen.evaluators"
+        ],
+        "assertion": "invalid == []"
+      }
+    },
+    {
+      "id": "6a7dd32798992543",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "57714c93b616f359"
+      ],
+      "params": {
+        "resolver": "train_module.foundation_paths(config)",
+        "expected_paths": {
+          "config": "/public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.json",
+          "weights": "/public/share/sugonhpcapp01/onestore/onemodels/mace/mace-mp-0-medium-finetune-portable.pt"
+        },
+        "load": {
+          "map_location": "cpu",
+          "weights_only": true
+        },
+        "format": "mace-portable-state-dict-v1",
+        "source_sha256": "81b87e94b1a2e5faf6a683af75bedaafa168a69de7099d2f54f616fc8d08af26",
+        "weights_sha256": "dfb8e7cf1c4de2b8faaeef97bcb50514bb9950d61970c75af556cdb964a9d1a9",
+        "state_entry_count": 79,
+        "state_values": "all torch.Tensor"
+      }
+    },
+    {
+      "id": "d0484363715e3fd4",
+      "type": "data_schema",
+      "method": "check_data_schema",
+      "phase": "data_analysis",
+      "depends": [
+        "57714c93b616f359"
+      ],
+      "params": {
+        "construction": {
+          "dtype": "torch.float64",
+          "input_batch_size": 10,
+          "base_positions": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.9572,
+              0.0,
+              0.0
+            ],
+            [
+              -0.239,
+              0.9266,
+              0.0
+            ]
+          ],
+          "repeat_graphs": 10,
+          "node_attrs_shape": [
+            30,
+            89
+          ],
+          "element_indices_per_graph": [
+            7,
+            0,
+            0
+          ],
+          "edge_rule": "all sender != receiver within each 3-node graph",
+          "edge_index_shape": [
+            2,
+            60
+          ],
+          "batch_nodes_per_graph": 3,
+          "ptr_step": 3,
+          "cell": "20.0 * eye(3) per graph",
+          "zero_fields": [
+            "shifts",
+            "unit_shifts",
+            "energy",
+            "forces"
+          ],
+          "head": "zeros long"
+        },
+        "assertions": {
+          "graphs": 10,
+          "positions_shape": [
+            30,
+            3
+          ],
+          "node_attrs_shape": [
+            30,
+            89
+          ],
+          "edge_index_shape": [
+            2,
+            60
+          ],
+          "floating_tensors": "all torch.isfinite"
+        }
+      }
+    },
+    {
+      "id": "eab19eff5da4166f",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "6a7dd32798992543",
+        "d0484363715e3fd4"
+      ],
+      "params": {
+        "model_classes": {
+          "base": "ScaleShiftMACE",
+          "adapter": "MACEElementAffineAdapter"
+        },
+        "base": {
+          "parameter_count": 4688656,
+          "state_entry_count": 79,
+          "floating_dtype": "torch.float64",
+          "element_count": 89,
+          "r_max": 6.0,
+          "interactions": 2,
+          "products": 2,
+          "readouts": 2
+        },
+        "adapter": {
+          "init_parameters": [
+            "model",
+            "atomic_numbers",
+            "trainable",
+            "freeze_base",
+            "energy_scale_init",
+            "element_shift_init"
+          ],
+          "energy_scale": "torch.nn.Parameter",
+          "element_shift": {
+            "type": "torch.nn.Parameter",
+            "shape": [
+              89
+            ]
+          },
+          "trainable_parameter_count": 90,
+          "base_frozen": true
+        }
+      }
+    },
+    {
+      "id": "a9e09b88d64363aa",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "57714c93b616f359"
+      ],
+      "params": {
+        "module_file": "train_mace_adapter.py",
+        "required_callables": [
+          "load_config",
+          "foundation_paths",
+          "build_model",
+          "train_step",
+          "train"
+        ],
+        "train_signature_required": [
+          "config",
+          "batches",
+          "output_dir"
+        ],
+        "source_contains": "AdamW",
+        "build_model_returns": "torch.nn.Module"
+      }
+    },
+    {
+      "id": "158f7241b435fea5",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "57714c93b616f359"
+      ],
+      "params": {
+        "module_file": "eval_mace_adapter.py",
+        "required_callables": [
+          "load_model_state",
+          "evaluate"
+        ],
+        "signatures": {
+          "load_model_state": [
+            "config",
+            "state_dict"
+          ],
+          "evaluate": [
+            "model",
+            "batches"
+          ]
+        },
+        "source_contains": "strict=True"
+      }
+    },
+    {
+      "id": "801e4a0603b2cca1",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "eab19eff5da4166f",
+        "d0484363715e3fd4"
+      ],
+      "params": {
+        "forward": {
+          "training": false,
+          "compute_force": true,
+          "compute_virials": false,
+          "compute_stress": false,
+          "compute_displacement": false,
+          "eval_mode": true
+        },
+        "required_output": "dict",
+        "outputs": {
+          "energy": {
+            "shape": [
+              10
+            ]
+          },
+          "node_energy": {
+            "shape": [
+              30
+            ]
+          },
+          "interaction_energy": {
+            "shape": [
+              10
+            ]
+          },
+          "forces": {
+            "shape": [
+              30,
+              3
+            ]
+          },
+          "node_feats": {
+            "shape": [
+              30,
+              640
+            ]
+          }
+        },
+        "finite": "torch.isfinite for every required tensor"
+      }
+    },
+    {
+      "id": "4a775eec1828b80b",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "801e4a0603b2cca1"
+      ],
+      "params": {
+        "candidate": "candidate model",
+        "reference": "standard model",
+        "outputs": [
+          "energy",
+          "node_energy",
+          "interaction_energy",
+          "forces",
+          "node_feats"
+        ],
+        "per_output": {
+          "standard_finite_nonzero": true,
+          "candidate_finite_nonzero": true,
+          "same_shape": true,
+          "max_abs_diff_atol": 1e-08
+        }
+      }
+    },
+    {
+      "id": "5ab69af4d319bbdd",
+      "type": "model_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "model_structure",
+      "depends": [
+        "801e4a0603b2cca1",
+        "eab19eff5da4166f"
+      ],
+      "params": {
+        "parameter_setup": {
+          "energy_scale": 1.4,
+          "element_shift_default": 0.0,
+          "element_shift_by_species": {
+            "0": 0.2,
+            "7": -0.3
+          }
+        },
+        "species": "argmax(batch.node_attrs,dim=-1)",
+        "graph_shift": "zeros_like(base.energy).index_add(0,batch.batch,node_shift)",
+        "expected": {
+          "energy": "1.4*base.energy + graph_shift",
+          "node_energy": "1.4*base.node_energy + node_shift",
+          "interaction_energy": "1.4*base.interaction_energy",
+          "forces": "1.4*base.forces",
+          "node_feats": "base.node_feats"
+        },
+        "atol": 1e-08,
+        "gradient_run": {
+          "training": true,
+          "compute_force": false,
+          "backward": "train_output.energy.sum().backward()",
+          "adapter_parameters": [
+            "energy_scale",
+            "element_shift"
+          ],
+          "gradient": "finite and any nonzero",
+          "base_parameters": "all grad is None"
+        }
+      }
+    },
+    {
+      "id": "52c7f584447ab478",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "5ab69af4d319bbdd",
+        "a9e09b88d64363aa"
+      ],
+      "params": {
+        "candidate": {
+          "config_copy": "candidate_config",
+          "overrides": {
+            "epochs": 1,
+            "training": "dict(candidate_config.get('training',{}))"
+          },
+          "batches": "(training_batch,)"
+        },
+        "reference": {
+          "config": "standard_config",
+          "batches": "(training_batch,)"
+        },
+        "training_batch": "batch.clone().to_dict()",
+        "required_candidate_result_keys": [
+          "model",
+          "history",
+          "checkpoint_path",
+          "metrics_path"
+        ],
+        "history": {
+          "candidate_length": 1,
+          "standard_length": 1
+        },
+        "loss": {
+          "scalarize": "mapping['loss'] then detach then float",
+          "candidate_finite": true,
+          "candidate_equals_standard": true,
+          "rel_tol": 0.0,
+          "abs_tol": 1e-08
+        },
+        "adapter_parameters": [
+          "energy_scale",
+          "element_shift"
+        ],
+        "adapter_compare_atol": 1e-08,
+        "adapter_updated": "max absolute update > 0",
+        "base_unchanged": "torch.equal for every base state entry",
+        "trainable_names": [
+          "energy_scale",
+          "element_shift"
+        ]
+      }
+    },
+    {
+      "id": "f42ae06cfd64988f",
+      "type": "infer_metric",
+      "method": "check_infer_metrics",
+      "phase": "infer_metric",
+      "depends": [
+        "52c7f584447ab478",
+        "158f7241b435fea5"
+      ],
+      "params": {
+        "paths": {
+          "checkpoint_name": "mace_element_affine_adapter.pt",
+          "metrics_name": "metrics.json",
+          "candidate_output_subdir": "candidate"
+        },
+        "checkpoint": {
+          "load": {
+            "map_location": "cpu",
+            "weights_only": true
+          },
+          "required_keys": [
+            "format",
+            "model_state_dict",
+            "optimizer_state_dict",
+            "trainable_parameter_names",
+            "history"
+          ],
+          "format": "mace-element-affine-adapter-v1",
+          "model_state_dict": "dict",
+          "optimizer_state_dict": "dict",
+          "trainable_parameter_names": [
+            "energy_scale",
+            "element_shift"
+          ],
+          "history": "equals candidate_result.history",
+          "saved_state_equals_runtime_state": true,
+          "strict_reload_state_equals_saved": true
+        },
+        "metrics": {
+          "json": true,
+          "history_equals_candidate": true,
+          "length": 1,
+          "finite_training_history": true
+        },
+        "evaluation": {
+          "candidate_load_model_state": true,
+          "standard_load_model_state": true,
+          "required_keys": [
+            "energy_mae",
+            "forces_mae"
+          ],
+          "finite": true,
+          "compare_atol": 1e-08,
+          "compare_names": [
+            "energy_mae",
+            "forces_mae"
+          ]
+        }
+      }
+    }
+  ]
+}

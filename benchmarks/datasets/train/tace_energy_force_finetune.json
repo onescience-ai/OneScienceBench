@@ -1,0 +1,247 @@
+{
+  "id": "tace_energy_force_finetune",
+  "eval_type": "train",
+  "domain": "matchem",
+  "task": "恢复完整 TACE-OAM-7M checkpoint 并完成全参数单步能量-力微调",
+  "prompt": "独立实现 TACE（Tensor Atomic/Edge Cluster Expansion）等变原子间势模型，并从固定 checkpoint 完成一次全参数能量-力微调。计分模型必须由当前目录中的本地 PyTorch/e3nn 类实现，不得主动导入 `onescience`、外部 `nequip`、`mace` 或 `mattersim`，不得读取评测器、标准答案或旧候选。TACE 是面向原子间势的 E(3) 等变模型，可预测能量、原子力和应力；力由能量对位置求梯度得到，应力由能量对晶格位移求梯度除以体积得到。\n\n固定 checkpoint 为 `/public/share/sugonhpcapp01/onestore/onemodels/tace/TACE-OAM-7M.pt`，SHA256 为 `87f6b23c40a5b29c3b0d2520bca104d73c653866e82541919db94979c7f6511c`。该 .pt 是 TACE 导出包，顶层包含 `cfg`、`state_dict`、`statistics`、`target_property`、`embedding_property`；必须使用 `torch.load(..., weights_only=True)` 读取，从 `state_dict` 精确恢复 456 项、7105809 个元素的完整模型状态，再由本地模型类按 `cfg` 构造（`TensorModel(e3nnTACE(**cfg))`），并对完整状态执行 `load_state_dict(..., strict=True)` 和逐项相等验证。模型为 89 元素、cutoff=6.0、5 层、128 通道、184 个参数，target_property 为 [energy, forces, stress]，readout 模块顺序为 representation、energy_readouts、atomic_energy_layer、scale_shift、zbl。\n\n固定训练数据为 `/public/share/sugonhpcapp01/onestore/onedatasets/matchem/mace/DMC/solvent_xtb_train_200.xyz`，SHA256 为 `e540bc7c026cfad063fc970406bb74c0f668007fc3c6d200801ecfd5f1ba600e`；使用 index=3 的真实 `energy_xtb` 与 `forces_xtb` 标签（24 原子结构），并由本地 ASE 周期邻居图在 cutoff=6.0 下构造 batch。全参数微调要求所有 184 个参数参与优化并在一次更新后全部发生变化。训练损失为 total-energy MSE 与 force MSE 各乘权重 1.0 与 5.0。固定使用 AdamW、lr=1e-3、weight_decay=1e-8、max_steps=1、gradient_clip_norm=1e6；`train_step` 必须执行 zero_grad、真实前向、loss.backward、梯度裁剪和 optimizer.step，不能用预计算输出或伪造 metrics。一次微调必须生成 `tace_finetuned.pt`、`metrics.jsonl`、`train.log`；checkpoint 包含完整更新后的模型、非空优化器状态、completed_steps=1、trainable_parameter_names、source_checkpoint_sha256、解析配置和 history。\n\n请在当前工作目录生成 `tace_energy_force_finetune.py`、`train_tace_finetune.py`、`tace_finetune.yaml` 和独立包 `portable_tace/`。`tace_energy_force_finetune.py` 必须公开 `load_checkpoint_payload`、`raw_model_state`、`build_model`、`load_model`、`load_training_structures`、`build_finetune_batch`、`predict_energy_forces`；`train_tace_finetune.py` 必须公开 `load_config`、`trainable_named_parameters`、`build_model`、`build_trainer`、`train_step`、`train`、`main`。",
+  "evaluation_script": "evaluate_tace_energy_force_finetune.py",
+  "stardard_dir_name": "tace_energy_force_finetune",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 8,
+    "memory": "32G",
+    "time_limit": "00:30:00",
+    "job_name": "eval_tace_finetune",
+    "modules": [
+      "sghpcdas/25.6",
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "f80a2f641ce6fc3e",
+      "type": "dataset_pipeline",
+      "phase": "data_analysis",
+      "method": "check_dataset_pipeline",
+      "depends": [],
+      "params": {
+        "candidate": {
+          "file": "tace_energy_force_finetune.py"
+        }
+      }
+    },
+    {
+      "id": "9318b0bfc21cf4ff",
+      "type": "checkpoint_file",
+      "phase": "checkpoint_loading",
+      "method": "check_checkpoint_file",
+      "depends": [],
+      "params": {}
+    },
+    {
+      "id": "a50f0e112f0b8577",
+      "type": "checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "depends": [
+        "9318b0bfc21cf4ff"
+      ],
+      "params": {}
+    },
+    {
+      "id": "de564a7bb18c8fab",
+      "type": "model_file",
+      "phase": "model_structure",
+      "method": "check_files",
+      "depends": [],
+      "params": {
+        "phase": "model_structure",
+        "required_files": [
+          "tace_energy_force_finetune.py"
+        ]
+      }
+    },
+    {
+      "id": "594f42350ce46a33",
+      "type": "model_interface",
+      "phase": "model_structure",
+      "method": "check_interface",
+      "depends": [
+        "de564a7bb18c8fab"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "files": [
+          "tace_energy_force_finetune.py"
+        ],
+        "required_interfaces": [
+          "load_checkpoint_payload",
+          "raw_model_state",
+          "build_model",
+          "load_model",
+          "load_training_structures",
+          "build_finetune_batch",
+          "predict_energy_forces"
+        ]
+      }
+    },
+    {
+      "id": "b08fb760837585c4",
+      "type": "model_structure",
+      "phase": "model_structure",
+      "method": "check_model_structure",
+      "depends": [
+        "594f42350ce46a33",
+        "a50f0e112f0b8577"
+      ],
+      "params": {}
+    },
+    {
+      "id": "e206ff9af2c914da",
+      "type": "model_forward",
+      "phase": "model_structure",
+      "method": "check_model_forward_executable",
+      "depends": [
+        "b08fb760837585c4",
+        "f80a2f641ce6fc3e"
+      ],
+      "params": {}
+    },
+    {
+      "id": "3e5bb4e0962bed34",
+      "type": "model_forward_equivalence",
+      "phase": "model_structure",
+      "method": "check_model_forward_equivalence",
+      "depends": [
+        "e206ff9af2c914da"
+      ],
+      "params": {}
+    },
+    {
+      "id": "326be4c5a9dcc8d3",
+      "type": "model_method_correctness",
+      "phase": "model_structure",
+      "method": "check_method_correctness",
+      "depends": [
+        "de564a7bb18c8fab"
+      ],
+      "params": {
+        "task_rule": "local_source"
+      }
+    },
+    {
+      "id": "a4816ea0d79b7903",
+      "type": "train_file",
+      "phase": "train_script",
+      "method": "check_files",
+      "depends": [],
+      "params": {
+        "phase": "train_script",
+        "required_files": [
+          "train_tace_finetune.py",
+          "tace_finetune.yaml"
+        ]
+      }
+    },
+    {
+      "id": "3d2128a589bf7aae",
+      "type": "train_config_content",
+      "phase": "train_script",
+      "method": "check_config_content",
+      "depends": [
+        "a4816ea0d79b7903"
+      ],
+      "params": {
+        "config_name": "tace_finetune.yaml",
+        "required_config_keys": [
+          "optimizer",
+          "lr",
+          "weight_decay",
+          "energy_weight",
+          "force_weight",
+          "gradient_clip_norm",
+          "max_steps",
+          "structure_index",
+          "seed"
+        ]
+      }
+    },
+    {
+      "id": "9137f06e32798f0a",
+      "type": "train_interface",
+      "phase": "train_script",
+      "method": "check_interface",
+      "depends": [
+        "a4816ea0d79b7903"
+      ],
+      "params": {
+        "phase": "train_script",
+        "files": [
+          "train_tace_finetune.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "trainable_named_parameters",
+          "build_model",
+          "build_trainer",
+          "train_step",
+          "train",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "382153906d85e5f2",
+      "type": "train_loss",
+      "phase": "train_script",
+      "method": "check_train_loss",
+      "depends": [
+        "3d2128a589bf7aae",
+        "9137f06e32798f0a"
+      ],
+      "params": {}
+    },
+    {
+      "id": "2cd495f4bf99df8c",
+      "type": "parameter_update",
+      "phase": "train_script",
+      "method": "check_parameter_update",
+      "depends": [
+        "a4816ea0d79b7903"
+      ],
+      "params": {
+        "files": [
+          "train_tace_finetune.py"
+        ]
+      }
+    },
+    {
+      "id": "3fcb3c11a382b686",
+      "type": "smoke_training",
+      "phase": "smoke_train",
+      "method": "check_smoke_training",
+      "depends": [
+        "382153906d85e5f2",
+        "2cd495f4bf99df8c",
+        "f80a2f641ce6fc3e",
+        "a50f0e112f0b8577"
+      ],
+      "params": {}
+    },
+    {
+      "id": "4a7bdf1bfd816381",
+      "type": "training",
+      "phase": "train",
+      "method": "check_training",
+      "depends": [
+        "3fcb3c11a382b686"
+      ],
+      "params": {}
+    }
+  ]
+}

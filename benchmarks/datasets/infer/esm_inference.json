@@ -1,0 +1,550 @@
+{
+  "id": "esm_inference",
+  "eval_type": "infer",
+  "domain": "bio",
+  "task": "实现独立的轻量 ESM 风格模型与综合推理入口",
+  "prompt": "实现一个不依赖 onescience Python 包的轻量 ESM 风格蛋白质模型与综合推理入口。必须使用 PyTorch。实现 ProteinTokenizer：固定词表顺序为 <pad>、<cls>、<eos>、<unk>、<mask>、ACDEFGHIKLMNPQRSTVWY，属性名为 token_to_index、pad_index、cls_index、eos_index、unknown_index；encode 为序列加入 CLS/EOS 并右侧 padding，返回 [B,T] long 张量且拒绝空序列和非标准氨基酸。实现 ESMTransformerLayer(nn.Module)：属性名为 attention_norm、attention、ffn_norm、ffn；attention 是 dropout=0、batch_first=True 的 MultiheadAttention，ffn 是 Linear-GELU-Linear，前向使用 key_padding_mask 并按 pre-norm 注意力残差再 pre-norm FFN 残差执行。实现 ESMBackbone(nn.Module)，默认参数必须为 vocab_size=25、embedding_dim=32、num_layers=2、num_heads=4、ffn_dim=64、max_length=128、padding_index=0；属性名和结构必须为 token_embedding=Embedding(25,32,padding_idx=0)、position_embedding=Embedding(128,32)、layers=含两个 ESMTransformerLayer(32,4,64) 的 ModuleList、final_norm=LayerNorm(32)，前向相加 token/position embedding、构造 padding mask 并输出 [B,T,32]。实现 ESMInferenceModel(nn.Module)，使用相同默认参数；属性名必须为 backbone、lm_head=Linear(32,25)、coordinate_head=Sequential(Linear(32,32),GELU,Linear(32,3))；forward 返回且仅返回 representations、logits、coordinates，形状分别为 [B,T,32]、[B,T,25]、[B,T,3]。不得导入 onescience。实现 FASTA 解析与安全文件名、表征提取、最小 PDB 写出和基于 log_softmax 的单点变异 wt-marginals 打分。请在当前工作目录生成且仅生成 run_inference.py。脚本必须支持 --task extract|fold|variant、--checkpoint、--output 和 --device auto|cpu|cuda；extract/fold 通过 --fasta 输入，分别为每条序列生成包含 label、representations、mean_representations 的 .pt 文件或含逐残基 CA 坐标的 .pdb 文件；variant 通过 --sequence、--dms-input、--mutation-col 和 --offset-idx 输入，校验突变格式、位置与野生型残基并生成保留原列且增加 esm_score 的 CSV。支持原始 state_dict 或含 model_state_dict 的 checkpoint 并用 strict=True 加载；所有任务必须在 eval 和 no_grad 模式推理，输入、权重或产物不符合约定时必须明确失败。",
+  "evaluation_script": "evaluate_esm_inference.py",
+  "stardard_dir_name": "esm_inference",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "local",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_esm_inference"
+  },
+  "checks": [
+    {
+      "id": "00a1ac647f67f278",
+      "type": "infer_file",
+      "method": "check_files",
+      "phase": "infer_script",
+      "depends": [],
+      "params": {
+        "script_name": "run_inference.py",
+        "search_roots": [
+          "ESM_SUBMISSION_DIR",
+          "current_working_directory",
+          "PYTHONPATH"
+        ],
+        "require_regular_file": true
+      }
+    },
+    {
+      "id": "dd4e338bf0ae3ba1",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "00a1ac647f67f278"
+      ],
+      "params": {
+        "script_path": "run_inference.py",
+        "prohibited_import_roots": [
+          "onescience"
+        ],
+        "required_symbols": [
+          "ProteinTokenizer",
+          "ESMTransformerLayer",
+          "ESMBackbone",
+          "ESMInferenceModel"
+        ],
+        "nn_module_symbols": [
+          "ESMTransformerLayer",
+          "ESMBackbone",
+          "ESMInferenceModel"
+        ],
+        "required_called_attributes": {
+          "all": [
+            "eval"
+          ],
+          "any": [
+            "no_grad",
+            "inference_mode"
+          ]
+        }
+      }
+    },
+    {
+      "id": "f13e6ffbce25243d",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "dd4e338bf0ae3ba1"
+      ],
+      "params": {
+        "script_path": "run_inference.py",
+        "reference_module": "esm_reference",
+        "fasta_fixture": ">protein one\nmk\nTW\n\n>protein-two\nACDE\nFG\n",
+        "expected_fasta_records": [
+          [
+            "protein one",
+            "mkTW"
+          ],
+          [
+            "protein-two",
+            "ACDEFG"
+          ]
+        ],
+        "tokenizer": {
+          "class": "ProteinTokenizer",
+          "compare_token_to_index": true,
+          "required_indices": [
+            "pad_index",
+            "cls_index",
+            "eos_index",
+            "unknown_index"
+          ],
+          "primary_sequences": [
+            "mkTW",
+            "ACDEFG"
+          ],
+          "expected_dtype": "torch.long",
+          "expected_shape": [
+            2,
+            8
+          ],
+          "require_cls_first": true,
+          "require_eos_after_sequence": true,
+          "require_right_padding": true,
+          "reference_exact_tolerance": {
+            "rtol": 0.0,
+            "atol": 0.0
+          }
+        },
+        "boundary_batches": [
+          "A",
+          " acdefghiklmnpqrstvwy ",
+          [
+            "M",
+            "AC",
+            "WYV"
+          ],
+          [
+            "AAAAAAAAAAAAAAAAA",
+            "CCC",
+            "MKTWQ"
+          ],
+          [
+            "reference_module.AMINO_ACIDS",
+            "reference_module.AMINO_ACIDS[::-1]"
+          ]
+        ],
+        "boundary_assertions": {
+          "dtype": "torch.long",
+          "rank": 2,
+          "require_cls_first": true,
+          "require_eos_by_normalized_length": true,
+          "require_right_padding": true,
+          "compare_residue_indices_for": "reference_module.AMINO_ACIDS"
+        },
+        "invalid_operations": [
+          {
+            "description": "empty protein batch",
+            "sequences": []
+          },
+          {
+            "description": "empty protein sequence",
+            "sequences": [
+              ""
+            ]
+          },
+          {
+            "description": "unsupported amino acid",
+            "sequences": [
+              "ACDX"
+            ]
+          }
+        ],
+        "invalid_exception": "ValueError"
+      }
+    },
+    {
+      "id": "00dcdd3fb521c67e",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "f13e6ffbce25243d"
+      ],
+      "params": {
+        "script_path": "run_inference.py",
+        "reference_module": "esm_reference",
+        "model_class": "ESMInferenceModel",
+        "state_fixture": {
+          "seed": 20260729,
+          "checkpoint": "reference_weights.pt",
+          "strict": true,
+          "compare_state_key_sets": true
+        },
+        "component_cases": {
+          "transformer_layer": {
+            "constructor_args": [
+              32,
+              4,
+              64
+            ],
+            "input_shape": [
+              2,
+              7,
+              32
+            ],
+            "padding_mask": [
+              [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              [
+                false,
+                false,
+                false,
+                false,
+                true,
+                true,
+                true
+              ]
+            ],
+            "require_shape_equals_input": true,
+            "rtol": 1e-06,
+            "atol": 1e-07
+          },
+          "backbone": {
+            "sequences": [
+              "MKTW",
+              "ACDEFGHIK"
+            ],
+            "expected_shape": [
+              2,
+              11,
+              32
+            ],
+            "require_finite": true,
+            "rtol": 1e-06,
+            "atol": 1e-07
+          },
+          "masked_attention_invariance": {
+            "seed": 20260731,
+            "input_shape": [
+              2,
+              8,
+              32
+            ],
+            "padding_mask": [
+              [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              [
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                true,
+                true
+              ]
+            ],
+            "perturbed_row": 1,
+            "perturbed_columns": [
+              5,
+              8
+            ],
+            "require_unmasked_output_invariant": true,
+            "rtol": 1e-06,
+            "atol": 1e-07
+          }
+        },
+        "fixed_forward": {
+          "sequences": [
+            "MKTW",
+            "ACDEFG"
+          ],
+          "expected_keys": [
+            "representations",
+            "logits",
+            "coordinates"
+          ],
+          "expected_shapes": {
+            "representations": [
+              2,
+              8,
+              32
+            ],
+            "logits": [
+              2,
+              8,
+              25
+            ],
+            "coordinates": [
+              2,
+              8,
+              3
+            ]
+          },
+          "require_tensor_outputs": true,
+          "require_reference_dtype": true,
+          "require_finite": true,
+          "rtol": 1e-06,
+          "atol": 1e-07
+        },
+        "intermediate_hooks": [
+          "backbone.token_embedding",
+          "backbone.position_embedding",
+          "backbone.layers.0",
+          "backbone.layers.1",
+          "backbone.final_norm",
+          "lm_head",
+          "coordinate_head"
+        ],
+        "boundary_batches": [
+          [
+            "A"
+          ],
+          [
+            "AC",
+            "W"
+          ],
+          [
+            "MKTWQ",
+            "ACDEFGHIK",
+            "Y"
+          ],
+          [
+            "reference_module.AMINO_ACIDS",
+            "reference_module.AMINO_ACIDS[::-1]"
+          ],
+          [
+            "(reference_module.AMINO_ACIDS * 2)[:32]"
+          ],
+          [
+            "(reference_module.AMINO_ACIDS * 7)[:126]"
+          ]
+        ],
+        "invalid_model_inputs": [
+          {
+            "shape": [
+              1,
+              2,
+              3
+            ],
+            "dtype": "torch.long",
+            "exception": "ValueError"
+          },
+          {
+            "shape": [
+              1,
+              129
+            ],
+            "dtype": "torch.long",
+            "exception": "ValueError"
+          }
+        ],
+        "batch_isolation": {
+          "sequences": [
+            "MKTW",
+            "ACDEFGHIK",
+            "W"
+          ],
+          "valid_token_count": "len(sequence)+2",
+          "outputs": [
+            "representations",
+            "logits",
+            "coordinates"
+          ],
+          "rtol": 2e-06,
+          "atol": 2e-07
+        },
+        "determinism_and_integrity": {
+          "sequences": [
+            "ACDEFGHIKLMN",
+            "WYVTSRQPNMLK"
+          ],
+          "repetitions": 3,
+          "require_eval_for_all_modules": true,
+          "require_no_grad_outputs": true,
+          "exact_repeat_tolerance": {
+            "rtol": 0.0,
+            "atol": 0.0
+          },
+          "require_state_dict_unchanged": true
+        }
+      }
+    },
+    {
+      "id": "f58b2461aae44a88",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "00dcdd3fb521c67e"
+      ],
+      "params": {
+        "script_path": "run_inference.py",
+        "model_class": "ESMInferenceModel",
+        "map_location": "cpu",
+        "strict": true,
+        "reference_checkpoint": {
+          "path": "reference_weights.pt",
+          "format": "raw_state_dict"
+        },
+        "accepted_checkpoint_variants": [
+          {
+            "path": "reference_weights.pt",
+            "state_key": null
+          },
+          {
+            "path": "wrapped_reference_weights.pt",
+            "state_key": "model_state_dict"
+          }
+        ],
+        "invalid_checkpoint": {
+          "path": "invalid_reference_weights.pt",
+          "construction": "remove_first_state_key",
+          "must_fail": true,
+          "require_error_output": true
+        }
+      }
+    },
+    {
+      "id": "2c0b2711850c4ee0",
+      "type": "infer_output_equivalence",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "f58b2461aae44a88"
+      ],
+      "params": {
+        "script_path": "run_inference.py",
+        "reference_script": "standard/esm_inference/run_inference.py",
+        "execution": {
+          "interpreter": "sys.executable",
+          "working_directory": "script_parent",
+          "timeout_seconds": 90,
+          "device": "cpu"
+        },
+        "fasta_fixture": ">protein one\nMKTW\n>protein-two\nACDEFG\n",
+        "checkpoint": "wrapped_reference_weights.pt",
+        "tasks": {
+          "extract": {
+            "arguments": [
+              "--task",
+              "extract",
+              "--checkpoint",
+              "wrapped_reference_weights.pt",
+              "--fasta",
+              "proteins.fasta",
+              "--device",
+              "cpu"
+            ],
+            "expected_file_count": 2,
+            "extension": ".pt",
+            "required_fields": [
+              "label",
+              "representations",
+              "mean_representations"
+            ],
+            "preserve_label": true,
+            "tensor_fields": [
+              "representations",
+              "mean_representations"
+            ],
+            "require_reference_dtype_shape_and_finite": true,
+            "rtol": 1e-06,
+            "atol": 1e-07
+          },
+          "fold": {
+            "arguments": [
+              "--task",
+              "fold",
+              "--checkpoint",
+              "wrapped_reference_weights.pt",
+              "--fasta",
+              "proteins.fasta",
+              "--device",
+              "cpu"
+            ],
+            "expected_file_count": 2,
+            "extension": ".pdb",
+            "require_exact_reference_text": true,
+            "required_text": "ATOM",
+            "require_trailing": "END"
+          },
+          "variant": {
+            "arguments": [
+              "--task",
+              "variant",
+              "--checkpoint",
+              "wrapped_reference_weights.pt",
+              "--sequence",
+              "ACDE",
+              "--dms-input",
+              "variants.csv",
+              "--mutation-col",
+              "mutant",
+              "--offset-idx",
+              "1",
+              "--device",
+              "cpu"
+            ],
+            "input_csv": "mutant,assay\nA1C,first\nD3A,second\n",
+            "expected_row_count": 2,
+            "preserve_non_score_columns": true,
+            "required_score_column": "esm_score",
+            "score_atol": 1e-06
+          }
+        },
+        "raw_checkpoint_extract": {
+          "checkpoint": "reference_weights.pt",
+          "must_match_reference_extract": true
+        },
+        "required_failures": [
+          {
+            "label": "empty_fasta",
+            "content": ""
+          },
+          {
+            "label": "headerless_fasta",
+            "content": "ACDE\n"
+          },
+          {
+            "label": "unsupported_residue_fasta",
+            "content": ">invalid\nACDX\n"
+          },
+          {
+            "label": "invalid_mutation",
+            "csv": "mutant,assay\nW1C,invalid\n",
+            "sequence": "ACDE",
+            "mutation_column": "mutant",
+            "offset_idx": 1
+          },
+          {
+            "label": "invalid_checkpoint",
+            "checkpoint": "invalid_reference_weights.pt"
+          }
+        ],
+        "failure_requirements": {
+          "nonzero_return_code": true,
+          "stdout_or_stderr_nonempty": true
+        }
+      }
+    }
+  ]
+}

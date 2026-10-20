@@ -1,0 +1,57 @@
+# Multiscale MeshGraphNet + curriculum rollout configuration.
+
+data:
+  root: /public/share/sugonhpcapp01/onestore/onedatasets/vortex_shedding_mgn/cylinder_flow
+  stats_dir: /public/share/sugonhpcapp01/onestore/onedatasets/vortex_shedding_mgn/cylinder_flow/stats
+  train_samples: 400
+  train_steps: 300
+  val_samples: 10
+  val_steps: 300
+  test_samples: 10
+  test_steps: 300
+  noise_std: 0.02
+  num_workers: 4
+  pin_memory: true
+
+model:
+  node_input_dim: 6
+  edge_input_dim: 3
+  output_dim: 3
+  latent_dim: 128
+  mlp_hidden_layers: 2
+  activation: relu
+  aggregation: sum
+  fine_steps_before: 5
+  coarse_steps: 5
+  fine_steps_after: 5
+  coarse_ratio: 0.25
+  coarse_knn: 6
+  cross_scale_knn: 3
+
+training:
+  seed: 0
+  device: auto
+  epochs: 25
+  batch_size: 1
+  learning_rate: 0.0001
+  lr_decay_rate: 0.9999991
+  loss: mse
+  loss_nodes: all
+  rollout_loss_nodes: normal_outflow
+  velocity_weight: 1.0
+  pressure_weight: 0.1
+  rollout_weight: 1.0
+  rollout_horizons: [1, 2, 4, 8]
+  rollout_stage_fractions: [0.0, 0.3, 0.5, 0.7]
+  amp: false
+  patience: 50
+  log_interval: 1000
+  output_dir: ./results/meshgraphnet_cylinderflow_seed0/
+  resume: true
+
+evaluation:
+  rollout_split: test
+  rollout_trajectories: 10
+  rollout_steps: 299
+  rollout_horizons: [1, 50, 299]
+

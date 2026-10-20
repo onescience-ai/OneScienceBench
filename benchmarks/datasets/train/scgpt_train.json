@@ -1,0 +1,448 @@
+{
+  "id": "scgpt_train",
+  "eval_type": "train",
+  "domain": "bio",
+  "task": "实现 scGPT 风格细胞类型分类短训练",
+  "prompt": "实现独立于 onescience Python 包的轻量 scGPT 风格细胞类型分类模型与训练入口。ScGPTClassifier 默认 num_genes=128、hidden_size=32、num_heads=4、num_layers=2、num_labels=3；依次包含 gene_encoder、对非负表达值执行 log1p/MLP 的 value_encoder、两层带 padding mask 的 blocks、final_norm 和 classifier；输入 [B,G] 的 gene_ids、values、padding_mask，masked mean pooling 后输出 [B,3] logits。真实数据 NPZ 含 gene_ids、values、labels；训练执行交叉熵、AdamW、backward 与梯度裁剪。请在当前工作目录生成且仅生成 scgpt_train.py；模型类命名为 ScGPTClassifier；脚本必须支持 --dataset-npz 与 --mock-data 二选一、--output-dir、--max-steps、--batch-size、--seed、--device，并将 metrics.jsonl 和 scgpt_train.pt 保存到 --output-dir。",
+  "evaluation_script": "evaluate_scgpt_train.py",
+  "stardard_dir_name": "scgpt_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_scgpt_train"
+  },
+  "checks": [
+    {
+      "id": "0517c810ad64f924",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "candidate_file": "scgpt_train.py",
+        "candidate_module_name": "scgpt_train_candidate",
+        "reference_module_name": "scgpt_train_reference",
+        "reference_model_file": "benchmarks/standard/scgpt_train/scgpt_train.py",
+        "reference_asset_config": "benchmarks/standard/scgpt_train/train_config.json",
+        "external_assets": {
+          "mount_required": true,
+          "required_existing_paths": [
+            "/public/share/sugonhpcapp01/onestore/onemodels/scGPT/scGPT_human",
+            "/public/share/sugonhpcapp01/onestore/onedatasets/scGPT"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cf75afde5aa3d985",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "0517c810ad64f924"
+      ],
+      "params": {
+        "module_file": "scgpt_train.py",
+        "mock_dataset_function": "mock_dataset",
+        "expected_mock_shapes": {
+          "gene_ids": [
+            12,
+            10
+          ],
+          "values": "same_as_gene_ids",
+          "labels": [
+            12
+          ]
+        },
+        "require_mock_values_nonnegative": true,
+        "negative_expression_check": {
+          "class": "ContinuousValueEncoder",
+          "constructor_args": [
+            8
+          ],
+          "input": [
+            [
+              1.0,
+              -1.0
+            ]
+          ],
+          "expected_exception": "ValueError"
+        }
+      }
+    },
+    {
+      "id": "a5433299fffc70ff",
+      "type": "parameter_update",
+      "method": "check_parameter_update",
+      "phase": "train_script",
+      "depends": [
+        "0517c810ad64f924"
+      ],
+      "params": {
+        "source_file": "scgpt_train.py",
+        "encoding": "utf-8",
+        "parse_python_ast": true,
+        "forbidden_import_root": "onescience",
+        "required_source_substrings": [
+          "--dataset-npz",
+          "--mock-data",
+          "--output-dir",
+          "--max-steps",
+          "--seed",
+          "metrics.jsonl",
+          "model_state_dict"
+        ],
+        "required_attribute_names": [
+          "AdamW",
+          "backward",
+          "clip_grad_norm_"
+        ]
+      }
+    },
+    {
+      "id": "22ce9a96657ee91a",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "0517c810ad64f924"
+      ],
+      "params": {
+        "candidate_model": {
+          "file": "scgpt_train.py",
+          "class": "ScGPTClassifier"
+        },
+        "reference_model": {
+          "file": "benchmarks/standard/scgpt_train/scgpt_train.py",
+          "class": "ScGPTClassifier"
+        },
+        "constructor_args": {
+          "num_genes": 128,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2,
+          "num_labels": 3
+        },
+        "strict_reference_state_load": {
+          "strict": true,
+          "missing_keys_empty": true,
+          "unexpected_keys_empty": true
+        },
+        "set_eval_mode": true,
+        "required_component_paths": [
+          "gene_encoder",
+          "value_encoder",
+          "value_encoder.projection",
+          "blocks",
+          "blocks.0.attention",
+          "classifier"
+        ],
+        "component_type_matches_reference": true,
+        "ordered_state_dict_keys_match_reference": true,
+        "ordered_named_children_match_reference": true,
+        "required_constructor_parameters": [
+          "num_genes",
+          "hidden_size",
+          "num_heads",
+          "num_layers",
+          "num_labels"
+        ],
+        "require_torch_nn_module": true
+      }
+    },
+    {
+      "id": "8b7051e1a61035ca",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "22ce9a96657ee91a"
+      ],
+      "params": {
+        "model_context_key": "candidate_model_from_model_structure_contract",
+        "execution_mode": "torch.inference_mode",
+        "forward_args": {
+          "gene_ids": [
+            [
+              1,
+              2,
+              3,
+              0
+            ],
+            [
+              4,
+              5,
+              6,
+              7
+            ]
+          ],
+          "values": [
+            [
+              1.0,
+              0.5,
+              2.0,
+              0.0
+            ],
+            [
+              0.2,
+              1.2,
+              0.0,
+              3.0
+            ]
+          ],
+          "padding_mask": "gene_ids.eq(0)"
+        },
+        "expected_output": {
+          "type": "torch.Tensor",
+          "shape": [
+            2,
+            3
+          ],
+          "all_finite": true
+        },
+        "repeat_call": "same_args",
+        "repeat_equality": "torch.equal"
+      }
+    },
+    {
+      "id": "ab03c3c8fe3ccc49",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "22ce9a96657ee91a"
+      ],
+      "params": {
+        "candidate_model_context_key": "candidate_model_from_model_structure_contract",
+        "reference_model_context_key": "reference_model_from_model_structure_contract",
+        "execution_mode": "torch.inference_mode",
+        "forward_args": {
+          "gene_ids": [
+            [
+              1,
+              2,
+              3,
+              0
+            ],
+            [
+              4,
+              5,
+              6,
+              7
+            ]
+          ],
+          "values": [
+            [
+              1.0,
+              0.5,
+              2.0,
+              0.0
+            ],
+            [
+              0.2,
+              1.2,
+              0.0,
+              3.0
+            ]
+          ],
+          "padding_mask": "gene_ids.eq(0)"
+        },
+        "comparison": {
+          "function": "torch.allclose",
+          "atol": 1e-06,
+          "rtol": 1e-06
+        }
+      }
+    },
+    {
+      "id": "b3fc077da8f85589",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "0517c810ad64f924"
+      ],
+      "params": {
+        "script": "scgpt_train.py",
+        "temporary_directory_prefix": "scgpt_train_",
+        "subprocess": {
+          "executable": "sys.executable",
+          "capture_output": true,
+          "text": true,
+          "timeout_seconds": 180
+        },
+        "mock_run": {
+          "args": [
+            "--mock-data",
+            "--output-dir",
+            "<temporary_directory>/output",
+            "--max-steps",
+            "5",
+            "--batch-size",
+            "4",
+            "--seed",
+            "29",
+            "--device",
+            "cpu"
+          ],
+          "expected_returncode": 0,
+          "checkpoint": "<temporary_directory>/output/scgpt_train.pt"
+        },
+        "checkpoint_load": {
+          "map_location": "cpu",
+          "weights_only": true,
+          "fallback_on_exception": "TypeError"
+        },
+        "parameter_update": {
+          "manual_seed": 29,
+          "reference_model_file": "benchmarks/standard/scgpt_train/scgpt_train.py",
+          "reference_class": "ScGPTClassifier",
+          "reference_constructor_args": {
+            "num_genes": 128,
+            "hidden_size": 32,
+            "num_heads": 4,
+            "num_layers": 2,
+            "num_labels": 3
+          },
+          "checkpoint_state_key": "model_state_dict",
+          "require_state_key_set_equal": true,
+          "require_any_tensor_changed": true
+        },
+        "npz_fixture": {
+          "path": "<temporary_directory>/cells.npz",
+          "compressed": true,
+          "gene_ids": [
+            [
+              1,
+              2,
+              3,
+              0
+            ],
+            [
+              4,
+              5,
+              6,
+              7
+            ],
+            [
+              2,
+              3,
+              4,
+              0
+            ],
+            [
+              6,
+              7,
+              8,
+              9
+            ]
+          ],
+          "values": [
+            [
+              1.0,
+              0.2,
+              2.0,
+              0.0
+            ],
+            [
+              0.3,
+              1.0,
+              0.0,
+              2.5
+            ],
+            [
+              1.1,
+              2.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.5,
+              0.2,
+              0.8,
+              1.2
+            ]
+          ],
+          "labels": [
+            0,
+            1,
+            2,
+            1
+          ]
+        },
+        "npz_run": {
+          "args": [
+            "--dataset-npz",
+            "<temporary_directory>/cells.npz",
+            "--output-dir",
+            "<temporary_directory>/npz_output",
+            "--max-steps",
+            "1",
+            "--batch-size",
+            "2",
+            "--seed",
+            "29",
+            "--device",
+            "cpu"
+          ],
+          "expected_returncode": 0,
+          "required_output_files": [
+            "<temporary_directory>/npz_output/metrics.jsonl",
+            "<temporary_directory>/npz_output/scgpt_train.pt"
+          ]
+        }
+      }
+    },
+    {
+      "id": "7c0feac1805b7c96",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "b3fc077da8f85589"
+      ],
+      "params": {
+        "mock_output_directory": "<temporary_directory>/output",
+        "checkpoint_file": "scgpt_train.pt",
+        "metrics_file": "metrics.jsonl",
+        "checkpoint_load": {
+          "map_location": "cpu",
+          "weights_only": true,
+          "fallback_on_exception": "TypeError"
+        },
+        "checkpoint": {
+          "required_mapping_keys": [
+            "model_state_dict",
+            "optimizer_state_dict",
+            "step",
+            "config"
+          ],
+          "required_step": 5
+        },
+        "metrics_jsonl": {
+          "encoding": "utf-8",
+          "ignore_blank_lines": true,
+          "required_row_count": 5,
+          "row_rules": {
+            "step_values": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "train_loss": "float_convertible_and_math.isfinite"
+          }
+        }
+      }
+    }
+  ]
+}

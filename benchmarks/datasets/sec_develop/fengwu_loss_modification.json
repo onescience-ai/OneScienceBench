@@ -1,0 +1,620 @@
+{
+  "id": "fengwu_loss_modification",
+  "eval_type": "sec_develop",
+  "domain": "earth",
+  "task": "实现适配 FengWu 六分支输出的分组加权 MSE 损失模块",
+  "prompt": "请完成以下任务：实现适配 FengWu 六分支输出的分组加权 MSE 损失模块。文件命名为 fengwu_loss_modification.py，定义 torch.nn.Module 子类 FengwuWeightedLoss；构造函数接收正整数 pressure_level，以及非负有限的 surface_weight、upper_air_weight 和可选 level_weights。forward(predictions,targets) 接收长度均为 6 的 tuple 或 list，依次表示 surface、z、r、u、v、t；surface 张量形状为 (B,4,H,W)，其余五个高空变量为 (B,pressure_level,H,W)，预测与目标以及所有分支的批次和网格必须一致。地表损失为 surface 的整体 MSE；每个高空变量先计算各压力层 MSE，提供 level_weights 时与各层误差逐元素相乘后对压力层取均值，再对五个高空变量取均值；最终返回 surface_weight*surface_loss + upper_air_weight*upper_air_loss。结果必须是有限、可反向传播的标量，并在压力层、权重、分支数量、通道数或 shape 不合法时抛出明确异常。",
+  "evaluation_script": "evaluate_fengwu_loss_modification.py",
+  "stardard_dir_name": "fengwu_loss_modification",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "ntasks_per_node": 1,
+    "cpus_per_task": 4,
+    "time": "00:30:00",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
+  },
+    "checks": [
+        {
+            "id": "d6b363fe63a8de9d",
+            "type": "task_artifacts",
+            "method": "check_files",
+            "phase": "task_artifacts",
+            "depends": [],
+            "params": {
+                "required_files": ["fengwu_loss_modification.py"]
+            }
+        },
+        {
+            "id": "b2c3a3be58b17153",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": ["d6b363fe63a8de9d"],
+            "params": {
+                "files": ["fengwu_loss_modification.py"],
+                "required_interfaces": ["FengwuWeightedLoss", "FengwuWeightedLoss.__init__", "FengwuWeightedLoss.forward"]
+            }
+        },
+        {
+            "id": "a986a64b980f9a0a",
+            "type": "model_interface",
+            "method": "check_interface",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "files": ["fengwu_loss_modification.py"],
+                "required_interfaces": ["FengwuWeightedLoss.__init__", "FengwuWeightedLoss.forward"],
+                "model_file": "fengwu_loss_modification.py",
+                "model_class": "FengwuWeightedLoss",
+                "model_args": {
+                    "pressure_level": 3,
+                    "surface_weight": 0.5,
+                    "upper_air_weight": 1.75,
+                    "level_weights": null
+                },
+                "invalid_values": {
+                    "pressure_level": [0],
+                    "level_weights": [
+                        [1.0, 2.0],
+                        [1.0, -1.0, 1.0]
+                    ]
+                },
+                "pre_forward_hooks": [
+                    {
+                        "function": "build_fengwu_inputs",
+                        "args": {
+                            "pressure_level": 3,
+                            "batch_size": 2,
+                            "height": 4,
+                            "width": 6,
+                            "seed": 29,
+                            "part": "predictions",
+                            "container": "tuple"
+                        },
+                        "save_as": "predictions"
+                    },
+                    {
+                        "function": "build_fengwu_inputs",
+                        "args": {
+                            "pressure_level": 3,
+                            "batch_size": 2,
+                            "height": 4,
+                            "width": 6,
+                            "seed": 29,
+                            "part": "targets",
+                            "container": "tuple"
+                        },
+                        "save_as": "targets"
+                    }
+                ],
+                "forward_args": {
+                    "predictions": "$predictions",
+                    "targets": "$targets"
+                },
+                "invalid_inputs": [
+                    {
+                        "id": "variable_count",
+                        "argument": "both",
+                        "length": 5
+                    },
+                    {
+                        "id": "surface_channels",
+                        "argument": "both",
+                        "branch": 0,
+                        "shape": [2, 3, 4, 6]
+                    },
+                    {
+                        "id": "upper_air_channels",
+                        "argument": "both",
+                        "branch": 1,
+                        "shape": [2, 2, 4, 6]
+                    },
+                    {
+                        "id": "prediction_target_height",
+                        "argument": "targets",
+                        "branch": 5,
+                        "shape": [2, 3, 5, 6]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "c45eaefd2004a90b",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "candidate": {
+                    "file": "fengwu_loss_modification.py",
+                    "function": "FengwuWeightedLoss.forward",
+                    "model_args": {
+                        "pressure_level": 37,
+                        "surface_weight": 1.0,
+                        "upper_air_weight": 1.0,
+                        "level_weights": null
+                    },
+                    "pre_hooks": [
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 37,
+                                "batch_size": 1,
+                                "height": 4,
+                                "width": 4,
+                                "seed": 17,
+                                "part": "predictions",
+                                "container": "tuple"
+                            },
+                            "save_as": "predictions"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 37,
+                                "batch_size": 1,
+                                "height": 4,
+                                "width": 4,
+                                "seed": 17,
+                                "part": "targets",
+                                "container": "tuple"
+                            },
+                            "save_as": "targets"
+                        },
+                        {
+                            "function": "_ref_loss",
+                            "args": {
+                                "preds": "$predictions",
+                                "tgts": "$targets",
+                                "kw": {
+                                    "surface_weight": 1.0,
+                                    "upper_air_weight": 1.0,
+                                    "level_weights": null
+                                }
+                            },
+                            "save_as": "expected_loss"
+                        }
+                    ],
+                    "args": {
+                        "predictions": "$predictions",
+                        "targets": "$targets"
+                    },
+                    "expected": {
+                        "output": "$expected_loss",
+                        "type": "tensor",
+                        "rtol": 1e-05,
+                        "atol": 1e-05,
+                        "shape": []
+                    }
+                }
+            }
+        },
+        {
+            "id": "86431cdb8e85a9ab",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "candidate": {
+                    "file": "fengwu_loss_modification.py",
+                    "function": "FengwuWeightedLoss.forward",
+                    "model_args": {
+                        "pressure_level": 37,
+                        "surface_weight": 1.0,
+                        "upper_air_weight": 1.0,
+                        "level_weights": null
+                    },
+                    "pre_hooks": [
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 37,
+                                "batch_size": 1,
+                                "height": 4,
+                                "width": 4,
+                                "seed": 17,
+                                "part": "predictions",
+                                "container": "list"
+                            },
+                            "save_as": "predictions"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 37,
+                                "batch_size": 1,
+                                "height": 4,
+                                "width": 4,
+                                "seed": 17,
+                                "part": "targets",
+                                "container": "list"
+                            },
+                            "save_as": "targets"
+                        },
+                        {
+                            "function": "_ref_loss",
+                            "args": {
+                                "preds": "$predictions",
+                                "tgts": "$targets",
+                                "kw": {
+                                    "surface_weight": 1.0,
+                                    "upper_air_weight": 1.0,
+                                    "level_weights": null
+                                }
+                            },
+                            "save_as": "expected_loss"
+                        }
+                    ],
+                    "args": {
+                        "predictions": "$predictions",
+                        "targets": "$targets"
+                    },
+                    "expected": {
+                        "output": "$expected_loss",
+                        "type": "tensor",
+                        "rtol": 1e-05,
+                        "atol": 1e-05,
+                        "shape": []
+                    }
+                }
+            }
+        },
+        {
+            "id": "c81ffc499d450b15",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "candidate": {
+                    "file": "fengwu_loss_modification.py",
+                    "function": "FengwuWeightedLoss.forward",
+                    "model_args": {
+                        "pressure_level": 3,
+                        "surface_weight": 0.5,
+                        "upper_air_weight": 1.75,
+                        "level_weights": [1.0, 2.0, 3.0]
+                    },
+                    "pre_hooks": [
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 3,
+                                "batch_size": 2,
+                                "height": 4,
+                                "width": 6,
+                                "seed": 29,
+                                "part": "predictions",
+                                "container": "tuple"
+                            },
+                            "save_as": "predictions"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 3,
+                                "batch_size": 2,
+                                "height": 4,
+                                "width": 6,
+                                "seed": 29,
+                                "part": "targets",
+                                "container": "tuple"
+                            },
+                            "save_as": "targets"
+                        },
+                        {
+                            "function": "_ref_loss",
+                            "args": {
+                                "preds": "$predictions",
+                                "tgts": "$targets",
+                                "kw": {
+                                    "surface_weight": 0.5,
+                                    "upper_air_weight": 1.75,
+                                    "level_weights": [1.0, 2.0, 3.0]
+                                }
+                            },
+                            "save_as": "expected_loss"
+                        }
+                    ],
+                    "args": {
+                        "predictions": "$predictions",
+                        "targets": "$targets"
+                    },
+                    "expected": {
+                        "output": "$expected_loss",
+                        "type": "tensor",
+                        "rtol": 1e-05,
+                        "atol": 1e-05,
+                        "shape": []
+                    }
+                }
+            }
+        },
+        {
+            "id": "144625b28e01f6a1",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "candidate": {
+                    "file": "fengwu_loss_modification.py",
+                    "function": "FengwuWeightedLoss.forward",
+                    "model_args": {
+                        "pressure_level": 3,
+                        "surface_weight": 0.5,
+                        "upper_air_weight": 1.75,
+                        "level_weights": [1.0, 2.0, 3.0]
+                    },
+                    "pre_hooks": [
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 3,
+                                "batch_size": 2,
+                                "height": 4,
+                                "width": 6,
+                                "seed": 29,
+                                "part": "predictions",
+                                "container": "list"
+                            },
+                            "save_as": "predictions"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 3,
+                                "batch_size": 2,
+                                "height": 4,
+                                "width": 6,
+                                "seed": 29,
+                                "part": "targets",
+                                "container": "list"
+                            },
+                            "save_as": "targets"
+                        },
+                        {
+                            "function": "_ref_loss",
+                            "args": {
+                                "preds": "$predictions",
+                                "tgts": "$targets",
+                                "kw": {
+                                    "surface_weight": 0.5,
+                                    "upper_air_weight": 1.75,
+                                    "level_weights": [1.0, 2.0, 3.0]
+                                }
+                            },
+                            "save_as": "expected_loss"
+                        }
+                    ],
+                    "args": {
+                        "predictions": "$predictions",
+                        "targets": "$targets"
+                    },
+                    "expected": {
+                        "output": "$expected_loss",
+                        "type": "tensor",
+                        "rtol": 1e-05,
+                        "atol": 1e-05,
+                        "shape": []
+                    }
+                }
+            }
+        },
+        {
+            "id": "c1d3716cf6684d82",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "candidate": {
+                    "file": "fengwu_loss_modification.py",
+                    "function": "FengwuWeightedLoss.forward",
+                    "model_args": {
+                        "pressure_level": 4,
+                        "surface_weight": 0.0,
+                        "upper_air_weight": 1.25,
+                        "level_weights": "$level_weights"
+                    },
+                    "pre_hooks": [
+                        {
+                            "function": "tensor",
+                            "args": {
+                                "data": [4.0, 1.0, 2.0, 3.0]
+                            },
+                            "save_as": "level_weights"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 4,
+                                "batch_size": 1,
+                                "height": 6,
+                                "width": 4,
+                                "seed": 43,
+                                "part": "predictions",
+                                "container": "tuple"
+                            },
+                            "save_as": "predictions"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 4,
+                                "batch_size": 1,
+                                "height": 6,
+                                "width": 4,
+                                "seed": 43,
+                                "part": "targets",
+                                "container": "tuple"
+                            },
+                            "save_as": "targets"
+                        },
+                        {
+                            "function": "_ref_loss",
+                            "args": {
+                                "preds": "$predictions",
+                                "tgts": "$targets",
+                                "kw": {
+                                    "surface_weight": 0.0,
+                                    "upper_air_weight": 1.25,
+                                    "level_weights": "$level_weights"
+                                }
+                            },
+                            "save_as": "expected_loss"
+                        }
+                    ],
+                    "args": {
+                        "predictions": "$predictions",
+                        "targets": "$targets"
+                    },
+                    "expected": {
+                        "output": "$expected_loss",
+                        "type": "tensor",
+                        "rtol": 1e-05,
+                        "atol": 1e-05,
+                        "shape": []
+                    }
+                }
+            }
+        },
+        {
+            "id": "25aea130faa1656f",
+            "type": "model_method_correctness",
+            "method": "check_method_correctness",
+            "phase": "model_structure",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "candidate": {
+                    "file": "fengwu_loss_modification.py",
+                    "function": "FengwuWeightedLoss.forward",
+                    "model_args": {
+                        "pressure_level": 4,
+                        "surface_weight": 0.0,
+                        "upper_air_weight": 1.25,
+                        "level_weights": "$level_weights"
+                    },
+                    "pre_hooks": [
+                        {
+                            "function": "tensor",
+                            "args": {
+                                "data": [4.0, 1.0, 2.0, 3.0]
+                            },
+                            "save_as": "level_weights"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 4,
+                                "batch_size": 1,
+                                "height": 6,
+                                "width": 4,
+                                "seed": 43,
+                                "part": "predictions",
+                                "container": "list"
+                            },
+                            "save_as": "predictions"
+                        },
+                        {
+                            "function": "build_fengwu_inputs",
+                            "args": {
+                                "pressure_level": 4,
+                                "batch_size": 1,
+                                "height": 6,
+                                "width": 4,
+                                "seed": 43,
+                                "part": "targets",
+                                "container": "list"
+                            },
+                            "save_as": "targets"
+                        },
+                        {
+                            "function": "_ref_loss",
+                            "args": {
+                                "preds": "$predictions",
+                                "tgts": "$targets",
+                                "kw": {
+                                    "surface_weight": 0.0,
+                                    "upper_air_weight": 1.25,
+                                    "level_weights": "$level_weights"
+                                }
+                            },
+                            "save_as": "expected_loss"
+                        }
+                    ],
+                    "args": {
+                        "predictions": "$predictions",
+                        "targets": "$targets"
+                    },
+                    "expected": {
+                        "output": "$expected_loss",
+                        "type": "tensor",
+                        "rtol": 1e-05,
+                        "atol": 1e-05,
+                        "shape": []
+                    }
+                }
+            }
+        },
+        {
+            "id": "032ce968fec44a88",
+            "type": "smoke_training",
+            "method": "check_smoke_training",
+            "phase": "smoke_train",
+            "depends": ["b2c3a3be58b17153"],
+            "params": {
+                "run_file": "fengwu_loss_modification.py",
+                "train_fn_name": "forward",
+                "model_class": "FengwuWeightedLoss",
+                "model_args": {
+                    "pressure_level": 37,
+                    "surface_weight": 1.0,
+                    "upper_air_weight": 1.0,
+                    "level_weights": null
+                },
+                "pre_train_hooks": [
+                    {
+                        "function": "build_fengwu_inputs",
+                        "args": {
+                            "pressure_level": 37,
+                            "batch_size": 1,
+                            "height": 4,
+                            "width": 4,
+                            "seed": 17,
+                            "part": "predictions",
+                            "container": "tuple",
+                            "requires_grad": true
+                        },
+                        "save_as": "predictions"
+                    },
+                    {
+                        "function": "build_fengwu_inputs",
+                        "args": {
+                            "pressure_level": 37,
+                            "batch_size": 1,
+                            "height": 4,
+                            "width": 4,
+                            "seed": 17,
+                            "part": "targets",
+                            "container": "tuple"
+                        },
+                        "save_as": "targets"
+                    }
+                ],
+                "train_args": {
+                    "predictions": "$predictions",
+                    "targets": "$targets"
+                }
+            }
+        }
+    ]
+}

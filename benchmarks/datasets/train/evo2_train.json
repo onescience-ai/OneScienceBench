@@ -1,0 +1,576 @@
+{
+  "id": "evo2_train",
+  "eval_type": "train",
+  "domain": "bio",
+  "task": "实现 Evo2 风格基因组语言模型的单节点短训练入口",
+  "prompt": "实现独立的单节点数据配置、mock-data、max-steps 和 checkpoint 训练流程，实现一个独立于 onescience Python 包的轻量 Evo2 风格训练脚本。请在当前工作目录生成且仅生成 evo2_train.py；脚本必须支持 --dataset-config 与 --mock-data 二选一、--output-dir、--max-steps、--seed；metrics.jsonl 和 evo2_train.pt 必须保存到命令行指定的 --output-dir。",
+  "evaluation_script": "evaluate_evo2_train.py",
+  "stardard_dir_name": "evo2_train",
+  "evaluation_execution_mode": "scnet",
+  "evaluation_backend": "ssh",
+  "evaluation_env": {
+    "conda_env": "onescience311",
+    "module": "sghpc-mpi-gcc/26.3",
+    "partition": "hx1hdnormal01",
+    "nodes": 1,
+    "dcu": 1,
+    "cpus_per_task": 4,
+    "memory": "16G",
+    "time_limit": "00:15:00",
+    "job_name": "eval_evo2_train"
+  },
+  "checks": [
+    {
+      "id": "a6cf0753eed0e8a1",
+      "type": "task_file",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "evo2_train.py"
+        ],
+        "standard_files": [
+          "train_config.json"
+        ],
+        "phase": "task_artifacts",
+        "load_candidate_module": "evo2_train_submission",
+        "load_reference_module": "evo2_train_reference",
+        "standard_json": {
+          "require_object": true,
+          "external_assets": {
+            "mount_required": true,
+            "path_prefix": "/public/share/",
+            "required_keys": [
+              "weights",
+              "dataset"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "3e071706c8866571",
+      "type": "data_method_correctness",
+      "method": "check_method_correctness",
+      "phase": "data_analysis",
+      "depends": [
+        "a6cf0753eed0e8a1"
+      ],
+      "params": {
+        "candidate": {
+          "file": "evo2_train.py",
+          "function": "encode_sequence",
+          "args": {
+            "sequence": "ACGTN"
+          },
+          "expected": {
+            "type": "torch.Tensor",
+            "dtype": "torch.long",
+            "shape": [
+              5
+            ],
+            "value": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          }
+        },
+        "additional_cases": [
+          {
+            "input": "acgtn",
+            "expected_value": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          {
+            "input": "ACGX",
+            "expected_exception": "ValueError"
+          },
+          {
+            "input": "",
+            "expected_exception": "ValueError"
+          }
+        ]
+      }
+    },
+    {
+      "id": "b6f8544ccce8c301",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "a6cf0753eed0e8a1"
+      ],
+      "params": {
+        "files": [
+          "evo2_train.py"
+        ],
+        "check_config": {
+          "optimizer_names": [
+            "AdamW"
+          ],
+          "model_attributes": [
+            "backward"
+          ],
+          "gradient_clip_attributes": [
+            "clip_grad_norm_",
+            "clip_grad_norm"
+          ],
+          "required_cli_flags": [
+            "--dataset-config",
+            "--mock-data",
+            "--output-dir",
+            "--max-steps",
+            "--seed"
+          ],
+          "required_source_tokens": [
+            "Evo2MambaBlock",
+            "A_log",
+            "depthwise_conv",
+            "ssm_projection"
+          ],
+          "forbid_import_roots": [
+            "onescience"
+          ]
+        }
+      }
+    },
+    {
+      "id": "9b80fbf0446520fe",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "a6cf0753eed0e8a1"
+      ],
+      "params": {
+        "model_file": "evo2_train.py",
+        "model_class": "Evo2TrainModel",
+        "model_args": {},
+        "structure": {
+          "token_embedding": {
+            "type": "Embedding",
+            "num_embeddings": 5,
+            "embedding_dim": 32
+          },
+          "mamba_layers": {
+            "type": "ModuleList",
+            "length": 2,
+            "layer_class": "Evo2MambaBlock"
+          },
+          "final_norm": {
+            "type": "LayerNorm",
+            "normalized_shape": [
+              32
+            ]
+          },
+          "lm_head": {
+            "type": "Linear",
+            "in_features": 32,
+            "out_features": 5
+          }
+        },
+        "block": {
+          "required_attrs": [
+            "norm",
+            "input_projection",
+            "depthwise_conv",
+            "ssm_projection",
+            "delta_projection",
+            "A_log",
+            "D",
+            "output_projection"
+          ],
+          "depthwise_conv": {
+            "type": "Conv1d",
+            "groups": 32,
+            "in_channels": 32
+          },
+          "probes": [
+            {
+              "name": "input_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                64
+              ]
+            },
+            {
+              "name": "depthwise_conv",
+              "input_shape": [
+                2,
+                32,
+                7
+              ],
+              "output_shape": [
+                2,
+                32,
+                4
+              ]
+            },
+            {
+              "name": "ssm_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                96
+              ]
+            },
+            {
+              "name": "delta_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                32
+              ]
+            },
+            {
+              "name": "output_projection",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                32
+              ]
+            },
+            {
+              "name": "norm",
+              "input_shape": [
+                2,
+                5,
+                32
+              ],
+              "output_shape": [
+                2,
+                5,
+                32
+              ]
+            }
+          ],
+          "A_log_shape": [
+            32
+          ],
+          "D_shape": [
+            32
+          ]
+        },
+        "module_order": [
+          "token_embedding",
+          "mamba_layers",
+          "final_norm",
+          "lm_head"
+        ],
+        "forbid_module_types": [
+          "GRU",
+          "LSTM",
+          "RNN"
+        ]
+      }
+    },
+    {
+      "id": "1ba33ef3703b176b",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "9b80fbf0446520fe"
+      ],
+      "params": {
+        "model_file": "evo2_train.py",
+        "model_class": "Evo2TrainModel",
+        "model_args": {},
+        "forward_args": {
+          "input_ids": [
+            [
+              0,
+              1,
+              2,
+              3
+            ]
+          ]
+        },
+        "out_shape": [
+          1,
+          4,
+          5
+        ],
+        "require_tensor": true,
+        "require_finite": true,
+        "causal_prefix": {
+          "alternate_input": [
+            [
+              0,
+              1,
+              2,
+              4
+            ]
+          ],
+          "prefix_length": 3,
+          "atol": 1e-06,
+          "rtol": 1e-06
+        },
+        "batch_consistency": {
+          "input_ids": [
+            [
+              0,
+              1,
+              2,
+              3
+            ],
+            [
+              0,
+              1,
+              2,
+              3
+            ]
+          ],
+          "out_shape": [
+            2,
+            4,
+            5
+          ],
+          "atol": 1e-06,
+          "rtol": 1e-06
+        }
+      }
+    },
+    {
+      "id": "7ff2d5408ffeeb9e",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "1ba33ef3703b176b"
+      ],
+      "params": {
+        "candidate": {
+          "model_file": "evo2_train.py",
+          "model_class": "Evo2TrainModel",
+          "model_args": {},
+          "forward_args": {
+            "batches": [
+              [
+                [
+                  0,
+                  1,
+                  2,
+                  3
+                ]
+              ],
+              [
+                [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                [
+                  4,
+                  3,
+                  2,
+                  1,
+                  0
+                ]
+              ]
+            ]
+          }
+        },
+        "reference": {
+          "model_file": "benchmarks/standard/evo2_train/evo2_train.py",
+          "model_class": "Evo2TrainModel",
+          "model_args": {},
+          "forward_args": {
+            "batches": [
+              [
+                [
+                  0,
+                  1,
+                  2,
+                  3
+                ]
+              ],
+              [
+                [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                [
+                  4,
+                  3,
+                  2,
+                  1,
+                  0
+                ]
+              ]
+            ]
+          }
+        },
+        "load_state_dict": {
+          "source": "reference_model.state_dict",
+          "strict": true
+        },
+        "torch_manual_seed": 20260819,
+        "compare_atol": 1e-06
+      }
+    },
+    {
+      "id": "f6c1f269ea7cfba3",
+      "type": "training",
+      "method": "check_training",
+      "phase": "train",
+      "depends": [
+        "9b80fbf0446520fe",
+        "1ba33ef3703b176b"
+      ],
+      "params": {
+        "run_train_file": "evo2_train.py",
+        "train_function": "Evo2Trainer.fit",
+        "model_class": "Evo2TrainModel",
+        "trainer_class": "Evo2Trainer",
+        "train_args": {
+          "sequences": [
+            "ACGTACGT",
+            "TGCATGCA"
+          ],
+          "max_steps": 2
+        },
+        "learning_rate": 0.001,
+        "seed": 11,
+        "assertions": {
+          "history_type": "list",
+          "history_length": 2,
+          "row_type": "dict",
+          "train_loss_finite": true,
+          "parameter_update": true
+        },
+        "cli_cases": {
+          "mock_data": {
+            "args": [
+              "--mock-data",
+              "--output-dir",
+              "$output_dir/cli_mock",
+              "--max-steps",
+              "2",
+              "--seed",
+              "11"
+            ],
+            "returncode": 0,
+            "required_files": [
+              "metrics.jsonl"
+            ]
+          },
+          "dataset_config": {
+            "payload": {
+              "sequences": [
+                "ACGTACGT",
+                "TGCATGCA"
+              ]
+            },
+            "args": [
+              "--dataset-config",
+              "$dataset_config",
+              "--output-dir",
+              "$output_dir/cli_config",
+              "--max-steps",
+              "2",
+              "--seed",
+              "11"
+            ],
+            "returncode": 0,
+            "required_files": [
+              "evo2_train.pt"
+            ]
+          },
+          "both": {
+            "args": [
+              "--mock-data",
+              "--dataset-config",
+              "$dataset_config",
+              "--output-dir",
+              "$output_dir/cli_both",
+              "--max-steps",
+              "2"
+            ],
+            "nonzero": true
+          },
+          "neither": {
+            "args": [
+              "--output-dir",
+              "$output_dir/cli_neither",
+              "--max-steps",
+              "2"
+            ],
+            "nonzero": true
+          }
+        }
+      }
+    },
+    {
+      "id": "732a30f3f0a8ef52",
+      "type": "smoke_artifacts",
+      "method": "check_smoke_artifacts",
+      "phase": "smoke_train",
+      "depends": [
+        "f6c1f269ea7cfba3"
+      ],
+      "params": {
+        "artifacts": {
+          "files": [
+            "metrics.jsonl",
+            "evo2_train.pt"
+          ]
+        },
+        "checkpoint": {
+          "map_location": "cpu",
+          "weights_only": false,
+          "required_fields": [
+            "format",
+            "model_state_dict",
+            "optimizer_state_dict",
+            "completed_steps"
+          ]
+        },
+        "metrics": {
+          "format": "jsonl",
+          "rows": 2,
+          "required_keys": [
+            "step",
+            "train_loss"
+          ],
+          "train_loss_finite": true
+        }
+      }
+    }
+  ]
+}

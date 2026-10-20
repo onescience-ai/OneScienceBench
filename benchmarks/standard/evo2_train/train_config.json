@@ -1,0 +1,30 @@
+{
+  "task": "evo2_train",
+  "entrypoint": "evo2_train.py",
+  "external_assets": {
+    "weights": "/public/share/sugonhpcapp01/onestore/onemodels/evo2/evo2_nemo_7b/weights",
+    "dataset": "/public/share/sugonhpcapp01/onestore/onedatasets/evo2/data_mini",
+    "mount_required": true
+  },
+  "model": {
+    "vocab": "ACGTN",
+    "hidden_size": 32,
+    "conv_kernel": 4,
+    "num_layers": 2
+  },
+  "optimizer": {
+    "name": "AdamW",
+    "learning_rate": 0.0003,
+    "gradient_clip_norm": 1.0
+  },
+  "training": {
+    "max_steps": 2,
+    "seed": 20260820,
+    "checkpoint_name": "evo2_train.pt",
+    "metrics_name": "metrics.jsonl"
+  },
+  "data": {
+    "sequence_source": "/public/share/sugonhpcapp01/onestore/onedatasets/evo2/data_mini",
+    "format": "genome_sequence_shards"
+  }
+}
