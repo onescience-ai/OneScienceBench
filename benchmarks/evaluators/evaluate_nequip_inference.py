@@ -1,742 +1,673 @@
-"""V2 adapter for the legacy standalone NequIP inference evaluator."""
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""NequIP Cu inference: reusable base checks plus prompt-specific scientific checks.
+Every task-specific check takes ``config`` and returns (name, passed, detail).
+"""
 from __future__ import annotations
 
 import ast
 import hashlib
-import importlib.util
+import inspect
+import math
 import json
-import os
-from pathlib import Path
+import subprocess
 import sys
 import traceback
-from typing import Dict
+from collections.abc import Mapping
+from pathlib import Path
 
+import numpy as np
 import torch
+import yaml
 
-_BASE_EVALUATOR_DIR = None
-for _parent in [Path(__file__).resolve().parent, *Path(__file__).resolve().parents]:
-    _base_dir = _parent / 'benchmarks' / 'evaluators' / 'base'
-    if _base_dir.is_dir():
-        _BASE_EVALUATOR_DIR = _base_dir
-        break
-if _BASE_EVALUATOR_DIR is None:
-    raise FileNotFoundError('Could not locate repository evaluators/base directory.')
-sys.path.insert(0, str(_BASE_EVALUATOR_DIR))
-from base_evaluator import *
+from base.base_evaluator import (
+    CANDIDATE_DIR,
+    REFERENCE_DIR,
+    _load_candidate_modules,
+    _load_reference_modules,
+    check_files,
+    check_config as check_config_content,
+    check_interface,
+    check_infer_structure as _base_check_infer_structure,
+    check_infer_output_schema as _base_check_infer_output_schema,
+)
+from base.model_structure_checker import check_model_structure_v2, checkpoints_to_tuples
 
-
-def _repo_root() -> Path:
-    for candidate in [Path(__file__).resolve().parent, *Path(__file__).resolve().parents]:
-        if (candidate / 'benchmarks' / 'datasets').is_dir():
-            return candidate
-    raise FileNotFoundError('Could not locate repository root containing benchmarks/datasets.')
-
-
-candidate_env = os.environ.get("candidate_env")
-stardard_name = os.environ.get("stardard_name")
-
-def _candidate_model_path() -> Path:
-    if not candidate_env:
-        raise RuntimeError("candidate_env is not configured")
-    candidate_path = os.environ.get(candidate_env)
-    if not candidate_path:
-        raise RuntimeError(f"{candidate_env} is not configured")
-    return Path(candidate_path).expanduser().resolve()
-
-def _reference_model_path() -> Path:
-    return (
-        _repo_root()
-        / "benchmarks"
-        / "standard"
-        / stardard_name
-    ).resolve()
-
-CANDIDATE_DIR = _candidate_model_path()
-REFERENCE_DIR = _reference_model_path()
-
-
-def load_module(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(path)
-    if str(path.parent) not in sys.path:
-        sys.path.insert(0, str(path.parent))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+CHECKPOINT = Path(
+    '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/'
+    'nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt'
+)
+FIXED_DATA = Path(
+    '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/'
+    'demo/reference_data/smoke.xyz'
+)
+# Resolve once at module import, so every independent rule_eval check sees
+# the same local fixture, not a global modified by another check.
+LOCAL_DATA = CANDIDATE_DIR / 'smoke.xyz'
+DATA = LOCAL_DATA if LOCAL_DATA.is_file() else FIXED_DATA
+CHECKPOINT_SHA256 = '3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b'
+DATA_SHA256 = '6671f9b28d37484379f51f1deb23a6f4b165ed628467ee6bffa0648b6d50a5b5'
+MODEL_PREFIX = 'model.sole_model.'
+MODULE_ORDER = (
+    'type_embed', 'spharm', 'edge_norm', 'bessel_encode', 'factor',
+    'layer0_convnet', 'layer1_convnet', 'per_atom_energy_readout',
+    'per_type_energy_scale_shift', 'total_energy_sum',
+)
+PREDICTION_KEYS = ('energy', 'forces', 'stress')
+RECORD_KEYS = {
+    'energy': ('energy', 'energy_ev'),
+    'forces': ('forces', 'forces_ev_per_angstrom'),
+    'stress': ('stress', 'stress_ev_per_angstrom3'),
+}
+# The fixed paths define the task contract. The active path may change only
+# to a byte-identical SHA256-verified copy when a shared fixture is unreadable.
+FIXED_CHECKPOINT = CHECKPOINT
 
 
-def purge_portable():
-    for name in list(sys.modules):
-        if name == 'portable_nequip' or name.startswith('portable_nequip.'):
-            sys.modules.pop(name, None)
 
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open('rb') as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b''):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def check_files(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = ['required_files_exist']
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+def check_infer_structure(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Reuse base AST checks; enforce an independent local NequIP implementation."""
+    checks = []
     try:
-        params = config.get('params', config)
-        PORTABLE_FILES = (
-            'portable_nequip/__init__.py', 'portable_nequip/internal.py', 'portable_nequip/model.py',
-            'portable_nequip/energy_modules.py', 'portable_nequip/runtime.py', 'portable_nequip/NOTICE.md',
-            'portable_nequip/data/__init__.py', 'portable_nequip/data/AtomicDataDict.py',
-            'portable_nequip/data/_keys.py', 'portable_nequip/data/_key_registry.py',
-            'portable_nequip/nn/__init__.py', 'portable_nequip/nn/_ghost_exchange_base.py',
-            'portable_nequip/nn/_graph_mixin.py', 'portable_nequip/nn/_tp_scatter_base.py',
-            'portable_nequip/nn/atomwise.py', 'portable_nequip/nn/convnetlayer.py',
-            'portable_nequip/nn/grad_output.py', 'portable_nequip/nn/graph_model.py',
-            'portable_nequip/nn/interaction_block.py', 'portable_nequip/nn/misc.py',
-            'portable_nequip/nn/mlp.py', 'portable_nequip/nn/model_modifier_utils.py',
-            'portable_nequip/nn/nonlinearities.py', 'portable_nequip/nn/norm.py',
-            'portable_nequip/nn/utils.py', 'portable_nequip/nn/embedding/__init__.py',
-            'portable_nequip/nn/embedding/_edge.py', 'portable_nequip/nn/embedding/cutoffs.py',
-            'portable_nequip/nn/embedding/node.py', 'portable_nequip/nn/embedding/node_tensor.py',
-            'portable_nequip/nn/embedding/utils.py',
+        shared = _base_check_infer_structure(
+            config, caller_globals=caller_globals, caller_locals=caller_locals
         )
-        REQUIRED_FILES = ('nequip_inference.py', 'run_inference.py', 'nequip_inference.yaml', *PORTABLE_FILES)
-        submission = CANDIDATE_DIR
-        required_files = tuple(params.get('required_files', REQUIRED_FILES))
-        missing = []
-        for name in required_files:
-            path = (submission / name).resolve()
-            if submission not in path.parents or not path.is_file():
-                missing.append(name)
-        ok = not missing
-        detail = 'all required files exist' if not missing else f'missing: {missing}'
-        update_check(current_index, ok, detail)
-        current_index += 1
+        # Neither a literal .eval() in the inspected files nor no_grad is a
+        # valid requirement for gradient-derived stress/force. Eval behaviour
+        # is tested dynamically in the forward / CLI checks.
+        excluded = {'inference_start:has_eval', 'inference_start:has_no_grad'}
+        checks.extend((n, ok, d) for n, ok, d in shared if n not in excluded)
     except Exception:
-        if current_index < len(checks):
-            update_check(current_index, False, traceback.format_exc())
+        checks.append(('infer_structure:base_ast', False, traceback.format_exc()))
 
-    return checks
-
-
-def check_checkpoint_loading(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'no_prohibited_imports', 'weights_only_load', 'strict_state_loading',
-        'checkpoint_sha256', 'data_sha256', 'raw_state_count', 'raw_state_numel',
-        'model_state_count', 'state_keys_match', 'state_shapes_match', 'state_values_match',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
     try:
-        params = config.get('params', config)
-        configured_checkpoint = Path(params.get('checkpoint_path', '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt')).expanduser()
-        configured_data = Path(params.get('data_path', '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz')).expanduser()
-        CHECKPOINT_SHA256 = params.get('checkpoint_sha256', '3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b')
-        DATA_SHA256 = params.get('data_sha256', '6671f9b28d37484379f51f1deb23a6f4b165ed628467ee6bffa0648b6d50a5b5')
-        PROHIBITED_IMPORTS = set(params.get('prohibited_imports', {'onescience', 'nequip', 'mace', 'mattersim'}))
+        package = CANDIDATE_DIR / config.get('portable_package', 'portable_nequip')
+        files = sorted(package.rglob('*.py'))
+        if not package.is_dir() or not (package / '__init__.py').is_file() or not files:
+            raise AssertionError('portable_nequip must be a local Python package')
+        if any(not f.resolve().is_relative_to(CANDIDATE_DIR.resolve()) for f in files):
+            raise AssertionError('package source must not escape submission directory')
+        if not any(f.read_text(encoding='utf-8').strip() for f in files):
+            raise AssertionError('local package contains no implementation')
+        checks.append(('infer_structure:portable_package', True, f'{len(files)} source files'))
+    except Exception:
+        checks.append(('infer_structure:portable_package', False, traceback.format_exc()))
 
-        def readable(path: Path) -> bool:
-            try:
-                with path.open('rb') as handle:
-                    handle.read(1)
-                return True
-            except (OSError, PermissionError):
-                return False
-
-        def first_readable(configured: Path):
-            candidates = (
-                configured,
-                CANDIDATE_DIR / configured.name,
-                REFERENCE_DIR / configured.name,
-            )
-            return next((path.resolve() for path in candidates if readable(path)), None)
-
-        submission = CANDIDATE_DIR
-        prohibited = []
-        has_weights_only_true = False
-        has_strict_true = False
-        for path in submission.rglob('*.py'):
-            tree = ast.parse(path.read_text(encoding='utf-8', errors='ignore'), filename=str(path))
+    try:
+        forbidden = set(config.get('prohibited_imports', ['onescience', 'nequip', 'mace', 'mattersim']))
+        violations = []
+        root = CANDIDATE_DIR.resolve()
+        for path in CANDIDATE_DIR.rglob('*.py'):
+            if not path.resolve().is_relative_to(root):
+                raise AssertionError(f'source escapes candidate directory: {path}')
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
             for node in ast.walk(tree):
+                modules = []
                 if isinstance(node, ast.Import):
-                    prohibited.extend(alias.name for alias in node.names if alias.name.split('.')[0] in PROHIBITED_IMPORTS)
-                elif isinstance(node, ast.ImportFrom) and node.module and node.module.split('.')[0] in PROHIBITED_IMPORTS:
-                    prohibited.append(node.module)
-                elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                    keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
-                    if node.func.attr == 'load' and isinstance(keywords.get('weights_only'), ast.Constant) and keywords['weights_only'].value is True:
-                        has_weights_only_true = True
-                    if node.func.attr == 'load_state_dict' and isinstance(keywords.get('strict'), ast.Constant) and keywords['strict'].value is True:
-                        has_strict_true = True
-        safe_load = has_weights_only_true
-        strict_load = has_strict_true
-        no_prohibited = not prohibited
-        prohibited_detail = 'no prohibited active imports' if no_prohibited else f'prohibited active imports: {prohibited}'
-        update_check(current_index, no_prohibited, prohibited_detail)
-        current_index += 1
-        if no_prohibited:
-            loading_detail = 'weights_only=True and strict=True state loading are required'
-            update_check(current_index, safe_load, 'weights_only=True state loading is required' if not safe_load else 'weights_only=True state loading found')
-            current_index += 1
-            update_check(current_index, strict_load, 'strict=True state loading is required' if not strict_load else 'strict=True state loading found')
-            current_index += 1
-            if safe_load and strict_load:
-                candidate_path = (CANDIDATE_DIR / 'nequip_inference.py').resolve()
-                if CANDIDATE_DIR not in candidate_path.parents:
-                    raise RuntimeError('candidate module path must be under CANDIDATE_DIR')
-                purge_portable()
-                module = load_module('nequip_inference_submission', candidate_path)
-                checkpoint_file = first_readable(configured_checkpoint)
-                data_file = first_readable(configured_data)
-                required_apis = all(callable(getattr(module, name, None)) for name in ('load_model', 'raw_model_state'))
-                if checkpoint_file is None:
-                    detail = (
-                        'trusted checkpoint asset unavailable; checkpoint contract retained '
-                        f'without opening {configured_checkpoint}'
-                    )
-                    metadata_ok = required_apis
-                    for index in range(current_index, len(checks)):
-                        update_check(index, metadata_ok, detail)
-                    return checks
-
-                checkpoint_hash = sha256(checkpoint_file)
-                data_hash = sha256(data_file) if data_file is not None else None
-                model, payload, expected_state = module.load_model(str(checkpoint_file), 'cpu')
-                raw_state = module.raw_model_state(payload)
-                loaded = model.state_dict()
-                same_keys = tuple(loaded) == tuple(expected_state)
-                same_shapes = same_keys and all(loaded[name].shape == expected_state[name].shape for name in loaded)
-                same_values = same_shapes and all(torch.equal(loaded[name].cpu(), expected_state[name].cpu()) for name in loaded)
-                raw_spec = params.get('raw_model_state', {})
-                model_spec = params.get('model.state_dict', {})
-                expected_raw_count = raw_spec.get('count', 33)
-                expected_raw_numel = raw_spec.get('numel', 1855)
-                expected_model_count = model_spec.get('count', 33)
-                data_matches = data_hash == DATA_SHA256 if data_file is not None else True
-                detail = json.dumps({'checkpoint_sha256': checkpoint_hash, 'data_sha256': data_hash, 'data_asset_available': data_file is not None, 'raw_state_count': len(raw_state), 'model_state_count': len(loaded), 'same_keys': same_keys, 'same_shapes': same_shapes, 'same_values': same_values}, sort_keys=True)
-                update_check(current_index, checkpoint_hash == CHECKPOINT_SHA256, detail)
-                current_index += 1
-                update_check(current_index, data_matches, detail if data_file is not None else f'trusted data asset unavailable; data hash contract retained without opening {configured_data}')
-                current_index += 1
-                update_check(current_index, len(raw_state) == expected_raw_count, detail)
-                current_index += 1
-                update_check(current_index, sum(value.numel() for value in raw_state.values()) == expected_raw_numel, detail)
-                current_index += 1
-                update_check(current_index, len(loaded) == expected_model_count, detail)
-                current_index += 1
-                update_check(current_index, same_keys, detail)
-                current_index += 1
-                update_check(current_index, same_shapes, detail)
-                current_index += 1
-                update_check(current_index, same_values, detail)
-                current_index += 1
-    except Exception:
-        if current_index < len(checks):
-            update_check(current_index, False, traceback.format_exc())
-
-    return checks
-
-
-def check_model_structure(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'model_class', 'wrapper_class', 'network_class', 'model_children', 'wrapper_children',
-        'network_module_order', 'convnet_layer_count', 'layer0_convnet_class', 'layer1_convnet_class',
-        'layer0_no_residual', 'layer1_has_residual', 'type_embedding_shape', 'bessel_shape',
-        'layer0_radial_in_shape', 'layer0_radial_out_shape', 'layer1_radial_in_shape',
-        'layer1_radial_out_shape', 'readout_shape',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
-    try:
-        params = config.get('params', config)
-        load_model_params = params.get('load_model', {})
-        configured_checkpoint = Path(load_model_params.get(
-            'checkpoint_path',
-            params.get(
-                'checkpoint_file',
-                '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt',
-            ),
-        )).expanduser()
-        SEED = params.get('seed', 456)
-        prohibited_imports = set(
-            params.get('prohibited_imports', {'onescience', 'nequip', 'mace', 'mattersim'})
-        )
-        device = load_model_params.get('device', 'cpu')
-        candidate_path = (CANDIDATE_DIR / 'nequip_inference.py').resolve()
-        if CANDIDATE_DIR not in candidate_path.parents:
-            raise RuntimeError('candidate module path must be under CANDIDATE_DIR')
-        purge_portable()
-        module = load_module('nequip_inference_submission', candidate_path)
-
-        def readable(path: Path) -> bool:
-            try:
-                with path.open('rb') as handle:
-                    handle.read(1)
-                return True
-            except (OSError, PermissionError):
-                return False
-
-        checkpoint_candidates = (
-            configured_checkpoint,
-            CANDIDATE_DIR / configured_checkpoint.name,
-            REFERENCE_DIR / configured_checkpoint.name,
-        )
-        checkpoint_file = next(
-            (path.resolve() for path in checkpoint_candidates if readable(path)),
-            None,
-        )
-        if checkpoint_file is None:
-            prohibited = []
-            has_weights_only_true = False
-            has_strict_true = False
-            for path in CANDIDATE_DIR.rglob('*.py'):
-                tree = ast.parse(
-                    path.read_text(encoding='utf-8', errors='ignore'),
-                    filename=str(path),
-                )
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        prohibited.extend(
-                            alias.name
-                            for alias in node.names
-                            if alias.name.split('.')[0]
-                            in prohibited_imports
-                        )
-                    elif (
-                        isinstance(node, ast.ImportFrom)
-                        and node.module
-                        and node.module.split('.')[0]
-                        in prohibited_imports
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                    modules = [node.module]
+                elif isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant):
+                    if isinstance(node.args[0].value, str) and (
+                        isinstance(node.func, ast.Name) and node.func.id == '__import__'
+                        or isinstance(node.func, ast.Attribute) and node.func.attr == 'import_module'
                     ):
-                        prohibited.append(node.module)
-                    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                        keywords = {
-                            keyword.arg: keyword.value
-                            for keyword in node.keywords
-                            if keyword.arg
-                        }
-                        if (
-                            node.func.attr == 'load'
-                            and isinstance(keywords.get('weights_only'), ast.Constant)
-                            and keywords['weights_only'].value is True
-                        ):
-                            has_weights_only_true = True
-                        if (
-                            node.func.attr == 'load_state_dict'
-                            and isinstance(keywords.get('strict'), ast.Constant)
-                            and keywords['strict'].value is True
-                        ):
-                            has_strict_true = True
-            metadata_ok = (
-                not prohibited
-                and has_weights_only_true
-                and has_strict_true
-                and callable(getattr(module, 'load_model', None))
-                and callable(getattr(module, 'raw_model_state', None))
-            )
-            detail = (
-                'trusted checkpoint asset unavailable; structure contract retained '
-                f'without opening {configured_checkpoint}'
-            )
-            for index in range(len(CHECKPOINT_NAMES)):
-                update_check(index, metadata_ok, detail)
-            return checks
-
-        torch.manual_seed(SEED)
-        model, _, _ = module.load_model(str(checkpoint_file), device)
-        wrapper = getattr(model, 'model', None)
-        network = getattr(wrapper, 'func', None)
-        order = list(network._modules) if network is not None else []
-        expected_order = params.get('model.model.func_children', ['type_embed', 'spharm', 'edge_norm', 'bessel_encode', 'factor', 'layer0_convnet', 'layer1_convnet', 'per_atom_energy_readout', 'per_type_energy_scale_shift', 'total_energy_sum'])
-        layers = [getattr(network, f'layer{index}_convnet', None) for index in range(2)] if network is not None else []
-        shapes = {}
-        if network is not None:
-            shapes = {
-                'type_embedding': list(network.type_embed.embed_module.weight.shape),
-                'bessel': list(network.bessel_encode.bessel_weights.shape),
-                'layer0_radial_in': list(network.layer0_convnet.conv.edge_mlp.mlp[0].weight.shape),
-                'layer0_radial_out': list(network.layer0_convnet.conv.edge_mlp.mlp[2].weight.shape),
-                'layer1_radial_in': list(network.layer1_convnet.conv.edge_mlp.mlp[0].weight.shape),
-                'layer1_radial_out': list(network.layer1_convnet.conv.edge_mlp.mlp[2].weight.shape),
-                'readout': list(network.per_atom_energy_readout.mlp_module.mlp[0].weight.shape),
-            }
-        expected_classes = params.get('classes', ['GraphModel', 'ForceStressOutput', 'SequentialGraphNetwork'])
-        expected_model_children = params.get('model_children', ['model'])
-        expected_wrapper_children = params.get('model.model_children', ['func'])
-        expected_shapes = params.get('shapes', {'type_embedding': [1, 8], 'bessel': [1, 4], 'layer0_radial_in': [4, 16], 'layer0_radial_out': [16, 16], 'layer1_radial_in': [4, 16], 'layer1_radial_out': [16, 16], 'readout': [8, 1]})
-        ok = all((
-            type(model).__name__ == expected_classes[0],
-            type(wrapper).__name__ == expected_classes[1],
-            type(network).__name__ == expected_classes[2],
-            list(model._modules) == expected_model_children,
-            list(wrapper._modules) == expected_wrapper_children,
-            order == expected_order,
-            len(layers) == 2 and all(type(layer).__name__ == 'ConvNetLayer' for layer in layers),
-            getattr(layers[0].conv, 'sc', None) is None,
-            getattr(layers[1].conv, 'sc', None) is not None,
-            shapes == expected_shapes,
-        ))
-        detail = json.dumps({'classes': [type(model).__name__, type(wrapper).__name__, type(network).__name__], 'module_order': order, 'layer_count': len(layers), 'shapes': shapes}, sort_keys=True)
-        update_check(current_index, type(model).__name__ == expected_classes[0], detail)
-        current_index += 1
-        update_check(current_index, type(wrapper).__name__ == expected_classes[1], detail)
-        current_index += 1
-        update_check(current_index, type(network).__name__ == expected_classes[2], detail)
-        current_index += 1
-        update_check(current_index, list(model._modules) == expected_model_children, detail)
-        current_index += 1
-        update_check(current_index, list(wrapper._modules) == expected_wrapper_children, detail)
-        current_index += 1
-        update_check(current_index, order == expected_order, detail)
-        current_index += 1
-        update_check(current_index, len(layers) == 2, detail)
-        current_index += 1
-        update_check(current_index, len(layers) > 0 and type(layers[0]).__name__ == 'ConvNetLayer', detail)
-        current_index += 1
-        update_check(current_index, len(layers) > 1 and type(layers[1]).__name__ == 'ConvNetLayer', detail)
-        current_index += 1
-        update_check(current_index, getattr(layers[0].conv, 'sc', None) is None, detail)
-        current_index += 1
-        update_check(current_index, getattr(layers[1].conv, 'sc', None) is not None, detail)
-        current_index += 1
-        update_check(current_index, shapes.get('type_embedding') == expected_shapes['type_embedding'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('bessel') == expected_shapes['bessel'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('layer0_radial_in') == expected_shapes['layer0_radial_in'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('layer0_radial_out') == expected_shapes['layer0_radial_out'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('layer1_radial_in') == expected_shapes['layer1_radial_in'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('layer1_radial_out') == expected_shapes['layer1_radial_out'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('readout') == expected_shapes['readout'], detail)
-        current_index += 1
+                        modules = [node.args[0].value]
+                for mod in modules:
+                    if mod.split('.')[0] in forbidden:
+                        violations.append(f'{path.name}:{getattr(node, "lineno", 0)} {mod}')
+                if isinstance(node, ast.Call):
+                    callee = (node.func.id if isinstance(node.func, ast.Name) else
+                              node.func.attr if isinstance(node.func, ast.Attribute) else '')
+                    if callee in {'open', 'Path', 'read_text', 'read_bytes', 'load'}:
+                        for arg in node.args:
+                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                                literal = arg.value.replace('\\', '/')
+                                if any(marker in literal for marker in (
+                                    'benchmarks/standard/', 'benchmarks/evaluators/',
+                                    'evaluation/eval_datasets/codegen/standard/',
+                                    'evaluation/eval_datasets/codegen/evaluators/',
+                                )):
+                                    violations.append(f'{path.name}:{getattr(node, "lineno", 0)} prohibited file access')
+        if violations:
+            raise AssertionError('; '.join(violations[:15]))
+        checks.append(('infer_structure:independent_source', True, 'no forbidden imports/reference access'))
     except Exception:
-        if current_index < len(checks):
-            update_check(current_index, False, traceback.format_exc())
-
+        checks.append(('infer_structure:independent_source', False, traceback.format_exc()))
     return checks
 
 
-def check_interface(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'load_config_api', 'load_structures_api', 'evaluate_api', 'save_predictions_api', 'main_api',
-        'config_cli_flag', 'checkpoint_cli_flag', 'input_cli_flag', 'output_cli_flag', 'device_cli_flag',
-        'structure_count', 'first_structure_atom_count',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+def check_data_availability(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Verify the fixed smoke fixture's SHA256, using a local byte-identical copy."""
+    name = 'data_availability:smoke_xyz_sha256'
     try:
-        params = config.get('params', config)
-        run_file = Path(params.get('run_file', 'run_inference.py'))
-        run_path = (CANDIDATE_DIR / run_file).resolve()
-        if CANDIDATE_DIR not in run_path.parents:
-            raise RuntimeError('candidate run file path must be under CANDIDATE_DIR')
-        run_module = load_module('nequip_inference_submission_run', run_path)
-        required = tuple(params.get('required_interfaces', ('load_config', 'load_structures', 'evaluate', 'save_predictions', 'main')))
-        missing = [name for name in required if not callable(getattr(run_module, name, None))]
-        source = run_path.read_text(encoding='utf-8')
-        expected_flags = tuple(params.get('cli_flags', ('--config', '--checkpoint', '--input', '--output', '--device')))
-        flags = all(flag in source for flag in expected_flags)
-        structure_params = params.get('load_structures', {})
-        configured_data = Path(structure_params.get(
-            'input',
-            params.get(
-                'input_path',
-                '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz',
-            ),
-        )).expanduser()
-        def readable(path: Path) -> bool:
-            try:
-                with path.open('rb') as handle:
-                    handle.read(1)
-                return True
-            except (OSError, PermissionError):
-                return False
+        # data_file in the JSON still records the canonical dataset identity.
+        requested = Path(config.get('data_file', FIXED_DATA))
+        expected = str(config.get('data_sha256', DATA_SHA256))
+        if requested != FIXED_DATA or expected != DATA_SHA256:
+            raise AssertionError('data path / SHA contract differs from the original prompt')
 
-        data_candidates = (
-            configured_data,
-            CANDIDATE_DIR / configured_data.name,
-            REFERENCE_DIR / configured_data.name,
-        )
-        data_path = next(
-            (path.resolve() for path in data_candidates if readable(path)),
-            None,
-        )
-        expected_structures = structure_params.get('structures', 8)
-        expected_first_atoms = structure_params.get('first_structure_atoms', 8)
-        if data_path is None:
-            detail = (
-                'trusted data asset unavailable; interface contract retained '
-                f'without opening {configured_data}'
-            )
-            metadata_ok = not missing and flags
-            for name in required:
-                update_check(current_index, callable(getattr(run_module, name, None)), detail)
-                current_index += 1
-            for flag in expected_flags:
-                update_check(current_index, flag in source, detail)
-                current_index += 1
-            update_check(current_index, metadata_ok, detail)
-            current_index += 1
-            update_check(current_index, metadata_ok, detail)
-            return checks
+        digest = hashlib.sha256()
+        with DATA.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(4 << 20), b''):
+                digest.update(chunk)
+        actual = digest.hexdigest()
+        if actual != DATA_SHA256:
+            raise AssertionError(f'smoke.xyz SHA256 mismatch at {DATA}: {actual}')
 
-        structures = run_module.load_structures(str(data_path))
-        detail = json.dumps({'missing_apis': missing, 'cli_flags': flags, 'structures': len(structures), 'first_atoms': len(structures[0])}, sort_keys=True)
-        for name in required:
-            update_check(current_index, callable(getattr(run_module, name, None)), detail)
-            current_index += 1
-        for flag in expected_flags:
-            update_check(current_index, flag in source, detail)
-            current_index += 1
-        update_check(current_index, len(structures) == expected_structures, detail)
-        current_index += 1
-        update_check(current_index, len(structures[0]) == expected_first_atoms, detail)
-        current_index += 1
+        source = 'candidate copy' if DATA == LOCAL_DATA else 'canonical dataset'
+        return [(name, True, f'{source}: SHA256 verified at {DATA}')]
     except Exception:
-        if current_index < len(checks):
-            update_check(current_index, False, traceback.format_exc())
+        return [(name, False, traceback.format_exc())]
 
+
+def check_checkpoint_loading(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Independently verify complete raw state, ordered EMA and live model state."""
+    global CHECKPOINT
+    results = []
+    try:
+        requested = Path(config.get('checkpoint_file', FIXED_CHECKPOINT))
+        expected_hash = config.get('checkpoint_sha256', CHECKPOINT_SHA256)
+        if requested != FIXED_CHECKPOINT or expected_hash != CHECKPOINT_SHA256:
+            raise AssertionError('checkpoint contract differs from the prompt')
+        errors = []
+        for candidate in (FIXED_CHECKPOINT, CANDIDATE_DIR / 'best.ckpt'):
+            try:
+                digest = hashlib.sha256()
+                with candidate.open('rb') as f:
+                    for chunk in iter(lambda: f.read(4 << 20), b''):
+                        digest.update(chunk)
+            except OSError as exc:
+                errors.append(f'{candidate}: {type(exc).__name__}: {exc}')
+                continue
+            if digest.hexdigest() != CHECKPOINT_SHA256:
+                raise AssertionError(f'checkpoint SHA256 mismatch at {candidate}')
+            CHECKPOINT = candidate
+            break
+        else:
+            raise OSError('no accessible valid checkpoint; ' + '; '.join(errors))
+        results.append(('checkpoint_loading:sha256', True, str(CHECKPOINT)))
+    except Exception:
+        return [('checkpoint_loading:sha256', False, traceback.format_exc())]
+
+    try:
+        safe, strict = False, False
+        for path in CANDIDATE_DIR.rglob('*.py'):
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                kw = {k.arg: k.value for k in node.keywords if k.arg}
+                if node.func.attr == 'load' and isinstance(kw.get('weights_only'), ast.Constant):
+                    safe |= kw['weights_only'].value is True
+                if node.func.attr == 'load_state_dict' and isinstance(kw.get('strict'), ast.Constant):
+                    strict |= kw['strict'].value is True
+        if not (safe and strict):
+            raise AssertionError(f'require explicit torch.load(weights_only=True) and strict=True; got {safe}, {strict}')
+        results.append(('checkpoint_loading:source_safe_strict', True, 'safe load and strict state restore'))
+    except Exception:
+        results.append(('checkpoint_loading:source_safe_strict', False, traceback.format_exc()))
+
+    try:
+        payload = torch.load(str(CHECKPOINT), map_location='cpu', weights_only=True)
+        if not isinstance(payload, Mapping) or not isinstance(payload.get('state_dict'), Mapping):
+            raise AssertionError('expected a Lightning checkpoint with state_dict')
+        state_dict = payload['state_dict']
+        prefix = config.get('ema_source_prefix', MODEL_PREFIX)
+        nraw = int(config.get('raw_state_count', 33))
+        numel = int(config.get('raw_state_numel', 1855))
+        nstate = int(config.get('model_state_count', 33))
+        nema = int(config.get('ema_tensor_count', 11))
+        if (prefix, nraw, numel, nstate, nema) != (MODEL_PREFIX, 33, 1855, 33, 11):
+            raise AssertionError('unexpected state/EMA quantity contract')
+        raw = {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
+        if len(raw) != nraw or any(not isinstance(x, torch.Tensor) for x in raw.values()):
+            raise AssertionError(f'raw state must have {nraw} tensor entries; got {len(raw)}')
+        if sum(t.numel() for t in raw.values()) != numel:
+            raise AssertionError('raw checkpoint element count differs from 1855')
+        results.append(('checkpoint_loading:raw_state', True, '33 tensors / 1855 elements'))
+    except Exception:
+        return results + [('checkpoint_loading:raw_state', False, traceback.format_exc())]
+
+    try:
+        mod = _load_candidate_modules('nequip_inference.py')
+        imported = mod.load_checkpoint_payload(str(CHECKPOINT))
+        if not isinstance(imported, Mapping):
+            raise TypeError('load_checkpoint_payload must return checkpoint mapping')
+        supplied_raw = mod.raw_model_state(imported)
+        if not isinstance(supplied_raw, Mapping) or set(supplied_raw) != set(raw):
+            raise AssertionError('raw_model_state did not restore the complete model.sole_model. state')
+        for key, value in raw.items():
+            if not isinstance(supplied_raw[key], torch.Tensor) or not torch.equal(value.cpu(), supplied_raw[key].cpu()):
+                raise AssertionError(f'incorrect raw model state tensor {key}')
+        results.append(('checkpoint_loading:candidate_raw_extraction', True, 'all raw tensors match'))
+    except Exception:
+        return results + [('checkpoint_loading:candidate_raw_extraction', False, traceback.format_exc())]
+
+    try:
+        conf = yaml.safe_load((CANDIDATE_DIR / 'nequip_inference.yaml').read_text(encoding='utf-8'))
+        if not isinstance(conf, dict):
+            raise TypeError('YAML config must be a dictionary')
+        conf = conf.get('model', conf)
+        signature = inspect.signature(mod.load_model)
+        params = signature.parameters
+        kwargs = {}
+        for key in ('config', 'model_config'):
+            if key in params:
+                kwargs[key] = conf
+                break
+        for key in ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path'):
+            if key in params:
+                kwargs[key] = str(CHECKPOINT)
+                break
+        if 'device' in params:
+            kwargs['device'] = 'cpu'
+        if not any(key in kwargs for key in ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path')):
+            # Typical standard interface: load_model(checkpoint_path, device='cpu')
+            loaded = mod.load_model(str(CHECKPOINT), 'cpu')
+        else:
+            loaded = mod.load_model(**kwargs)
+        model = loaded[0] if isinstance(loaded, (list, tuple)) else loaded
+        if not isinstance(model, torch.nn.Module):
+            raise TypeError('load_model must produce torch.nn.Module (or tuple with model first)')
+        current = model.state_dict()
+        if len(current) != nstate or set(current) != set(raw):
+            raise AssertionError('candidate model state is missing keys or contains extra keys')
+        if any(current[k].shape != raw[k].shape or current[k].dtype != raw[k].dtype for k in raw):
+            raise AssertionError('candidate model state metadata differs from checkpoint')
+        param_names = tuple(name for name, _ in model.named_parameters())
+        if len(param_names) != nema or not set(param_names).issubset(raw):
+            raise AssertionError(f'expect 11 model parameters restored by ordered EMA, got {len(param_names)}')
+        results.append(('checkpoint_loading:complete_model_state', True, '33 matched state keys; 11 ordered parameters'))
+    except Exception:
+        return results + [('checkpoint_loading:complete_model_state', False, traceback.format_exc())]
+
+    try:
+        eval_signature = inspect.signature(mod.evaluation_model_state)
+        eval_kwargs = {}
+        if 'model' in eval_signature.parameters:
+            claimed_eval = mod.evaluation_model_state(imported, model=model)
+        else:
+            claimed_eval = mod.evaluation_model_state(imported)
+        if not isinstance(claimed_eval, Mapping) or set(claimed_eval) != set(raw):
+            raise AssertionError('evaluation_model_state must preserve all 33 state entries')
+        if any(not torch.equal(current[k].cpu(), claimed_eval[k].cpu()) for k in raw):
+            raise AssertionError('live model state differs from evaluation_model_state')
+        if any(not torch.equal(raw[k], current[k].cpu()) for k in raw if k not in param_names):
+            raise AssertionError('EMA unexpectedly changed a non-parameter buffer')
+        if not any(not torch.equal(raw[k], current[k].cpu()) for k in param_names):
+            raise AssertionError('11 EMA parameters were not actually substituted')
+
+        # Reference is an independent, trusted oracle for EMA-by-parameter-order.
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        reference = str(REFERENCE_DIR)
+        sys.path[:] = [reference] + [entry for entry in sys.path if entry != reference]
+        std = _load_reference_modules('nequip_inference.py')
+        reference_loaded = std.load_model(str(CHECKPOINT), 'cpu')
+        ref_model = reference_loaded[0] if isinstance(reference_loaded, (list, tuple)) else reference_loaded
+        ref_state = ref_model.state_dict()
+        if set(ref_state) != set(raw) or any(
+            not torch.equal(ref_state[k].cpu(), current[k].cpu()) for k in raw
+        ):
+            raise AssertionError('EMA state does not equal independently loaded reference')
+        strict_result = model.load_state_dict(claimed_eval, strict=True)
+        if strict_result.missing_keys or strict_result.unexpected_keys:
+            raise AssertionError('strict load reported missing or unexpected keys')
+        results.append(('checkpoint_loading:ema_strict_reference', True,
+                        '11 EMA tensors, 33 exact values and strict=True match reference'))
+    except Exception:
+        results.append(('checkpoint_loading:ema_strict_reference', False, traceback.format_exc()))
+    finally:
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        candidate = str(CANDIDATE_DIR)
+        sys.path[:] = [candidate] + [entry for entry in sys.path if entry != candidate]
+    return results
+
+
+def check_model_structure(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Check registered stages; allow scalar factor and inlined final sum."""
+    try:
+        mod = _load_candidate_modules('nequip_inference.py')
+        conf = yaml.safe_load((CANDIDATE_DIR / 'nequip_inference.yaml').read_text(encoding='utf-8'))
+        conf = conf.get('model', conf)
+        sig = inspect.signature(mod.load_model)
+        args = {}
+        if 'config' in sig.parameters: args['config'] = conf
+        if 'model_config' in sig.parameters: args['model_config'] = conf
+        for name in ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path'):
+            if name in sig.parameters:
+                args[name] = str(CHECKPOINT)
+                break
+        if 'device' in sig.parameters: args['device'] = 'cpu'
+        obj = mod.load_model(**args) if any(n in args for n in
+            ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path')) else mod.load_model(str(CHECKPOINT), 'cpu')
+        model = obj[0] if isinstance(obj, (list, tuple)) else obj
+        if not isinstance(model, torch.nn.Module):
+            raise TypeError('load_model did not return an nn.Module')
+        checks = [('model_structure:build', True, type(model).__name__)]
+    except Exception:
+        return [('model_structure:build', False, traceback.format_exc())]
+
+    try:
+        rules = config.get('rules', [])
+        if not rules:
+            raise ValueError('missing structure rules')
+        checks.extend(checkpoints_to_tuples(check_model_structure_v2(
+            model, config_dict={'rules': rules}, verbose=False
+        )))
+    except Exception:
+        checks.append(('model_structure:declarative_rules', False, traceback.format_exc()))
+
+    try:
+        expected = tuple(config.get('network_module_order', MODULE_ORDER))
+        if expected != MODULE_ORDER or int(config.get('layer_count', 2)) != 2:
+            raise AssertionError('unrecognized NequIP layer ordering contract')
+        # factor may be a scalar coefficient; total_energy_sum can be a
+        # functional reduction. They need not be registered nn.Module objects.
+        registered = tuple(n for n in expected if n not in ('factor', 'total_energy_sum'))
+        matches = []
+        for module in model.modules():
+            names = tuple(module._modules)
+            if all(name in names for name in registered):
+                positions = [names.index(name) for name in registered]
+                if positions == sorted(positions):
+                    matches.append(module)
+        if len(matches) != 1:
+            raise AssertionError(f'expected one correctly ordered NequIP network; got {len(matches)}')
+        seq = matches[0]
+        if sum(type(child).__name__ == 'ConvNetLayer' for child in seq.modules()) != 2:
+            raise AssertionError('model must contain exactly two ConvNetLayer stages')
+        factor = getattr(seq, 'factor', None)
+        if factor is not None and not isinstance(factor, torch.nn.Module):
+            f = torch.as_tensor(factor)
+            if f.numel() != 1 or not bool(torch.isfinite(f).all()):
+                raise AssertionError('functional factor must be a finite scalar')
+        checks.append(('model_structure:ordered_stages', True,
+                       'eight registered stages in order; functional factor and sum accepted'))
+    except Exception:
+        checks.append(('model_structure:ordered_stages', False, traceback.format_exc()))
     return checks
 
 
-def check_model_forward_executable(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'energy_shape', 'forces_shape', 'stress_shape',
-        'energy_finite', 'forces_finite', 'stress_finite',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+def check_model_forward_execution(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Run actual periodic ASE inference with a legitimate candidate signature."""
+    names = ('model_forward:periodic_ase', 'model_forward:efs_schema')
     try:
-        params = config.get('params', config)
-        load_model_params = params.get('load_model', {})
-        CHECKPOINT = Path(load_model_params.get('checkpoint_path', '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt')).expanduser()
-        device = load_model_params.get('device', 'cpu')
-        read_params = params.get('ase.io.read', {})
-        DATA = Path(read_params.get('path', '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz')).expanduser()
-        index = read_params.get('index', 0)
-        candidate_path = (CANDIDATE_DIR / 'nequip_inference.py').resolve()
-        if CANDIDATE_DIR not in candidate_path.parents:
-            raise RuntimeError('candidate module path must be under CANDIDATE_DIR')
-        purge_portable()
-        module = load_module('nequip_inference_submission', candidate_path)
-
-        def readable(path: Path) -> bool:
-            try:
-                with path.open('rb') as handle:
-                    handle.read(1)
-                return True
-            except (OSError, PermissionError):
-                return False
-
-        def first_readable(configured: Path):
-            candidates = (
-                configured,
-                CANDIDATE_DIR / configured.name,
-                REFERENCE_DIR / configured.name,
-            )
-            return next(
-                (path.resolve() for path in candidates if readable(path)),
-                None,
-            )
-
-        checkpoint_path = first_readable(CHECKPOINT)
-        data_path = first_readable(DATA)
-        if checkpoint_path is None or data_path is None:
-            missing_apis = [
-                name
-                for name in ('load_model', 'evaluate_structure')
-                if not callable(getattr(module, name, None))
-            ]
-            detail = json.dumps(
-                {
-                    'missing_apis': missing_apis,
-                    'trusted_checkpoint_unavailable': (
-                        str(CHECKPOINT) if checkpoint_path is None else None
-                    ),
-                    'trusted_data_unavailable': (
-                        str(DATA) if data_path is None else None
-                    ),
-                },
-                sort_keys=True,
-            )
-            metadata_ok = not missing_apis
-            for check_index in range(len(checks)):
-                update_check(check_index, metadata_ok, detail)
-            return checks
-
         from ase.io import read
-        model, _, _ = module.load_model(str(checkpoint_path), device)
+        atoms = read(str(DATA), index=int(config.get('structure_index', 0)))
+        if not len(atoms) or not bool(np.asarray(atoms.pbc).any()):
+            raise AssertionError('expected a nonempty periodic ASE structure')
+        mod = _load_candidate_modules('nequip_inference.py')
+        conf = yaml.safe_load((CANDIDATE_DIR / 'nequip_inference.yaml').read_text(encoding='utf-8'))
+        conf = conf.get('model', conf)
+        sig = inspect.signature(mod.load_model)
+        args = {}
+        if 'config' in sig.parameters: args['config'] = conf
+        if 'model_config' in sig.parameters: args['model_config'] = conf
+        for name in ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path'):
+            if name in sig.parameters:
+                args[name] = str(CHECKPOINT)
+                break
+        if 'device' in sig.parameters: args['device'] = 'cpu'
+        loaded = mod.load_model(**args) if any(n in args for n in
+            ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path')) else mod.load_model(str(CHECKPOINT), 'cpu')
+        model = loaded[0] if isinstance(loaded, (tuple, list)) else loaded
         model.eval()
-        output = module.evaluate_structure(model, read(str(data_path), index=index), params.get('evaluate_structure', {}).get('device', 'cpu'))
-        shapes = {name: list(value.shape) for name, value in output.items()}
-        finite = all(torch.isfinite(value).all().item() for value in output.values())
-        expected_shapes = params.get('shapes', {'energy': [1], 'forces': [8, 3], 'stress': [1, 3, 3]})
-        ok = shapes == expected_shapes and finite
-        detail = json.dumps({'shapes': shapes, 'finite': finite}, sort_keys=True)
-        update_check(current_index, shapes.get('energy') == expected_shapes['energy'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('forces') == expected_shapes['forces'], detail)
-        current_index += 1
-        update_check(current_index, shapes.get('stress') == expected_shapes['stress'], detail)
-        current_index += 1
-        update_check(current_index, bool(torch.isfinite(output['energy']).all().item()) if 'energy' in output else False, detail)
-        current_index += 1
-        update_check(current_index, bool(torch.isfinite(output['forces']).all().item()) if 'forces' in output else False, detail)
-        current_index += 1
-        update_check(current_index, bool(torch.isfinite(output['stress']).all().item()) if 'stress' in output else False, detail)
-        current_index += 1
+        checks = [(names[0], True, f'ASE Atoms N={len(atoms)}')]
     except Exception:
-        if current_index < len(checks):
-            update_check(current_index, False, traceback.format_exc())
-
-    return checks
-
-
-def check_evaluate_oracle(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'state_keys_match', 'state_shapes_match', 'state_values_match',
-        'energy_max_abs_error', 'forces_max_abs_error', 'stress_max_abs_error',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+        return [(n, False, traceback.format_exc()) for n in names]
     try:
-        params = config.get('params', config)
-        DATA = Path(params.get('data_path', '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz'))
-        read_params = params.get('ase.io.read', {})
-        index = read_params.get('index', 0)
-        SEED = params.get('seed', 456)
-        load_model_params = params.get('load_model', {})
-        CHECKPOINT = Path(load_model_params.get('checkpoint_path', '/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt'))
-        device = load_model_params.get('device', 'cpu')
-        candidate_path = (CANDIDATE_DIR / 'nequip_inference.py').resolve()
-        if CANDIDATE_DIR not in candidate_path.parents:
-            raise RuntimeError('candidate module path must be under CANDIDATE_DIR')
-        configured_checkpoint = CHECKPOINT.expanduser()
-        configured_data = DATA.expanduser()
-
-        def readable(path: Path) -> bool:
-            try:
-                with path.open('rb') as handle:
-                    handle.read(1)
-                return True
-            except (OSError, PermissionError):
-                return False
-
-        def first_readable(configured: Path):
-            candidates = (
-                configured,
-                CANDIDATE_DIR / configured.name,
-                REFERENCE_DIR / configured.name,
-            )
-            return next(
-                (path.resolve() for path in candidates if readable(path)),
-                None,
-            )
-
-        standard_file = Path(params.get('standard_file', 'nequip_inference.py'))
-        standard_path = (REFERENCE_DIR / standard_file.name).resolve()
-        if REFERENCE_DIR not in standard_path.parents:
-            raise RuntimeError('reference module path must be under REFERENCE_DIR')
-        purge_portable()
-        module = load_module('nequip_inference_submission', candidate_path)
-        checkpoint_path = first_readable(configured_checkpoint)
-        data_path = first_readable(configured_data)
-        required_apis = all(
-            callable(getattr(module, name, None))
-            for name in ('load_model', 'evaluate_structure')
-        )
-        if checkpoint_path is None or data_path is None:
-            detail = json.dumps(
-                {
-                    'trusted_checkpoint_unavailable': (
-                        str(configured_checkpoint) if checkpoint_path is None else None
-                    ),
-                    'trusted_data_unavailable': (
-                        str(configured_data) if data_path is None else None
-                    ),
-                },
-                sort_keys=True,
-            )
-            for check_index in range(len(CHECKPOINT_NAMES)):
-                update_check(check_index, required_apis, detail)
-            return checks
-
-        from ase.io import read
-        atoms = read(str(data_path), index=index)
-        purge_portable()
-        standard = load_module('nequip_inference_standard', standard_path)
-        torch.manual_seed(SEED)
-        reference_model, _, reference_state = standard.load_model(str(checkpoint_path), device)
-        reference_model.eval()
-        torch.manual_seed(SEED)
-        reference = standard.evaluate_structure(reference_model, atoms, params.get('evaluate_structure', {}).get('device', 'cpu'))
-        purge_portable()
-        torch.manual_seed(SEED)
-        candidate_model, _, candidate_state = module.load_model(str(checkpoint_path), device)
-        same_keys = tuple(reference_state) == tuple(candidate_state)
-        same_shapes = same_keys and all(reference_state[name].shape == candidate_state[name].shape for name in reference_state)
-        same_values = same_shapes and all(torch.equal(reference_state[name], candidate_state[name]) for name in reference_state)
-        state_detail = json.dumps({'same_keys': same_keys, 'same_shapes': same_shapes, 'same_checkpoint_values': same_values}, sort_keys=True)
-        update_check(current_index, same_keys, state_detail)
-        current_index += 1
-        update_check(current_index, same_shapes, state_detail)
-        current_index += 1
-        update_check(current_index, same_values, state_detail)
-        current_index += 1
-        if same_values:
-            candidate_model.eval()
-            torch.manual_seed(SEED)
-            prediction = module.evaluate_structure(candidate_model, atoms, params.get('evaluate_structure', {}).get('device', 'cpu'))
-            errors = {name: float((prediction[name] - reference[name]).abs().max()) for name in reference}
-            atol = params.get('max_abs_error', {}).get('all_reference_outputs_lte', 1e-6)
-            ok = all(value <= atol for value in errors.values())
-            detail = json.dumps({'same_checkpoint_values': True, 'max_abs_error': errors, 'atol': atol}, sort_keys=True)
-            update_check(current_index, errors.get('energy', float('inf')) <= atol, detail)
-            current_index += 1
-            update_check(current_index, errors.get('forces', float('inf')) <= atol, detail)
-            current_index += 1
-            update_check(current_index, errors.get('stress', float('inf')) <= atol, detail)
-            current_index += 1
+        sig = inspect.signature(mod.evaluate_structure)
+        params = {}
+        if 'r_max' in sig.parameters: params['r_max'] = float(conf.get('r_max', 4.0))
+        if 'device' in sig.parameters: params['device'] = 'cpu'
+        with torch.enable_grad():
+            result = mod.evaluate_structure(model, atoms, **params)
+        if not isinstance(result, Mapping) or not set(PREDICTION_KEYS).issubset(result):
+            raise AssertionError('evaluate_structure must return energy, forces and stress')
+        expected = {'energy': (1,), 'forces': (len(atoms), 3), 'stress': (1, 3, 3)}
+        for name, shape in expected.items():
+            tensor = result[name]
+            if not isinstance(tensor, torch.Tensor) or tuple(tensor.shape) != shape:
+                raise AssertionError(f'{name} must have shape {shape}')
+            if not torch.isfinite(tensor).all():
+                raise AssertionError(f'{name} has nonfinite values')
+        checks.append((names[1], True, 'energy, forces, stress shapes and values correct'))
     except Exception:
-        if current_index < len(checks):
-            update_check(current_index, False, traceback.format_exc())
-
+        checks.append((names[1], False, traceback.format_exc()))
     return checks
+
+
+def check_model_forward_equivalence(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Compare multiple ASE configurations against independent EMA reference."""
+    names = ('model_forward_equivalence:ema_live_state', 'model_forward_equivalence:energy_force_stress')
+    try:
+        from ase.io import read
+        indices = [int(v) for v in config.get('sample_indices', [0, 1])]
+        if not indices:
+            raise AssertionError('no samples selected')
+        structures = [read(str(DATA), index=i) for i in indices]
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        ref_path = str(REFERENCE_DIR)
+        sys.path[:] = [ref_path] + [p for p in sys.path if p != ref_path]
+        reference = _load_reference_modules('nequip_inference.py')
+        std_loaded = reference.load_model(str(CHECKPOINT), 'cpu')
+        ref_model = std_loaded[0] if isinstance(std_loaded, (tuple, list)) else std_loaded
+        ref_model.eval()
+        ref_state = ref_model.state_dict()
+        rsig = inspect.signature(reference.evaluate_structure)
+        rargs = {}
+        if 'r_max' in rsig.parameters: rargs['r_max'] = 4.0
+        if 'device' in rsig.parameters: rargs['device'] = 'cpu'
+        with torch.enable_grad():
+            expected = [reference.evaluate_structure(ref_model, a.copy(), **rargs) for a in structures]
+
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        cand_path = str(CANDIDATE_DIR)
+        sys.path[:] = [cand_path] + [p for p in sys.path if p != cand_path]
+        mod = _load_candidate_modules('nequip_inference.py')
+        conf = yaml.safe_load((CANDIDATE_DIR / 'nequip_inference.yaml').read_text(encoding='utf-8'))
+        conf = conf.get('model', conf)
+        sig = inspect.signature(mod.load_model)
+        kwargs = {}
+        if 'config' in sig.parameters: kwargs['config'] = conf
+        if 'model_config' in sig.parameters: kwargs['model_config'] = conf
+        for k in ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path'):
+            if k in sig.parameters: kwargs[k] = str(CHECKPOINT); break
+        if 'device' in sig.parameters: kwargs['device'] = 'cpu'
+        loaded = mod.load_model(**kwargs) if any(k in kwargs for k in
+            ('checkpoint_path', 'checkpoint', 'ckpt_path', 'path')) else mod.load_model(str(CHECKPOINT), 'cpu')
+        model = loaded[0] if isinstance(loaded, (tuple, list)) else loaded
+        model.eval()
+        csig = inspect.signature(mod.evaluate_structure)
+        cargs = {}
+        if 'r_max' in csig.parameters: cargs['r_max'] = float(conf.get('r_max', 4.0))
+        if 'device' in csig.parameters: cargs['device'] = 'cpu'
+        with torch.enable_grad():
+            actual = [mod.evaluate_structure(model, a.copy(), **cargs) for a in structures]
+    except Exception:
+        return [(n, False, traceback.format_exc()) for n in names]
+    finally:
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        path = str(CANDIDATE_DIR)
+        sys.path[:] = [path] + [p for p in sys.path if p != path]
+
+    try:
+        live = model.state_dict()
+        if len(ref_state) != 33 or set(live) != set(ref_state):
+            raise AssertionError('candidate and reference must share all 33 state keys')
+        for key, value in ref_state.items():
+            if not torch.equal(live[key].cpu(), value.cpu()):
+                raise AssertionError(f'model EMA differs at state tensor {key}')
+        checks = [(names[0], True, 'all 33 parameter/buffer tensors identical to reference')]
+    except Exception:
+        checks = [(names[0], False, traceback.format_exc())]
+    try:
+        max_err = {}
+        atol, rtol = float(config.get('atol', 1e-6)), float(config.get('rtol', 1e-5))
+        for gold, pred in zip(expected, actual):
+            for key in PREDICTION_KEYS:
+                torch.testing.assert_close(pred[key], gold[key], atol=atol, rtol=rtol)
+                err = float((pred[key].double() - gold[key].double()).abs().max())
+                max_err[key] = max(max_err.get(key, 0.0), err)
+        checks.append((names[1], True, f'{len(actual)} real frames; max_abs={max_err}'))
+    except Exception:
+        checks.append((names[1], False, traceback.format_exc()))
+    return checks
+
+
+def check_infer_execution(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Execute a fresh CLI run with SHA-verified dataset and checkpoint."""
+    try:
+        output = (CANDIDATE_DIR / config.get('output_path', 'nequip_predictions.json')).resolve()
+        if not output.is_relative_to(CANDIDATE_DIR.resolve()):
+            raise ValueError('output must stay inside submission directory')
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if output.exists():
+            output.unlink()
+        command = [
+            sys.executable, str(CANDIDATE_DIR / 'run_inference.py'),
+            '--config', str(CANDIDATE_DIR / 'nequip_inference.yaml'),
+            '--checkpoint', str(CHECKPOINT), '--input', str(DATA),
+            '--output', str(output), '--device', 'cpu',
+        ]
+        process = subprocess.run(command, cwd=str(CANDIDATE_DIR), text=True,
+                                 capture_output=True, timeout=int(config.get('timeout', 600)))
+        if process.returncode != 0:
+            raise RuntimeError(f'CLI exited {process.returncode}; stderr={process.stderr[-3000:]}')
+        if not output.is_file() or not output.stat().st_size:
+            raise AssertionError('CLI did not create a fresh nonempty predictions file')
+        data = json.loads(output.read_text(encoding='utf-8'))
+        if not isinstance(data, (list, dict)) or not data:
+            raise ValueError('CLI output is empty or not JSON records')
+        return [('infer_execution:fresh_cli', True, str(output))]
+    except Exception:
+        return [('infer_execution:fresh_cli', False, traceback.format_exc())]
+
+
+def check_infer_output_schema(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Reuse the base JSON checks and validate equivalent E/F/S field aliases."""
+    checks = list(_base_check_infer_output_schema(
+        config, caller_globals=caller_globals, caller_locals=caller_locals
+    ))
+    try:
+        value = json.loads((CANDIDATE_DIR / config.get('output_path', 'nequip_predictions.json')).read_text(encoding='utf-8'))
+        if isinstance(value, list):
+            records = value
+        elif isinstance(value, Mapping):
+            records = next((value[k] for k in ('predictions', 'results', 'structures', 'outputs', 'data')
+                            if isinstance(value.get(k), list)), None)
+            if records is None and all(any(alias in value for alias in RECORD_KEYS[name]) for name in PREDICTION_KEYS):
+                records = [value]
+            if records is None and value and all(isinstance(item, Mapping) for item in value.values()):
+                records = list(value.values())
+        else:
+            records = None
+        n = int(config.get('expected_structures', 8))
+        if not isinstance(records, list) or len(records) != n:
+            raise AssertionError(f'expected {n} structures, got {len(records) if isinstance(records, list) else None}')
+        checks.append(('infer_output_schema:structure_count', True, str(n)))
+    except Exception:
+        return checks + [('infer_output_schema:structure_count', False, traceback.format_exc()),
+                         ('infer_output_schema:energy_force_stress', False, 'missing records')]
+    try:
+        from ase.io import read
+        structures = read(str(DATA), index=':')
+        if len(structures) != len(records):
+            raise AssertionError('prediction record count differs from smoke.xyz')
+        for i, (record, atoms) in enumerate(zip(records, structures)):
+            if not isinstance(record, Mapping):
+                raise AssertionError(f'record {i} must be a mapping')
+            fields = {}
+            for name in PREDICTION_KEYS:
+                key = next((alias for alias in RECORD_KEYS[name] if alias in record), None)
+                if key is None:
+                    raise AssertionError(f'record {i} lacks {name}')
+                fields[name] = np.asarray(record[key], dtype=np.float64)
+            energy = fields['energy'].reshape(-1)
+            if energy.shape != (1,) or fields['forces'].shape != (len(atoms), 3) or fields['stress'].shape not in ((3, 3), (1, 3, 3)):
+                raise AssertionError(f'record {i} E/F/S shapes are invalid')
+            if not all(np.isfinite(x).all() for x in fields.values()):
+                raise AssertionError(f'record {i} has NaN or Inf')
+        checks.append(('infer_output_schema:energy_force_stress', True, 'all structures finite and correct shape'))
+    except Exception:
+        checks.append(('infer_output_schema:energy_force_stress', False, traceback.format_exc()))
+    return checks
+
+
+def check_evaluate_oracle(config: dict, caller_globals=None, caller_locals=None) -> list[tuple]:
+    """Independently compare fresh CLI predictions on the whole smoke fixture."""
+    names = ('infer_oracle:complete_smoke', 'infer_oracle:energy',
+             'infer_oracle:forces', 'infer_oracle:stress')
+    try:
+        from ase.io import read
+        structures = read(str(DATA), index=':')
+        if len(structures) != int(config.get('expected_structures', 8)):
+            raise AssertionError('fixed smoke set size differs from contract')
+        payload = json.loads((CANDIDATE_DIR / config.get('output_path', 'nequip_predictions.json')).read_text(encoding='utf-8'))
+        if isinstance(payload, list):
+            records = payload
+        elif isinstance(payload, Mapping):
+            records = next((payload[k] for k in ('predictions', 'results', 'structures', 'outputs', 'data')
+                            if isinstance(payload.get(k), list)), None)
+            if records is None and payload and all(isinstance(x, Mapping) for x in payload.values()):
+                records = list(payload.values())
+        else:
+            records = None
+        if not isinstance(records, list) or len(records) != len(structures):
+            raise AssertionError('not all original smoke frames were evaluated')
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        ref_path = str(REFERENCE_DIR)
+        sys.path[:] = [ref_path] + [p for p in sys.path if p != ref_path]
+        std = _load_reference_modules('nequip_inference.py')
+        loaded = std.load_model(str(CHECKPOINT), 'cpu')
+        model = loaded[0] if isinstance(loaded, (tuple, list)) else loaded
+        model.eval()
+        sig = inspect.signature(std.evaluate_structure)
+        kwargs = {}
+        if 'r_max' in sig.parameters: kwargs['r_max'] = 4.0
+        if 'device' in sig.parameters: kwargs['device'] = 'cpu'
+        with torch.enable_grad():
+            expected = [std.evaluate_structure(model, a.copy(), **kwargs) for a in structures]
+        checks = [(names[0], True, f'full set {len(structures)} independent reference inferences')]
+    except Exception:
+        return [(n, False, traceback.format_exc()) for n in names]
+    finally:
+        for key in tuple(sys.modules):
+            if key == 'portable_nequip' or key.startswith('portable_nequip.'):
+                sys.modules.pop(key, None)
+        path = str(CANDIDATE_DIR)
+        sys.path[:] = [path] + [p for p in sys.path if p != path]
+
+    atol, rtol = float(config.get('atol', 1e-6)), float(config.get('rtol', 1e-5))
+    for name in PREDICTION_KEYS:
+        try:
+            maximum = 0.0
+            for i, (record, gold) in enumerate(zip(records, expected)):
+                alias = next((key for key in RECORD_KEYS[name] if isinstance(record, Mapping) and key in record), None)
+                if alias is None:
+                    raise AssertionError(f'missing {name} at sample {i}')
+                actual = torch.as_tensor(record[alias], dtype=torch.float64).reshape(-1)
+                truth = gold[name].detach().cpu().double().reshape(-1)
+                if actual.shape != truth.shape:
+                    raise AssertionError(f'{name} shape differs at sample {i}')
+                torch.testing.assert_close(actual, truth, atol=atol, rtol=rtol)
+                maximum = max(maximum, float((actual - truth).abs().max()))
+            checks.append((f'infer_oracle:{name}', True, f'max_abs={maximum:.8g}'))
+        except Exception:
+            checks.append((f'infer_oracle:{name}', False, traceback.format_exc()))
+    return checks
+
+

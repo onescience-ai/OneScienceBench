@@ -21,23 +21,17 @@
   "checks": [
     {
       "id": "59eaa60df4258dac",
-      "type": "task_file",
+      "type": "task_artifacts",
       "method": "check_files",
       "phase": "task_artifacts",
       "depends": [],
       "params": {
+        "phase": "task_artifacts",
         "required_files": [
           "uma.py",
           "uma_infer.py",
           "config.yaml"
-        ],
-        "require_regular_files": true,
-        "top_level_authored_suffixes": [
-          ".py",
-          ".yaml",
-          ".yml"
-        ],
-        "reject_extra_authored_files": true
+        ]
       }
     },
     {
@@ -50,8 +44,7 @@
       ],
       "params": {
         "config_name": "config.yaml",
-        "require_yaml_mapping": true,
-        "required_top_level_keys": [
+        "required_flat_keys": [
           "checkpoint",
           "device",
           "dtype",
@@ -63,29 +56,128 @@
           "act_type",
           "ff_type"
         ],
-        "flat_mapping": {
-          "forbid_mapping_valued_top_level_entries": true,
-          "forbidden_top_level_keys": [
-            "model",
-            "backbone",
-            "heads"
-          ]
-        },
-        "exact_values": {
+        "forbidden_nested_keys": [
+          "model",
+          "backbone",
+          "heads"
+        ],
+        "expected_values": {
           "lmax": 2,
           "mmax": 2,
           "norm_type": "rms_norm_sh",
           "act_type": "gate",
           "ff_type": "spectral"
         },
-        "checkpoint": {
-          "must_resolve_to": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint"
+        "checkpoint_dir": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint"
+      }
+    },
+    {
+      "id": "5f8a1fedca6c1145",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "59eaa60df4258dac"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "files": [
+          "uma.py"
+        ],
+        "required_interfaces": [
+          "UMA.forward"
+        ]
+      }
+    },
+    {
+      "id": "7936d99d21f7fff4",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "59eaa60df4258dac"
+      ],
+      "params": {
+        "phase": "infer_script",
+        "files": [
+          "uma_infer.py"
+        ],
+        "required_interfaces": [
+          "load_model",
+          "predict"
+        ]
+      }
+    },
+    {
+      "id": "551e939b0562edb3",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "7936d99d21f7fff4"
+      ],
+      "params": {
+        "files": [
+          "uma_infer.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "predict",
+            "main"
+          ],
+          "model_load_functions": [
+            "load_model"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "sample",
+            "data",
+            "atoms",
+            "samples",
+            "input"
+          ],
+          "input_load_functions": [
+            "load_data",
+            "load_samples",
+            "load_lmdb",
+            "load_structures"
+          ],
+          "input_load_attributes": [
+            "open",
+            "read"
+          ],
+          "infer_call_functions": [
+            "predict"
+          ],
+          "infer_call_attributes": [
+            "forward"
+          ],
+          "output_attributes": [
+            "numpy",
+            "save",
+            "dump",
+            "write"
+          ]
         },
-        "batch_size": {
-          "type": "int",
-          "exclusive_minimum": 0
-        },
-        "filename_must_equal": "config.yaml"
+        "require_lazy_import": true,
+        "allow_autograd_forward": true
+      }
+    },
+    {
+      "id": "6de6a4860611f2b4",
+      "type": "checkpoint_file",
+      "method": "check_checkpoint_file",
+      "phase": "checkpoint_loading",
+      "depends": [],
+      "params": {
+        "checkpoint_dir": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint",
+        "preferred_names": [
+          "uma-s-1p1_converted.pt",
+          "uma-s-1p1.pt"
+        ],
+        "fallback": "unique *.pt"
       }
     },
     {
@@ -94,37 +186,24 @@
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
       "depends": [
-        "59eaa60df4258dac",
-        "19c20f8baf363e34"
+        "6de6a4860611f2b4",
+        "5f8a1fedca6c1145",
+        "7936d99d21f7fff4"
       ],
       "params": {
-        "checkpoint": {
-          "config_key": "checkpoint",
-          "default_directory": "/public/share/sugonhpcapp01/onestore/onemodels/UMA/checkpoint",
-          "preferred_filenames": [
-            "uma-s-1p1_converted.pt",
-            "uma-s-1p1.pt"
+        "formats": [
+          [
+            "model_config",
+            "model_state_dict"
           ],
-          "fallback_glob": "*.pt",
-          "fallback_requires_exactly_one_file": true
-        },
-        "loader": {
-          "module": "uma_infer.py",
-          "function": "load_model",
-          "accepted_checkpoint_argument_names": [
-            "checkpoint_path",
-            "checkpoint"
-          ],
-          "device": "evaluation_device",
-          "dtype": "str(config.dtype default float32)"
-        },
-        "result": {
-          "must_be_instance_of": "torch.nn.Module",
-          "save_as": [
-            "runtime_model",
-            "runtime_checkpoint"
+          [
+            "config",
+            "state_dict"
           ]
-        }
+        ],
+        "strict": true,
+        "load_on_cpu": true,
+        "dtype": "float32"
       }
     },
     {
@@ -136,381 +215,129 @@
         "62f4ab8d9137e348"
       ],
       "params": {
-        "candidate_model_from_context": "runtime_model",
-        "checkpoint_from_context": "runtime_checkpoint",
-        "reference": {
-          "directory": "benchmarks/standard/uma_inference",
-          "infer_file": "uma_inference.py",
-          "load_model": "load_model",
-          "device": "evaluation_device"
-        },
-        "ignored_registered_module_types": [
-          "torch.nn.Dropout",
-          "torch.nn.Identity",
-          "torch.nn.SiLU",
-          "torch.nn.Sigmoid",
-          "torch.nn.ReLU",
-          "torch.nn.GELU",
-          "torch.nn.Tanh",
-          "torch.nn.LeakyReLU",
-          "torch.nn.Softplus"
-        ],
-        "canonical_kind_aliases": {
-          "so2coefficientmapping": "CoefficientMapping",
-          "so3coefficientmapping": "CoefficientMapping",
-          "so3grid": "SO3_Grid",
-          "chargespinembedding": "ChgSpinEmbedding",
-          "datasetembedding": "DatasetEmbedding",
-          "edgedegreeembedding": "EdgeDegreeEmbedding",
-          "gaussiandistanceexpansion": "GaussianSmearing",
-          "polynomialcutoffenvelope": "PolynomialEnvelope",
-          "rmsnormsh": "RMSNorm",
-          "gateactivation": "GateActivation",
-          "radialfunction": "RadialMLP",
-          "expertweight": "MOLE",
-          "edgewiseso2": "SO2_Convolution",
-          "expertlinear": "SO2_m_Conv",
-          "atomwise": "SpectralAtomwise",
-          "equivariantblock": "eSCNMD_Block",
-          "energyhead": "MLP_EFS_Head"
-        },
-        "correspondence": {
-          "ordered_candidates": [
-            "same_registered_path",
-            "same_final_name_and_same_kind_or_direct_parameter_names",
-            "same_canonical_kind_and_same_significant_shape_or_direct_parameter_names"
-          ],
-          "same_path_score": 1000000,
-          "same_final_name_score": 100000,
-          "same_kind_score": 10000,
-          "tie_break": "candidate_registration_order"
-        },
-        "compare_for_each_standard_module": [
-          "canonical_kind",
-          "significant_shape_metadata",
-          "direct_parameter_name_tuple"
-        ],
-        "significant_shape_metadata": {
-          "Embedding": [
-            "table",
-            "num_embeddings",
-            "embedding_dim"
-          ],
-          "Linear": [
-            "io",
-            "in_features",
-            "out_features",
-            "has_bias"
-          ],
-          "LayerNorm": [
-            "normalized",
-            "normalized_shape"
-          ],
-          "other_parameterized_modules": "sorted direct parameter shapes",
-          "GaussianSmearing": "num_output or num_basis",
-          "CoefficientMapping": [
-            "lmax",
-            "mmax"
-          ]
-        },
-        "candidate_only_registered_modules_ignored": true
-      }
-    },
-    {
-      "id": "7936d99d21f7fff4",
-      "type": "infer_interface",
-      "method": "check_interface",
-      "phase": "infer_script",
-      "depends": [
-        "62f4ab8d9137e348",
-        "987522327ff0de27"
-      ],
-      "params": {
-        "files": [
-          "uma.py",
-          "uma_infer.py"
-        ],
-        "model_class": {
-          "name": "UMA",
-          "must_be_class": true,
-          "must_subclass": "torch.nn.Module"
-        },
-        "required_callable_functions": [
-          "load_model",
-          "predict"
-        ],
-        "signature_requirements": {
-          "load_model": {
-            "accepted_keywords": [
-              "device",
-              "dtype"
-            ]
-          },
-          "predict": {
-            "accepted_keywords": [
-              "model"
-            ]
+        "rules": [
+          {
+            "id": "one_uma_root",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "UMA"
+              },
+              "count": 1
+            }
           }
+        ],
+        "expected_config": {
+          "lmax": 2,
+          "mmax": 2,
+          "norm_type": "rms_norm_sh",
+          "act_type": "gate",
+          "ff_type": "spectral"
         },
-        "flat_config_constructor": {
-          "class": "UMA",
-          "config_source": "config.yaml",
-          "exclude_keys": [
-            "checkpoint",
-            "checkpoint_path",
-            "device",
-            "dtype",
-            "batch_size",
-            "input",
-            "input_path",
-            "output",
-            "output_path",
-            "num_workers"
-          ],
-          "dataset_list_default": "dataset as singleton list when constructor accepts dataset_list"
-        },
-        "runtime_model_required": true
+        "required_components": [
+          "atomic_embedding",
+          "charge_embedding",
+          "spin_embedding",
+          "dataset_embedding",
+          "composition_embedding",
+          "gaussian_distance",
+          "cutoff",
+          "SO2_SO3",
+          "Wigner_D",
+          "equivariant_blocks",
+          "RMSNorm",
+          "gate",
+          "spectral",
+          "MoE",
+          "dataset_specific_EFS"
+        ]
       }
     },
     {
       "id": "e5f9bf4261c47428",
       "type": "model_forward",
-      "method": "check_model_forward_executable",
+      "method": "check_model_forward_execution",
       "phase": "model_structure",
       "depends": [
-        "62f4ab8d9137e348",
-        "7936d99d21f7fff4"
+        "62f4ab8d9137e348"
       ],
       "params": {
-        "model_from_context": "runtime_model",
-        "model_mode": "eval",
-        "dataset": "first config.dataset value, else omat",
-        "mapping_fixture": {
-          "atomic_numbers": [
-            8,
-            1,
-            1
-          ],
-          "pos": [
-            [
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.9572,
-              0.0,
-              0.0
-            ],
-            [
-              -0.239,
-              0.927,
-              0.0
-            ]
-          ],
-          "pos_requires_grad": true,
-          "batch": [
-            0,
-            0,
-            0
-          ],
-          "natoms": [
-            3
-          ],
-          "cell": "10 * identity(3), batch dimension 1",
-          "pbc": [
-            [
-              false,
-              false,
-              false
-            ]
-          ],
-          "charge": [
-            0.0
-          ],
-          "spin": [
-            0.0
-          ],
-          "dataset": "[selected_dataset]",
-          "edge_index": [
-            [
-              0,
-              1,
-              0,
-              2,
-              1,
-              2
-            ],
-            [
-              1,
-              0,
-              2,
-              0,
-              2,
-              1
-            ]
-          ],
-          "cell_offsets": "zeros(6,3)"
-        },
-        "also_call_with": "SimpleNamespace carrying the identical fixture fields",
-        "output_contract": {
-          "accepted_forms": [
-            "nested mapping with dataset-prefixed energy/force/stress leaves",
-            "tuple/list energy,forces,stress"
-          ],
-          "energy": "torch.Tensor with numel 1 and requires_grad true",
-          "forces_shape": [
-            3,
-            3
-          ],
-          "stress_numel_any_of": [
-            6,
-            9
-          ],
-          "all_values_finite": true,
-          "mapping_output_keys_must_contain_dataset_prefix": true,
-          "mapping_and_object_shapes_must_match": true
-        },
-        "force_contract": {
-          "primary": "torch.autograd.grad(energy.sum(), pos, retain_graph=true, allow_unused=false) then allclose(forces, -gradient, atol=1e-5, rtol=1e-5)",
-          "fallback": {
-            "direction": [
-              [
-                0.2,
-                -0.1,
-                0.3
-              ],
-              [
-                -0.4,
-                0.2,
-                0.1
-              ],
-              [
-                0.1,
-                0.3,
-                -0.2
-              ]
-            ],
-            "epsilon_float32": 0.01,
-            "epsilon_other": 0.0001,
-            "comparison": "allclose(directional_energy_derivative, negative_force_projection, atol=0.05, rtol=0.02)"
-          }
-        }
+        "dataset": "omat",
+        "require_energy_grad": true,
+        "require_forces_grad": true,
+        "periodic_and_nonperiodic": true,
+        "mapping_and_object": true
+      }
+    },
+    {
+      "id": "e8b26a36c643adbc",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "62f4ab8d9137e348"
+      ],
+      "params": {
+        "dataset": "omat",
+        "atol": 1e-06,
+        "rtol": 1e-05,
+        "reference_script": "uma_inference.py"
+      }
+    },
+    {
+      "id": "5ba3ab3cf09740c1",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "7936d99d21f7fff4",
+        "62f4ab8d9137e348"
+      ],
+      "params": {
+        "dataset": "omat",
+        "help_timeout": 60,
+        "required_entry": "uma_infer.py",
+        "reuse_supplied_model": true
+      }
+    },
+    {
+      "id": "65840b37d4f6a610",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "5ba3ab3cf09740c1"
+      ],
+      "params": {
+        "fields": [
+          "energy",
+          "force",
+          "stress"
+        ],
+        "outputs": "numpy",
+        "device": "cpu",
+        "require_finite": true
       }
     },
     {
       "id": "bd7bdf4a876d7cab",
-      "type": "infer_output_equivalence",
+      "type": "infer_metric",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
       "depends": [
-        "62f4ab8d9137e348",
-        "e5f9bf4261c47428"
+        "5ba3ab3cf09740c1",
+        "62f4ab8d9137e348"
       ],
       "params": {
-        "candidate_model_from_context": "runtime_model",
-        "checkpoint_from_context": "runtime_checkpoint",
-        "device": {
-          "value": "evaluation_device",
-          "if_cuda": "must match cuda or cuda:N and N < torch.cuda.device_count()"
-        },
-        "reference": {
-          "directory": "benchmarks/standard/uma_inference",
-          "infer_file": "uma_inference.py",
-          "load_model": "load_model",
-          "model": "load with runtime_checkpoint and evaluation_device"
-        },
-        "datasets": {
-          "configured": "config.dataset string or strings in list/tuple",
-          "append_fixed_order": [
-            "omat",
-            "omol",
-            "oc20",
-            "odac",
-            "omc"
-          ],
-          "deduplicate_preserving_order": true,
-          "intersect_standard_supported_datasets": true,
-          "if_empty_after_intersection": "all standard supported datasets",
-          "truncate_to": "max(1, oracle_batch_size)"
-        },
-        "oracle_batch_size": {
-          "from_config_key": "batch_size",
-          "default_when_missing_or_nonpositive_nonint": 8
-        },
-        "fixture": {
-          "factory": "ase.Atoms",
-          "numbers": [
-            8,
-            1,
-            1,
-            29
-          ],
-          "positions": [
-            [
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.9572,
-              0.0,
-              0.0
-            ],
-            [
-              -0.239,
-              0.927,
-              0.0
-            ],
-            [
-              2.4,
-              0.1,
-              0.0
-            ]
-          ],
-          "cell": [
-            10.0,
-            10.0,
-            10.0
-          ],
-          "pbc": false,
-          "info": {
-            "dataset": "current dataset",
-            "charge": 0,
-            "spin": 0
-          },
-          "batch": "oracle_batch_size copies"
-        },
-        "candidate_predict": {
-          "function": "predict",
-          "must_accept_existing_model": true,
-          "forbid_load_model_during_call": true,
-          "arguments": {
-            "model": "candidate_model",
-            "device": "evaluation_device",
-            "dataset": "current dataset",
-            "batch_size": "oracle_batch_size"
-          }
-        },
-        "batch_output_contract": {
-          "allowed_forms": [
-            "list/tuple of mapping predictions",
-            "mapping prediction"
-          ],
-          "energy": "numpy.ndarray with one value per system",
-          "forces": "numpy.ndarray shape [oracle_batch_size * 4, 3]",
-          "energy_and_forces_finite": true
-        },
-        "reference_adapter": {
-          "select_dataset_prefixed_prediction": true,
-          "flatten_single_item_dataset_metadata_before_standard_batching": true
-        },
-        "comparison": {
-          "cast": "numpy.float64",
-          "energy_maximum_absolute_error_at_most": 1e-06,
-          "force_maximum_absolute_error_at_most": 1e-06,
-          "require_every_exercised_dataset_to_pass": true
-        }
+        "dataset": "omat",
+        "atol": 1e-06,
+        "rtol": 1e-05,
+        "reference_script": "uma_inference.py",
+        "fixture_types": [
+          "nonperiodic",
+          "periodic"
+        ]
       }
     }
   ]

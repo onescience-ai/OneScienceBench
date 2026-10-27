@@ -25,48 +25,141 @@
   "checks": [
     {
       "id": "79ccce3339d4d9ac",
-      "type": "task_file",
+      "type": "task_artifacts",
       "method": "check_files",
       "phase": "task_artifacts",
       "depends": [],
       "params": {
-        "phase": "task_artifacts",
         "required_files": [
           "nequip_inference.py",
           "run_inference.py",
-          "nequip_inference.yaml",
-          "portable_nequip/__init__.py",
-          "portable_nequip/internal.py",
-          "portable_nequip/model.py",
-          "portable_nequip/energy_modules.py",
-          "portable_nequip/runtime.py",
-          "portable_nequip/NOTICE.md",
-          "portable_nequip/data/__init__.py",
-          "portable_nequip/data/AtomicDataDict.py",
-          "portable_nequip/data/_keys.py",
-          "portable_nequip/data/_key_registry.py",
-          "portable_nequip/nn/__init__.py",
-          "portable_nequip/nn/_ghost_exchange_base.py",
-          "portable_nequip/nn/_graph_mixin.py",
-          "portable_nequip/nn/_tp_scatter_base.py",
-          "portable_nequip/nn/atomwise.py",
-          "portable_nequip/nn/convnetlayer.py",
-          "portable_nequip/nn/grad_output.py",
-          "portable_nequip/nn/graph_model.py",
-          "portable_nequip/nn/interaction_block.py",
-          "portable_nequip/nn/misc.py",
-          "portable_nequip/nn/mlp.py",
-          "portable_nequip/nn/model_modifier_utils.py",
-          "portable_nequip/nn/nonlinearities.py",
-          "portable_nequip/nn/norm.py",
-          "portable_nequip/nn/utils.py",
-          "portable_nequip/nn/embedding/__init__.py",
-          "portable_nequip/nn/embedding/_edge.py",
-          "portable_nequip/nn/embedding/cutoffs.py",
-          "portable_nequip/nn/embedding/node.py",
-          "portable_nequip/nn/embedding/node_tensor.py",
-          "portable_nequip/nn/embedding/utils.py"
+          "nequip_inference.yaml"
         ]
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9102",
+      "type": "infer_config_content",
+      "method": "check_config_content",
+      "phase": "infer_script",
+      "depends": [
+        "79ccce3339d4d9ac"
+      ],
+      "params": {
+        "config_name": "nequip_inference.yaml"
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9103",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "79ccce3339d4d9ac"
+      ],
+      "params": {
+        "phase": "model_structure",
+        "files": [
+          "nequip_inference.py"
+        ],
+        "required_interfaces": [
+          "load_checkpoint_payload",
+          "raw_model_state",
+          "evaluation_model_state",
+          "load_model",
+          "evaluate_structure"
+        ]
+      }
+    },
+    {
+      "id": "a05cbf5e31895cf2",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
+      "depends": [
+        "79ccce3339d4d9ac"
+      ],
+      "params": {
+        "files": [
+          "run_inference.py"
+        ],
+        "required_interfaces": [
+          "load_config",
+          "load_structures",
+          "evaluate",
+          "save_predictions",
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9105",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "79ccce3339d4d9ac"
+      ],
+      "params": {
+        "portable_package": "portable_nequip",
+        "prohibited_imports": [
+          "onescience",
+          "nequip",
+          "mace",
+          "mattersim"
+        ],
+        "files": [
+          "nequip_inference.py",
+          "run_inference.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_functions": [
+            "load_model",
+            "load_checkpoint_payload"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "atoms",
+            "structures",
+            "input",
+            "inputs",
+            "data"
+          ],
+          "input_load_functions": [
+            "load_structures"
+          ],
+          "input_load_attributes": [
+            "read"
+          ],
+          "infer_call_functions": [
+            "evaluate",
+            "evaluate_structure"
+          ],
+          "infer_call_attributes": [
+            "forward"
+          ],
+          "output_attributes": [
+            "dump",
+            "write_text",
+            "write"
+          ]
+        }
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9106",
+      "type": "data_availability",
+      "method": "check_data_availability",
+      "phase": "data_analysis",
+      "depends": [],
+      "params": {
+        "data_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
+        "data_sha256": "6671f9b28d37484379f51f1deb23a6f4b165ed628467ee6bffa0648b6d50a5b5"
       }
     },
     {
@@ -75,33 +168,17 @@
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
       "depends": [
-        "79ccce3339d4d9ac"
+        "d9b9b1a6edaa9103",
+        "d9b9b1a6edaa9105"
       ],
       "params": {
-        "config_name": "nequip_inference.yaml",
-        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
-        "data_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
-        "checkpoint_sha256": "3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b",
-        "data_sha256": "6671f9b28d37484379f51f1deb23a6f4b165ed628467ee6bffa0648b6d50a5b5",
-        "prohibited_imports": [
-          "onescience",
-          "nequip",
-          "mace",
-          "mattersim"
-        ],
-        "weights_only": true,
-        "strict": true,
+        "ema_source_prefix": "model.sole_model.",
         "raw_state_count": 33,
         "raw_state_numel": 1855,
         "model_state_count": 33,
-        "compare_state_keys": true,
-        "compare_state_shapes": true,
-        "compare_state_values": true,
-        "ema_source_prefix": "model.sole_model.",
         "ema_tensor_count": 11,
-        "ema_replace_order": "parameter order",
-        "loader_function": "load_model",
-        "raw_state_function": "raw_model_state"
+        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
+        "checkpoint_sha256": "3ab4d7d891a36ed6346e661003fc30197d4b615171ccaec92cdd6b7bb1b4049b"
       }
     },
     {
@@ -113,18 +190,132 @@
         "43b44ac445d5db28"
       ],
       "params": {
-        "config_name": "nequip_inference.yaml",
-        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
-        "loader_function": "load_model",
-        "seed": 456,
-        "model_class": "GraphModel",
-        "wrapper_class": "ForceStressOutput",
-        "network_class": "SequentialGraphNetwork",
-        "top_level_modules": [
-          "model"
-        ],
-        "wrapper_modules": [
-          "func"
+        "rules": [
+          {
+            "id": "two_convnet_layers",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "class_name": "ConvNetLayer"
+              },
+              "count": 2
+            }
+          },
+          {
+            "id": "one_type_embed",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "type_embed"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_spharm",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "spharm"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_edge_norm",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "edge_norm"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_bessel_encode",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "bessel_encode"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_layer0_convnet",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "layer0_convnet"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_layer1_convnet",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "layer1_convnet"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_per_atom_energy_readout",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "per_atom_energy_readout"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "one_per_type_energy_scale_shift",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "per_type_energy_scale_shift"
+              },
+              "count": 1
+            }
+          },
+          {
+            "id": "convnet_layer0_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "layer0_convnet"
+              },
+              "expected": {
+                "class_name": "ConvNetLayer"
+              }
+            }
+          },
+          {
+            "id": "convnet_layer1_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "layer1_convnet"
+              },
+              "expected": {
+                "class_name": "ConvNetLayer"
+              }
+            }
+          }
         ],
         "network_module_order": [
           "type_embed",
@@ -138,152 +329,83 @@
           "per_type_energy_scale_shift",
           "total_energy_sum"
         ],
-        "layer_count": 2,
-        "layer_class": "ConvNetLayer",
-        "layer0_skip_connection": false,
-        "layer1_skip_connection": true,
-        "shapes": {
-          "type_embedding": [
-            1,
-            8
-          ],
-          "bessel": [
-            1,
-            4
-          ],
-          "layer0_radial_in": [
-            4,
-            16
-          ],
-          "layer0_radial_out": [
-            16,
-            16
-          ],
-          "layer1_radial_in": [
-            4,
-            16
-          ],
-          "layer1_radial_out": [
-            16,
-            16
-          ],
-          "readout": [
-            8,
-            1
-          ]
-        }
-      }
-    },
-    {
-      "id": "a05cbf5e31895cf2",
-      "type": "infer_interface",
-      "method": "check_interface",
-      "phase": "infer_script",
-      "depends": [
-        "79ccce3339d4d9ac",
-        "43b44ac445d5db28"
-      ],
-      "params": {
-        "phase": "infer_script",
-        "files": [
-          "run_inference.py"
-        ],
-        "required_interfaces": [
-          "load_config",
-          "load_structures",
-          "evaluate",
-          "save_predictions",
-          "main"
-        ],
-        "required_cli_flags": [
-          "--config",
-          "--checkpoint",
-          "--input",
-          "--output",
-          "--device"
-        ],
-        "input_path": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
-        "callable_required": true,
-        "structure_count": 8,
-        "first_structure_atoms": 8
+        "layer_count": 2
       }
     },
     {
       "id": "b2428ce3a3f6d7d2",
       "type": "model_forward",
-      "method": "check_model_forward_executable",
+      "method": "check_model_forward_execution",
       "phase": "model_structure",
       "depends": [
         "43b44ac445d5db28",
+        "d9b9b1a6edaa9106"
+      ],
+      "params": {
+        "structure_index": 0
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9110",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "b2428ce3a3f6d7d2",
         "879f1b628162b942"
       ],
       "params": {
-        "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
-        "input_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
-        "structure_index": 0,
-        "device": "cpu",
-        "loader_function": "load_model",
-        "evaluation_function": "evaluate_structure",
-        "model_eval": true,
-        "expected_shapes": {
-          "energy": [
-            1
-          ],
-          "forces": [
-            8,
-            3
-          ],
-          "stress": [
-            1,
-            3,
-            3
-          ]
-        },
-        "require_finite": true
+        "atol": 1e-06,
+        "rtol": 1e-05,
+        "sample_indices": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9112",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "a05cbf5e31895cf2",
+        "d9b9b1a6edaa9106"
+      ],
+      "params": {
+        "timeout": 600,
+        "output_path": "nequip_predictions.json"
+      }
+    },
+    {
+      "id": "d9b9b1a6edaa9113",
+      "type": "infer_output_schema",
+      "method": "check_infer_output_schema",
+      "phase": "infer_execution",
+      "depends": [
+        "d9b9b1a6edaa9112"
+      ],
+      "params": {
+        "output_path": "nequip_predictions.json",
+        "expected_structures": 8
       }
     },
     {
       "id": "869796af187033cf",
-      "type": "infer_output_equivalence",
+      "type": "infer_metric",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
       "depends": [
-        "43b44ac445d5db28",
-        "b2428ce3a3f6d7d2"
+        "d9b9b1a6edaa9113",
+        "43b44ac445d5db28"
       ],
       "params": {
-        "candidate": {
-          "run_file": "nequip_inference.py",
-          "config_name": "nequip_inference.yaml",
-          "infer_function": "evaluate_structure",
-          "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
-          "input_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
-          "structure_index": 0,
-          "device": "cpu"
-        },
-        "reference": {
-          "run_file": "benchmarks/standard/nequip_inference/nequip_inference.py",
-          "infer_function": "evaluate_structure",
-          "checkpoint_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/outputs/nequip_smoke_8dcu_20260817_171502/checkpoints/best.ckpt",
-          "input_file": "/public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz",
-          "structure_index": 0,
-          "device": "cpu"
-        },
-        "seed": 456,
-        "purge_portable_between_loads": true,
-        "model_eval": true,
-        "state_compare": {
-          "keys": true,
-          "shapes": true,
-          "values": true
-        },
-        "outputs": [
-          "energy",
-          "forces",
-          "stress"
-        ],
-        "max_abs_error": 1e-06
+        "output_path": "nequip_predictions.json",
+        "atol": 1e-06,
+        "rtol": 1e-05,
+        "expected_structures": 8
       }
     }
   ]
 }
+

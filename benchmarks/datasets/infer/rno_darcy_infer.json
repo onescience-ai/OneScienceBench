@@ -13,115 +13,142 @@
   },
   "checks": [
     {
-      "id": "0b4e218076e6c94a",
-      "type": "task_file",
+      "id": "e20ef6ab7f41bd2e",
+      "type": "task_artifacts",
       "method": "check_files",
       "phase": "task_artifacts",
       "depends": [],
       "params": {
+        "phase": "task_artifacts",
         "required_files": [
           "model.py",
-          "inference.py",
-          "inference_summary.json"
-        ],
-        "python_files": [
-          "model.py",
           "inference.py"
-        ],
-        "syntax_check": "ast.parse",
-        "forbidden_import_roots": [
-          "codegen.standard",
-          "codegen.evaluators"
         ]
       }
     },
     {
-      "id": "5e485b7fe3345dfb",
-      "type": "data_transformation",
-      "method": "check_data_transformation",
-      "phase": "data_analysis",
+      "id": "cf0be74ac7891d84",
+      "type": "infer_interface",
+      "method": "check_interface",
+      "phase": "infer_script",
       "depends": [
-        "0b4e218076e6c94a"
+        "e20ef6ab7f41bd2e"
       ],
       "params": {
-        "data_file": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy/piececonst_r421_N1024_smooth2.mat",
-        "mat_keys": {
-          "input": "coeff",
-          "target": "sol"
-        },
-        "selected_samples": 200,
-        "subsample_stride": 5,
-        "downsampled_shape": [
-          200,
-          1,
-          85,
-          85
+        "phase": "infer_script",
+        "files": [
+          "inference.py"
         ],
-        "batch_size": 8,
-        "shuffle": false,
-        "evaluated_batch_index": 0,
-        "evaluated_samples": 8
+        "required_interfaces": [
+          "main"
+        ]
       }
     },
     {
-      "id": "a8388fdf1e890e64",
-      "type": "infer_structure",
-      "method": "check_infer_structure",
-      "phase": "infer_script",
+      "id": "0a44c22a878f8375",
+      "type": "data_availability",
+      "method": "check_data_availability",
+      "phase": "data_analysis",
       "depends": [
-        "0b4e218076e6c94a"
+        "e20ef6ab7f41bd2e"
       ],
       "params": {
-        "main_guard": true,
-        "checkpoint": "/public/share/sugonhpcapp01/onestore/paper_repro/weight/rno/best_model.pth",
-        "state_reconstruction": true,
-        "strict_load": true,
+        "data_file": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy/piececonst_r421_N1024_smooth2.mat",
+        "mat_keys": [
+          "coeff",
+          "sol"
+        ],
+        "samples": 200,
+        "stride": 5,
+        "resolution": [
+          85,
+          85
+        ]
+      }
+    },
+    {
+      "id": "bffdde84013b4674",
+      "type": "checkpoint_loading",
+      "method": "check_checkpoint_loading",
+      "phase": "checkpoint_loading",
+      "depends": [
+        "e20ef6ab7f41bd2e"
+      ],
+      "params": {
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/paper_repro/weight/rno/best_model.pth",
+        "tensor_count": 178,
+        "state_keys": [
+          "model",
+          "model_state_dict",
+          "state_dict"
+        ],
         "normalizers": [
           "input_normalizer",
           "output_normalizer"
         ],
-        "eval": true,
-        "no_grad_or_inference_mode": true,
-        "physical_space_decode": true,
-        "metrics": [
-          "mse",
-          "relative_l2"
-        ],
-        "summary_output": "inference_summary.json"
+        "strict": true
       }
     },
     {
-      "id": "ba43d3db7bec8c72",
-      "type": "infer_cli",
-      "method": "check_eval_script_contract",
-      "phase": "infer_script",
-      "depends": [
-        "0b4e218076e6c94a",
-        "a8388fdf1e890e64"
-      ],
-      "params": {
-        "required_flags": [
-          "--checkpoint",
-          "--data",
-          "--output"
-        ],
-        "device_selection": [
-          "--device",
-          "torch.device"
-        ]
-      }
-    },
-    {
-      "id": "6ab3459f77170602",
+      "id": "3d3dbe4bedc5c213",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
       "depends": [
-        "0b4e218076e6c94a"
+        "e20ef6ab7f41bd2e"
       ],
       "params": {
-        "model_class": "RadonNeuralOperator2D",
-        "expected_model_config": {
+        "rules": [
+          {
+            "id": "attention_list_length",
+            "type": "modulelist_length",
+            "severity": "error",
+            "params": {
+              "target_path": "attention_layers",
+              "length": 8
+            }
+          },
+          {
+            "id": "lifting_input_shape",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "lifting.0",
+              "in_channels": 3,
+              "out_channels": 128,
+              "kernel_size": [
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "projection_output_shape",
+            "type": "conv_shape",
+            "severity": "error",
+            "params": {
+              "target_path": "projection.3",
+              "in_channels": 128,
+              "out_channels": 1,
+              "kernel_size": [
+                1,
+                1
+              ]
+            }
+          },
+          {
+            "id": "radon_layers_registered",
+            "type": "module_count",
+            "severity": "error",
+            "params": {
+              "selector": {
+                "name": "radon_layers"
+              },
+              "count": 1
+            }
+          }
+        ],
+        "expected_config": {
           "in_channels": 3,
           "out_channels": 1,
           "channels": 128,
@@ -136,128 +163,166 @@
             7
           ],
           "angle_hidden": 16,
-          "mlp_ratio": 4.0,
-          "dropout": 0.0
-        },
-        "exact_state_keys_and_shapes": true,
-        "state_tensor_count": 178,
-        "strict_load": true
+          "mlp_ratio": 4.0
+        }
       }
     },
     {
-      "id": "7576efe33481d6fd",
+      "id": "1681f989bada8eae",
       "type": "model_forward",
-      "method": "check_model_forward_executable",
+      "method": "check_model_forward_execution",
       "phase": "model_structure",
       "depends": [
-        "6ab3459f77170602"
+        "e20ef6ab7f41bd2e"
       ],
       "params": {
-        "seed": 20260826,
-        "input_shape": [
-          2,
-          1,
-          9,
-          11
+        "batch_sizes": [
+          2
         ],
-        "output_shape": [
-          2,
-          1,
-          9,
-          11
+        "spatial_shapes": [
+          [
+            85,
+            85
+          ]
         ],
-        "inference_mode": true,
-        "finite_output": true,
-        "input_unchanged": true
+        "seed": 20260826
       }
     },
     {
-      "id": "a3613b5cbd399a49",
+      "id": "867a0bd3317a8b38",
       "type": "model_forward_equivalence",
       "method": "check_model_forward_equivalence",
       "phase": "model_structure",
       "depends": [
-        "6ab3459f77170602",
-        "7576efe33481d6fd"
+        "e20ef6ab7f41bd2e"
       ],
       "params": {
-        "seed": 20260826,
-        "input_shape": [
-          1,
-          1,
-          9,
-          11
+        "batch_sizes": [
+          1
         ],
-        "strict_load": true,
-        "compare": "allclose",
-        "atol": 1e-06,
-        "rtol": 1e-05
-      }
-    },
-    {
-      "id": "abd6329edce0ecad",
-      "type": "infer_metric",
-      "method": "check_infer_metrics",
-      "phase": "infer_metric",
-      "depends": [
-        "6ab3459f77170602"
-      ],
-      "params": {
-        "seed": 20260826,
-        "normalizers": {
-          "input": "input_normalizer",
-          "output": "output_normalizer",
-          "stat_shape": [
-            1,
-            1,
+        "spatial_shapes": [
+          [
             85,
             85
           ]
-        },
-        "crop_shape": [
-          9,
-          11
         ],
-        "input_offset": 0.25,
-        "encode": "(physical_input-input_mean)/(input_std+input_eps)",
-        "decode": "normalized_prediction*(output_std+output_eps)+output_mean",
-        "mse": "difference.square().flatten(1).mean(dim=1)",
-        "relative_l2": "vector_norm(difference.flatten(1),dim=1)/vector_norm(output_mean.flatten(1),dim=1).clamp_min(1e-12)",
-        "finite": true
+        "seed": 20260826,
+        "rtol": 1e-05,
+        "atol": 1e-06
       }
     },
     {
-      "id": "e7384cb974211a04",
+      "id": "a0795aef66d5cce8",
+      "type": "infer_structure",
+      "method": "check_infer_structure",
+      "phase": "infer_script",
+      "depends": [
+        "cf0be74ac7891d84"
+      ],
+      "params": {
+        "files": [
+          "inference.py"
+        ],
+        "check_config": {
+          "entry_function_names": [
+            "main"
+          ],
+          "model_load_functions": [
+            "build_model_from_state_dict",
+            "load_model",
+            "load_checkpoint"
+          ],
+          "model_load_attributes": [
+            "load_state_dict"
+          ],
+          "input_parameter_names": [
+            "coeff",
+            "coefficient",
+            "inputs",
+            "batch",
+            "data",
+            "x"
+          ],
+          "input_load_functions": [
+            "load_first_samples",
+            "load_split",
+            "build_loaders",
+            "loadmat",
+            "DataLoader"
+          ],
+          "input_load_attributes": [
+            "loadmat",
+            "load"
+          ],
+          "infer_call_functions": [
+            "main",
+            "predict",
+            "run_inference",
+            "inference"
+          ],
+          "infer_call_attributes": [
+            "forward",
+            "eval"
+          ],
+          "output_attributes": [
+            "dump",
+            "write_text",
+            "write"
+          ]
+        }
+      }
+    },
+    {
+      "id": "65d3ef1e4bab9cc6",
+      "type": "infer_execution",
+      "method": "check_infer_execution",
+      "phase": "infer_execution",
+      "depends": [
+        "e20ef6ab7f41bd2e",
+        "0a44c22a878f8375"
+      ],
+      "params": {
+        "timeout": 1200,
+        "output_path": "inference_summary.json"
+      }
+    },
+    {
+      "id": "b072d4ad5be15e92",
       "type": "infer_output_schema",
       "method": "check_infer_output_schema",
       "phase": "infer_execution",
       "depends": [
-        "0b4e218076e6c94a",
-        "5e485b7fe3345dfb",
-        "abd6329edce0ecad"
+        "65d3ef1e4bab9cc6"
       ],
       "params": {
         "output_path": "inference_summary.json",
-        "per_sample_count": 8,
-        "prediction_shape": [
-          8,
-          1,
+        "expected_samples": 8,
+        "output_resolution": [
           85,
           85
-        ],
-        "strict_load": true,
-        "checkpoint_state_tensor_count": 178,
-        "metrics_space": "physical",
-        "finite_metrics": true,
-        "mean_tolerances": {
-          "rel_tol": 1e-06,
-          "abs_tol": 1e-12
-        },
-        "baseline_tolerances": {
-          "rel_tol": 0.0002,
-          "mse_abs_tol": 1e-12,
-          "relative_l2_abs_tol": 1e-07
-        }
+        ]
+      }
+    },
+    {
+      "id": "695c24c28f785ab6",
+      "type": "infer_metric",
+      "method": "check_evaluate_oracle",
+      "phase": "infer_metric",
+      "depends": [
+        "b072d4ad5be15e92",
+        "0a44c22a878f8375"
+      ],
+      "params": {
+        "checkpoint_file": "/public/share/sugonhpcapp01/onestore/paper_repro/weight/rno/best_model.pth",
+        "data_file": "/public/share/sugonhpcapp01/onestore/onedatasets/CFD_Benchmark/darcy/piececonst_r421_N1024_smooth2.mat",
+        "first_samples": 200,
+        "stride": 5,
+        "batch_size": 8,
+        "seed": 20260826,
+        "rtol": 0.0001,
+        "atol": 1e-06,
+        "forward_rtol": 1e-05,
+        "forward_atol": 1e-06
       }
     }
   ]
