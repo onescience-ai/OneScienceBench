@@ -11,6 +11,17 @@ from utils import build_model
 CHANNELS = ("Ux", "Uy", "p")
 
 
+def compute_sample_normalized_grid_mse(predictions, targets):
+    """Channel grid squared-error sums divided by the number of samples."""
+    channel_mse = (predictions - targets).square().sum(dim=(0, 2, 3)) / predictions.shape[0]
+    metrics = {
+        name + "_MSE": float(value.detach().cpu())
+        for name, value in zip(CHANNELS, channel_mse)
+    }
+    metrics["Total_MSE"] = sum(metrics.values())
+    return metrics
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Evaluate DeepCFD on the full test split."
@@ -45,6 +56,7 @@ def main():
     value_count = 0
     sample_count = 0
     grid_shape = None
+    metric_sums = {name: 0.0 for name in ("Ux_MSE", "Uy_MSE", "p_MSE", "Total_MSE")}
 
     with torch.no_grad():
         for inputs, targets in test_loader:
@@ -52,6 +64,9 @@ def main():
             targets = targets.to(device)
             output = model(inputs)
             difference = output - targets
+            batch_metrics = compute_sample_normalized_grid_mse(output, targets)
+            for name, value in batch_metrics.items():
+                metric_sums[name] += value * targets.shape[0]
             current_shape = (int(targets.shape[2]), int(targets.shape[3]))
             if grid_shape is None:
                 grid_shape = current_shape
@@ -102,6 +117,10 @@ def main():
         "total_mse": float(torch.sum(mse).cpu()),
         "paper_style_total_mse": float(torch.sum(paper_style_mse).cpu()),
     }
+
+    metrics.update({name: value / sample_count for name, value in metric_sums.items()})
+    metrics["paper_style_mse"] = {name: metrics[name + "_MSE"] for name in CHANNELS}
+    metrics["paper_style_total_mse"] = metrics["Total_MSE"]
 
     result_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = result_dir / "metrics.json"

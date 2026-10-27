@@ -37,7 +37,7 @@ training:
   amp: false
   patience: 50
   log_interval: 1000
-  output_dir: runs/meshgraphnet_cylinderflow
+  output_dir: ./results/meshgraphnet_cylinderflow_seed0/
   resume: true
 
 evaluation:

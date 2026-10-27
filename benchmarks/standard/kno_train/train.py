@@ -3,17 +3,39 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
 
 from dataset import NavierStokesDatapipe
-from inference import build_model, resolve_data_path
+from model import KNO2DNavierStokes
 from utils import load_config, project_path, relative_l2, resolve_device, rollout, seed_everything
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def resolve_data_path(config: dict[str, Any]) -> Path:
+    source = config["datapipe"]["source"]
+    source["data_dir"] = str(project_path(source["data_dir"], PROJECT_ROOT).resolve())
+    return Path(source["data_dir"]) / source["file_name"]
+
+def build_model(model_config: dict[str, Any], spatial_shape: tuple[int, int], datapipe_config: dict[str, Any]) -> KNO2DNavierStokes:
+    data = datapipe_config["data"]
+    return KNO2DNavierStokes(
+        input_channels=int(model_config.get("input_channels", data["t_in"] * data["out_dim"])),
+        output_channels=int(model_config.get("output_channels", data["out_dim"])),
+        spatial_shape=spatial_shape,
+        op_size=int(model_config["op_size"]),
+        modes_x=int(model_config["modes_x"]),
+        modes_y=int(model_config["modes_y"]),
+        decompose=int(model_config["decompose"]),
+        linear_type=bool(model_config["linear_type"]),
+        normalization=bool(model_config["normalization"]),
+    )
 
 
 def evaluate(model, loader, device, t_out: int, out_dim: int) -> tuple[float, float]:
@@ -62,6 +84,8 @@ def main() -> None:
         project_path(config["training"]["weight_dir"], PROJECT_ROOT).resolve()
         / config["training"]["checkpoint_name"]
     )
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    history = []
     best_relative_l2 = float("inf")
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -82,16 +106,22 @@ def main() -> None:
         if epoch % args.eval_interval and epoch != args.epochs:
             continue
         validation_mse, validation_relative_l2 = evaluate(model, datapipe.test_dataloader(), device, t_out, out_dim)
-        print(f"epoch={epoch} train_mse={total_loss / batch_count:.6e} val_mse={validation_mse:.6e} val_relative_l2={validation_relative_l2:.6e}")
+        message = f"epoch={epoch} train_mse={total_loss / batch_count:.6e} val_mse={validation_mse:.6e} val_relative_l2={validation_relative_l2:.6e}"
+        print(message)
+        with (checkpoint_path.parent / "train.log").open("a", encoding="utf-8") as stream:
+            stream.write(message + "\n")
+        history.append({"epoch": epoch, "train_mse": total_loss / batch_count,
+                        "val_mse": validation_mse, "val_relative_l2": validation_relative_l2})
+        (checkpoint_path.parent / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
         if validation_relative_l2 < best_relative_l2:
             best_relative_l2 = validation_relative_l2
             checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(
                 {
                     "epoch": epoch,
-                    "model_state": model.state_dict(),
+                    "model_state_dict": model.state_dict(),
                     "model_config": model_config,
-                    "datapipe_config": config["datapipe"],
+                    "data_config": config["datapipe"],
                     "training_config": {"lr": args.lr, "weight_decay": args.weight_decay},
                     "spatial_shape": datapipe.spatial_shape,
                     "normalizer": datapipe.get_normalizer_state(),

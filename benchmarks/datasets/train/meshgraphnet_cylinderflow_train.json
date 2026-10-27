@@ -13,360 +13,863 @@
   },
   "checks": [
     {
-      "id": "774a7a152af48637",
-      "type": "task_file",
+      "id": "c43e9e6ca86659ce",
+      "type": "task_artifacts",
       "method": "check_files",
       "phase": "task_artifacts",
       "depends": [],
       "params": {
         "required_files": [
-          "model.py",
-          "dataset.py",
-          "utils.py",
-          "config.yaml",
-          "train.py"
-        ],
-        "python_parse": "ast.parse",
-        "yaml_parse": "_load_yaml",
-        "missing_files_skip_parse": true
+          "config.yaml"
+        ]
       }
     },
     {
-      "id": "806789f0a3e46d38",
+      "id": "9475aceda2698f0d",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "dataset.py"
+        ]
+      }
+    },
+    {
+      "id": "9febf73aad314565",
+      "type": "task_artifacts",
+      "method": "check_files",
+      "phase": "task_artifacts",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "utils.py"
+        ]
+      }
+    },
+    {
+      "id": "b3f79d5612a433fc",
+      "type": "data_config_content",
+      "method": "check_config_content",
+      "phase": "data_analysis",
+      "depends": [
+        "c43e9e6ca86659ce"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "required_config_keys": [
+          {
+            "key": "data.train_samples",
+            "type": "int",
+            "value": 400
+          },
+          {
+            "key": "data.val_samples",
+            "type": "int",
+            "value": 10
+          },
+          {
+            "key": "data.test_samples",
+            "type": "int",
+            "value": 10
+          },
+          {
+            "key": "data.train_steps",
+            "type": "int",
+            "value": 300
+          },
+          {
+            "key": "data.noise_std",
+            "type": "float",
+            "value": 0.02
+          }
+        ],
+        "config_paths": {
+          "data.train_samples": [
+            "data.train_samples",
+            "train_samples",
+            "data.train_trajectories"
+          ],
+          "data.val_samples": [
+            "data.val_samples",
+            "val_samples",
+            "data.valid_trajectories",
+            "data.val_trajectories"
+          ],
+          "data.test_samples": [
+            "data.test_samples",
+            "test_samples",
+            "data.test_trajectories"
+          ],
+          "data.train_steps": [
+            "data.train_steps",
+            "train_steps",
+            "data.steps"
+          ],
+          "data.noise_std": [
+            "data.noise_std",
+            "noise_std"
+          ]
+        }
+      }
+    },
+    {
+      "id": "8091a2b3c4d5e6f7",
       "type": "dataset_pipeline",
       "method": "check_datasset_pipeline",
       "phase": "data_analysis",
       "depends": [
-        "774a7a152af48637"
+        "9475aceda2698f0d"
       ],
       "params": {
-        "candidate_file": "dataset.py",
-        "config_file": "config.yaml",
-        "config_sections": [
-          "data",
-          "dataset"
-        ],
-        "trajectory_limits": {
-          "train_trajectories": 400,
-          "valid_trajectories": 10,
-          "test_trajectories": 10,
-          "steps": 300
+        "task_probe": true,
+        "candidate": {
+          "dataset_loader": "dataset.py",
+          "loader_name": "CylinderFlowDataset",
+          "stats_class": "NormalizationStats"
         },
-        "node_type_classes": [
-          "NORMAL",
-          "INFLOW",
-          "OUTFLOW",
-          "WALL_BOUNDARY"
-        ],
-        "node_type_one_hot_classes": 4,
-        "edge_feature_components": [
-          "dx",
-          "dy",
-          "l2_distance"
-        ],
-        "noise_std": 0.02,
-        "statistics_files": [
-          "stats/edge_stats.json",
-          "stats/node_stats.json"
-        ],
-        "statistics_scope": "training",
-        "target": {
-          "velocity": "velocity[t+1]-velocity[t]",
-          "pressure": "pressure[t+1]"
-        },
-        "samples_per_trajectory": "steps-1",
-        "collate": "edge_index+offset with torch.cat"
-      }
-    },
-    {
-      "id": "340056d2937fdcfc",
-      "type": "train_structure",
-      "method": "check_train_structure",
-      "phase": "train_script",
-      "depends": [
-        "774a7a152af48637",
-        "806789f0a3e46d38"
-      ],
-      "params": {
-        "files": [
-          "train.py",
-          "utils.py",
-          "dataset.py"
-        ],
-        "cli_flags": [
-          "config",
-          "data",
-          "output",
-          "device",
-          "epochs",
-          "rollout"
-        ],
-        "model_defaults": {
-          "node_input_dim": 6,
-          "edge_input_dim": 3,
-          "output_dim": 3,
-          "hidden_dim": 128,
-          "mlp_hidden_layers": 2,
-          "processor_steps": 15,
-          "aggregation": "sum"
-        },
-        "training_defaults": {
-          "epochs": 25,
-          "batch_size": 1,
-          "learning_rate": 0.0001,
-          "lr_decay_rate": 0.9999991
-        },
-        "scheduler": "LambdaLR or ExponentialLR with scheduler.step",
-        "loss_modes": [
-          "all",
-          "normal_outflow"
-        ],
-        "distributed_amp": [
-          "DistributedDataParallel",
-          "autocast",
-          "GradScaler"
-        ],
-        "resume_keys": [
-          "optimizer_state_dict",
-          "scheduler_state_dict",
-          "stale_epochs"
-        ],
-        "checkpoints": [
-          "best.pt",
-          "last.pt"
-        ],
-        "rollout_horizons": [
-          1,
-          50,
-          299
-        ],
-        "boundary_rule": "advance NORMAL/OUTFLOW only",
-        "metrics": [
-          "velocity_rmse",
-          "pressure_mse"
-        ],
-        "result_files": [
-          "history.json",
-          "summary.json",
-          "train.log"
-        ],
-        "default_output": "results/meshgraphnet_cylinderflow_seed0"
-      }
-    },
-    {
-      "id": "758494870fb9d134",
-      "type": "infer_structure",
-      "method": "check_infer_structure",
-      "phase": "infer_script",
-      "depends": [
-        "774a7a152af48637",
-        "340056d2937fdcfc"
-      ],
-      "params": {
-        "candidate_names": [
-          "evaluate.py",
-          "eval.py",
-          "test.py"
-        ],
-        "absence_allowed": true,
-        "checks": {
-          "checkpoint": [
-            "load",
-            "checkpoint"
-          ],
-          "inference_mode": [
-            ".eval(",
-            "no_grad or inference_mode"
-          ],
-          "rollout_metrics": [
-            "rollout",
-            "velocity",
-            "pressure"
-          ]
-        }
-      }
-    },
-    {
-      "id": "c1e3560a0b3e8811",
-      "type": "model_structure",
-      "method": "check_model_structure",
-      "phase": "model_structure",
-      "depends": [
-        "774a7a152af48637"
-      ],
-      "params": {
-        "model_file": "model.py",
-        "model_class": "MeshGraphNet",
-        "constructor_aliases": {
-          "node_input_dim": 6,
-          "edge_input_dim": 3,
-          "output_dim": 3,
-          "hidden_dim": 128,
-          "processor_steps": 15,
-          "mlp_hidden_layers": 2,
-          "aggregation": "sum",
-          "activation": "relu"
-        },
-        "structure": {
-          "encoders_decoder": true,
-          "processors": 15,
-          "mlp_linear_layers": {
-            "node_encoder": 3,
-            "edge_update": 3,
-            "node_update": 3
-          },
-          "feature_dimensions": {
-            "node_input": 6,
-            "edge_input": 3,
-            "latent": 128,
-            "edge_update_input": 384,
-            "node_update_input": 256,
-            "output": 3
-          },
-          "relu": true,
-          "layer_norm_minimum": 32,
-          "decoder_layer_norms": 0,
-          "edge_then_node_residual": true,
-          "receiver_sum_aggregation": true,
-          "trainable_parameters": true
-        }
-      }
-    },
-    {
-      "id": "1081a102f47044c3",
-      "type": "model_forward",
-      "method": "check_model_forward_executable",
-      "phase": "model_structure",
-      "depends": [
-        "c1e3560a0b3e8811"
-      ],
-      "params": {
-        "model_file": "model.py",
-        "model_class": "MeshGraphNet",
-        "device": "cpu",
-        "eval_mode": true,
-        "torch_num_threads": 1,
-        "seed": 20260821,
-        "node_shape": [
-          8,
-          6
-        ],
-        "edge_shape": [
-          16,
-          3
-        ],
-        "edge_index_shape": [
-          2,
-          16
-        ],
-        "output_shape": [
-          8,
-          3
-        ],
-        "finite_output": true
-      }
-    },
-    {
-      "id": "7a4a5a612f3dfa59",
-      "type": "model_forward_equivalence",
-      "method": "check_model_forward_equivalence",
-      "phase": "model_structure",
-      "depends": [
-        "c1e3560a0b3e8811",
-        "1081a102f47044c3"
-      ],
-      "params": {
-        "candidate_model_file": "model.py",
-        "reference_model_file": "benchmarks/standard/meshgraphnet_cylinderflow_train/model.py",
-        "model_class": "MeshGraphNet",
-        "device": "cpu",
-        "torch_num_threads": 1,
-        "tiny_graph": {
-          "node_shape": [
-            8,
-            6
-          ],
-          "edge_shape": [
-            16,
-            3
-          ],
-          "edge_index_shape": [
-            2,
-            16
-          ]
-        },
-        "canonicalize": {
-          "linear_weights": "arange remainder 29 centered and divided by 5000",
-          "linear_bias": "(module_index modulo 7 minus 3)/1000",
-          "layer_norm_weight": 1.0,
-          "layer_norm_bias": 0.0
-        },
-        "parameter_shape_comparison": "Counter(tuple(parameter.shape))",
-        "output_shape": [
-          8,
-          3
-        ],
         "atol": 1e-05,
         "rtol": 1e-05
       }
     },
     {
-      "id": "73edcb86bce017bc",
+      "id": "a1b2c3d4e5f60301",
+      "type": "model_file",
+      "method": "check_files",
+      "phase": "model_structure",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "model.py"
+        ]
+      }
+    },
+    {
+      "id": "c3d4e5f6a7b80303",
+      "type": "model_config_content",
+      "method": "check_config_content",
+      "phase": "model_structure",
+      "depends": [
+        "c43e9e6ca86659ce"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "required_config_keys": [
+          {
+            "key": "model.latent_dim",
+            "type": "int",
+            "value": 128
+          },
+          {
+            "key": "model.processor_steps",
+            "type": "int",
+            "value": 15
+          },
+          {
+            "key": "model.mlp_hidden_layers",
+            "type": "int",
+            "value": 2
+          },
+          {
+            "key": "model.aggregation",
+            "type": "str",
+            "value": "sum"
+          }
+        ],
+        "config_paths": {
+          "model.latent_dim": [
+            "model.latent_dim",
+            "latent_dim",
+            "model.hidden_dim",
+            "hidden_dim"
+          ],
+          "model.processor_steps": [
+            "model.processor_steps",
+            "processor_steps",
+            "model.num_message_passing_steps",
+            "num_message_passing_steps",
+            "model.message_passing_steps"
+          ],
+          "model.mlp_hidden_layers": [
+            "model.mlp_hidden_layers",
+            "mlp_hidden_layers"
+          ],
+          "model.aggregation": [
+            "model.aggregation",
+            "aggregation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5f6a70302",
+      "type": "model_interface",
+      "method": "check_interface",
+      "phase": "model_structure",
+      "depends": [
+        "a1b2c3d4e5f60301"
+      ],
+      "params": {
+        "files": [
+          "model.py"
+        ],
+        "required_interfaces": [
+          "MeshGraphNet",
+          "MeshGraphNet.forward"
+        ]
+      }
+    },
+    {
+      "id": "d4e5f6a7b8c90304",
+      "type": "model_structure",
+      "method": "check_model_structure",
+      "phase": "model_structure",
+      "depends": [
+        "b2c3d4e5f6a70302",
+        "c43e9e6ca86659ce"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "model_file": "model.py",
+        "model_class": "MeshGraphNet",
+        "model_args": {
+          "latent_dim": "$config.model.latent_dim",
+          "processor_steps": "$config.model.processor_steps",
+          "mlp_hidden_layers": "$config.model.mlp_hidden_layers",
+          "aggregation": "$config.model.aggregation"
+        },
+        "device": "cpu",
+        "rules": [
+          {
+            "id": "root_type",
+            "type": "module_type",
+            "severity": "error",
+            "params": {
+              "expected": "MeshGraphNet"
+            }
+          },
+          {
+            "id": "processor_length",
+            "type": "children_count",
+            "severity": "error",
+            "params": {
+              "target_path": "$processor",
+              "count": 15
+            }
+          },
+          {
+            "id": "node_encoder_pattern",
+            "type": "block_pattern",
+            "severity": "error",
+            "params": {
+              "target_path": "$node_encoder",
+              "pattern": [
+                "Linear",
+                "ReLU",
+                "Linear",
+                "ReLU",
+                "Linear",
+                "LayerNorm"
+              ]
+            }
+          },
+          {
+            "id": "decoder_pattern",
+            "type": "block_pattern",
+            "severity": "error",
+            "params": {
+              "target_path": "$decoder",
+              "pattern": [
+                "Linear",
+                "ReLU",
+                "Linear",
+                "ReLU",
+                "Linear"
+              ]
+            }
+          },
+          {
+            "id": "decoder_out_linear",
+            "type": "linear_shape",
+            "severity": "error",
+            "params": {
+              "in_features": 128,
+              "out_features": 3,
+              "target_path": "$decoder_output"
+            }
+          }
+        ],
+        "config_paths": {
+          "model.latent_dim": [
+            "model.latent_dim",
+            "latent_dim",
+            "model.hidden_dim",
+            "hidden_dim"
+          ],
+          "model.processor_steps": [
+            "model.processor_steps",
+            "processor_steps",
+            "model.num_message_passing_steps",
+            "num_message_passing_steps",
+            "model.message_passing_steps"
+          ],
+          "model.mlp_hidden_layers": [
+            "model.mlp_hidden_layers",
+            "mlp_hidden_layers"
+          ],
+          "model.aggregation": [
+            "model.aggregation",
+            "aggregation"
+          ]
+        },
+        "mesh_role_binding": true
+      }
+    },
+    {
+      "id": "e5f6a7b8c9da0305",
+      "type": "model_forward",
+      "method": "check_model_forward_executable",
+      "phase": "model_structure",
+      "depends": [
+        "b2c3d4e5f6a70302",
+        "c43e9e6ca86659ce"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "model_file": "model.py",
+        "model_class": "MeshGraphNet",
+        "model_args": {
+          "latent_dim": "$config.model.latent_dim",
+          "processor_steps": "$config.model.processor_steps",
+          "mlp_hidden_layers": "$config.model.mlp_hidden_layers",
+          "aggregation": "$config.model.aggregation"
+        },
+        "device": "cpu",
+        "pre_forward_hooks": [
+          {
+            "function": "mesh_probe",
+            "args": {
+              "part": "nodes",
+              "num_nodes": 50,
+              "num_edges": 120,
+              "seed": 17,
+              "device": "$device"
+            },
+            "save_as": "node_features"
+          },
+          {
+            "function": "mesh_probe",
+            "args": {
+              "part": "features",
+              "num_nodes": 50,
+              "num_edges": 120,
+              "seed": 17,
+              "device": "$device"
+            },
+            "save_as": "edge_features"
+          },
+          {
+            "function": "mesh_probe",
+            "args": {
+              "part": "edges",
+              "num_nodes": 50,
+              "num_edges": 120,
+              "seed": 17,
+              "device": "$device"
+            },
+            "save_as": "edge_index"
+          }
+        ],
+        "forward_args": {
+          "node_features": "$node_features",
+          "edge_features": "$edge_features",
+          "edge_index": "$edge_index"
+        },
+        "out_shape": [
+          50,
+          3
+        ],
+        "check_nan_inf": true,
+        "config_paths": {
+          "model.latent_dim": [
+            "model.latent_dim",
+            "latent_dim",
+            "model.hidden_dim",
+            "hidden_dim"
+          ],
+          "model.processor_steps": [
+            "model.processor_steps",
+            "processor_steps",
+            "model.num_message_passing_steps",
+            "num_message_passing_steps",
+            "model.message_passing_steps"
+          ],
+          "model.mlp_hidden_layers": [
+            "model.mlp_hidden_layers",
+            "mlp_hidden_layers"
+          ],
+          "model.aggregation": [
+            "model.aggregation",
+            "aggregation"
+          ]
+        },
+        "check_receiver_sum": true
+      }
+    },
+    {
+      "id": "f6a7b8c9dab10306",
+      "type": "model_forward_equivalence",
+      "method": "check_model_forward_equivalence",
+      "phase": "model_structure",
+      "depends": [
+        "e5f6a7b8c9da0305",
+        "c43e9e6ca86659ce"
+      ],
+      "params": {
+        "candidate": {
+          "config_name": "config.yaml",
+          "model_file": "model.py",
+          "model_class": "MeshGraphNet",
+          "model_args": {
+            "latent_dim": "$config.model.latent_dim",
+            "processor_steps": "$config.model.processor_steps",
+            "mlp_hidden_layers": "$config.model.mlp_hidden_layers",
+            "aggregation": "$config.model.aggregation"
+          },
+          "pre_forward_hooks": [
+            {
+              "function": "mesh_probe",
+              "args": {
+                "part": "nodes",
+                "num_nodes": 50,
+                "num_edges": 120,
+                "seed": 17,
+                "device": "$device"
+              },
+              "save_as": "node_features"
+            },
+            {
+              "function": "mesh_probe",
+              "args": {
+                "part": "features",
+                "num_nodes": 50,
+                "num_edges": 120,
+                "seed": 17,
+                "device": "$device"
+              },
+              "save_as": "edge_features"
+            },
+            {
+              "function": "mesh_probe",
+              "args": {
+                "part": "edges",
+                "num_nodes": 50,
+                "num_edges": 120,
+                "seed": 17,
+                "device": "$device"
+              },
+              "save_as": "edge_index"
+            }
+          ],
+          "forward_args": {
+            "node_features": "$node_features",
+            "edge_features": "$edge_features",
+            "edge_index": "$edge_index"
+          },
+          "config_paths": {
+            "model.latent_dim": [
+              "model.latent_dim",
+              "latent_dim",
+              "model.hidden_dim",
+              "hidden_dim"
+            ],
+            "model.processor_steps": [
+              "model.processor_steps",
+              "processor_steps",
+              "model.num_message_passing_steps",
+              "num_message_passing_steps",
+              "model.message_passing_steps"
+            ],
+            "model.mlp_hidden_layers": [
+              "model.mlp_hidden_layers",
+              "mlp_hidden_layers"
+            ],
+            "model.aggregation": [
+              "model.aggregation",
+              "aggregation"
+            ]
+          }
+        },
+        "reference": {
+          "config_name": "config.yaml",
+          "model_file": "model.py",
+          "model_class": "MeshGraphNet",
+          "model_args": {
+            "latent_dim": "$config.model.latent_dim",
+            "processor_steps": "$config.model.processor_steps",
+            "mlp_hidden_layers": "$config.model.mlp_hidden_layers",
+            "aggregation": "$config.model.aggregation"
+          },
+          "pre_forward_hooks": [
+            {
+              "function": "mesh_probe",
+              "args": {
+                "part": "nodes",
+                "num_nodes": 50,
+                "num_edges": 120,
+                "seed": 17,
+                "device": "$device"
+              },
+              "save_as": "node_features"
+            },
+            {
+              "function": "mesh_probe",
+              "args": {
+                "part": "features",
+                "num_nodes": 50,
+                "num_edges": 120,
+                "seed": 17,
+                "device": "$device"
+              },
+              "save_as": "edge_features"
+            },
+            {
+              "function": "mesh_probe",
+              "args": {
+                "part": "edges",
+                "num_nodes": 50,
+                "num_edges": 120,
+                "seed": 17,
+                "device": "$device"
+              },
+              "save_as": "edge_index"
+            }
+          ],
+          "forward_args": {
+            "node_features": "$node_features",
+            "edge_features": "$edge_features",
+            "edge_index": "$edge_index"
+          },
+          "config_paths": {
+            "model.latent_dim": [
+              "model.latent_dim",
+              "latent_dim",
+              "model.hidden_dim",
+              "hidden_dim"
+            ],
+            "model.processor_steps": [
+              "model.processor_steps",
+              "processor_steps",
+              "model.num_message_passing_steps",
+              "num_message_passing_steps",
+              "model.message_passing_steps"
+            ],
+            "model.mlp_hidden_layers": [
+              "model.mlp_hidden_layers",
+              "mlp_hidden_layers"
+            ],
+            "model.aggregation": [
+              "model.aggregation",
+              "aggregation"
+            ]
+          }
+        },
+        "compare_atol": 1e-06
+      }
+    },
+    {
+      "id": "a7b8c9dab2c30707",
+      "type": "train_file",
+      "method": "check_files",
+      "phase": "train_script",
+      "depends": [],
+      "params": {
+        "required_files": [
+          "train.py"
+        ]
+      }
+    },
+    {
+      "id": "9570576a964b8657",
+      "type": "train_config_content",
+      "method": "check_config_content",
+      "phase": "train_script",
+      "depends": [
+        "c43e9e6ca86659ce"
+      ],
+      "params": {
+        "config_name": "config.yaml",
+        "required_config_keys": [
+          {
+            "key": "training.epochs",
+            "type": "int",
+            "value": 25
+          },
+          {
+            "key": "training.batch_size",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "key": "training.learning_rate",
+            "type": "float",
+            "value": 0.0001
+          },
+          {
+            "key": "training.loss_nodes",
+            "type": "str",
+            "value": "all"
+          },
+          {
+            "key": "training.lr_decay_rate",
+            "value": 0.9999991
+          },
+          {
+            "key": "training.output_dir",
+            "value": "results/meshgraphnet_cylinderflow_seed0"
+          }
+        ],
+        "config_paths": {
+          "training.epochs": [
+            "training.epochs",
+            "epochs"
+          ],
+          "training.batch_size": [
+            "training.batch_size",
+            "batch_size"
+          ],
+          "training.learning_rate": [
+            "training.learning_rate",
+            "learning_rate",
+            "training.lr",
+            "lr"
+          ],
+          "training.loss_nodes": [
+            "training.loss_nodes",
+            "loss_nodes"
+          ],
+          "training.lr_decay_rate": [
+            "training.lr_decay_rate",
+            "lr_decay_rate",
+            "training.lr_decay"
+          ],
+          "training.output_dir": [
+            "training.output_dir",
+            "output_dir",
+            "output"
+          ]
+        },
+        "path_keys": [
+          "training.output_dir"
+        ]
+      }
+    },
+    {
+      "id": "b8c9dab2c3d30808",
+      "type": "train_interface",
+      "method": "check_interface",
+      "phase": "train_script",
+      "depends": [
+        "a7b8c9dab2c30707"
+      ],
+      "params": {
+        "files": [
+          "train.py"
+        ],
+        "required_interfaces": [
+          "main"
+        ]
+      }
+    },
+    {
+      "id": "c9dab2c3d4e40909",
+      "type": "train_dataset_loading",
+      "method": "check_train_dataset_loading",
+      "phase": "train_script",
+      "depends": [
+        "a7b8c9dab2c30707",
+        "9475aceda2698f0d",
+        "c43e9e6ca86659ce",
+        "9febf73aad314565"
+      ],
+      "params": {
+        "files": [
+          "dataset.py",
+          "train.py"
+        ],
+        "dataset_names": [
+          "CylinderFlowDataset"
+        ],
+        "dataloader_names": [
+          "DataLoader"
+        ]
+      }
+    },
+    {
+      "id": "dab2c3d4e5f50a0b",
+      "type": "train_structure",
+      "method": "check_train_structure",
+      "phase": "train_script",
+      "depends": [
+        "b8c9dab2c3d30808",
+        "9475aceda2698f0d",
+        "c43e9e6ca86659ce",
+        "9febf73aad314565"
+      ],
+      "params": {
+        "files": [
+          "train.py",
+          "dataset.py",
+          "model.py"
+        ],
+        "check_config": {
+          "entry_names": [
+            "main"
+          ],
+          "model_names": [
+            "meshgraphnet"
+          ],
+          "model_attributes": [
+            "forward"
+          ],
+          "dataloader_names": [
+            "DataLoader"
+          ],
+          "optimizer_names": [
+            "Adam"
+          ],
+          "loss_names": [
+            "mse_loss"
+          ],
+          "model_variable_names": [
+            "model",
+            "net",
+            "network",
+            "wrapped"
+          ]
+        }
+      }
+    },
+    {
+      "id": "eb2c3d4e5f60b0c0",
       "type": "parameter_update",
       "method": "check_parameter_update",
       "phase": "train_script",
       "depends": [
-        "c1e3560a0b3e8811",
-        "1081a102f47044c3"
+        "b8c9dab2c3d30808"
       ],
       "params": {
-        "model_file": "model.py",
-        "model_class": "MeshGraphNet",
-        "device": "cpu",
-        "train_mode": true,
-        "seed": 20260821,
-        "optimizer": "torch.optim.Adam",
-        "learning_rate": 0.0001,
-        "target_shape": [
-          8,
-          3
-        ],
-        "loss": "torch.nn.functional.mse_loss",
-        "finite_gradient_fraction_min": 0.9,
-        "parameter_update_fraction_min": 0.8,
-        "zero_grad_set_to_none": true
+        "files": [
+          "train.py"
+        ]
       }
     },
     {
-      "id": "c2562f85cb0fb6a4",
-      "type": "smoke_artifacts",
-      "method": "check_smoke_artifacts",
+      "id": "fc2c3d4e5f70c0d0",
+      "type": "smoke_training",
+      "method": "check_smoke_training",
       "phase": "smoke_train",
       "depends": [
-        "340056d2937fdcfc",
-        "73edcb86bce017bc"
+        "dab2c3d4e5f50a0b",
+        "c43e9e6ca86659ce",
+        "8091a2b3c4d5e6f7"
       ],
       "params": {
-        "source_files": [
-          "train.py",
-          "utils.py"
+        "run_file": "train.py",
+        "config_name": "config.yaml",
+        "train_fn_name": "main",
+        "cli_mode": true,
+        "smoke_config": {
+          "data": {
+            "root": "${probe_dir}",
+            "stats_dir": "$probe_dir/stats",
+            "train_samples": 1,
+            "val_samples": 1,
+            "test_samples": 1,
+            "train_steps": 4,
+            "val_steps": 4,
+            "test_steps": 4,
+            "num_workers": 0
+          },
+          "training": {
+            "resume": false
+          },
+          "evaluation": {
+            "rollout_trajectories": 1,
+            "rollout_steps": 3
+          }
+        },
+        "cli_args": [
+          "--config",
+          "$smoke_config_path",
+          "--device",
+          "cpu",
+          "--epochs",
+          "1",
+          "--output",
+          "${results_dir}",
+          "--rollout"
         ],
-        "output_dir_config": "training.output_dir or results/meshgraphnet_cylinderflow_seed0",
-        "artifact_names": [
-          "best.pt",
-          "last.pt",
-          "history.json",
-          "summary.json",
-          "train.log"
+        "train_args": {},
+        "observe_training": true,
+        "optimizer_class": "Adam",
+        "fresh_artifacts": [
+          "smoke-training/results/best.pt",
+          "smoke-training/results/last.pt",
+          "smoke-training/results/history.json",
+          "smoke-training/results/summary.json",
+          "smoke-training/results/train.log"
         ],
-        "declarations_required": true,
-        "materialized_directory_optional": true,
-        "materialized_files_nonempty": true,
-        "json_files": [
-          "history.json",
-          "summary.json"
-        ],
-        "json_parse_required": true
+        "expected_optimizer": {
+          "lr": 0.0001
+        },
+        "task_contract": {
+          "loss_entry": "node_loss"
+        },
+        "synthetic_data": {
+          "function": "make_mesh_probe"
+        }
+      }
+    },
+    {
+      "id": "a2c3d4e5f6a0d0e0",
+      "type": "smoke_artifacts",
+      "method": "check_files",
+      "phase": "smoke_train",
+      "depends": [
+        "fc2c3d4e5f70c0d0"
+      ],
+      "params": {
+        "required_files": [
+          "smoke-training/results/best.pt",
+          "smoke-training/results/last.pt",
+          "smoke-training/results/history.json",
+          "smoke-training/results/summary.json",
+          "smoke-training/results/train.log"
+        ]
+      }
+    },
+    {
+      "id": "fd5a4a1ac56e1ce6",
+      "type": "smoke_artifacts",
+      "method": "check_checkpoint_content",
+      "phase": "smoke_train",
+      "depends": [
+        "fc2c3d4e5f70c0d0",
+        "a2c3d4e5f6a0d0e0"
+      ],
+      "params": {
+        "checkpoints": [
+          {
+            "path": "smoke-training/results/best.pt",
+            "allow_numpy_rng": true
+          },
+          {
+            "path": "smoke-training/results/last.pt",
+            "allow_numpy_rng": true
+          }
+        ]
       }
     }
   ]

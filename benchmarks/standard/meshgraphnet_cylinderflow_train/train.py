@@ -9,6 +9,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import time
@@ -226,6 +227,7 @@ def rollout_trajectory(
 
     velocity_squared_error = 0.0
     pressure_squared_error = 0.0
+    horizon_metrics = {}
     for time_index in range(steps):
         node_features = torch.cat(
             (stats.normalize(velocity, stats.velocity_mean, stats.velocity_std), node_type_features),
@@ -244,7 +246,13 @@ def rollout_trajectory(
         pressure_target = trajectory.pressure[time_index + 1].to(device)
         velocity_squared_error += float(nn.functional.mse_loss(velocity, velocity_target))
         pressure_squared_error += float(nn.functional.mse_loss(pressure, pressure_target))
+        horizon = time_index + 1
+        if horizon in (1, 50, steps):
+            horizon_metrics[f"velocity_rmse_{horizon}_step"] = (velocity_squared_error / horizon) ** 0.5
+            horizon_metrics[f"pressure_mse_{horizon}_step"] = pressure_squared_error / horizon
     return {
+        **horizon_metrics,
+        "velocity_full_rollout_rmse": (velocity_squared_error / max(steps, 1)) ** 0.5,
         "velocity_rollout_mse": velocity_squared_error / max(steps, 1),
         "pressure_rollout_mse": pressure_squared_error / max(steps, 1),
     }
@@ -337,6 +345,12 @@ def main() -> None:
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
     output_dir = Path(training_config["output_dir"])
+    file_handler = None
+    if rank == 0:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(output_dir / "train.log", encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+        logger.addHandler(file_handler)
     checkpoint_path = output_dir / "last.pt"
     best_path = output_dir / "best.pt"
     start_epoch = 0
@@ -374,6 +388,7 @@ def main() -> None:
         )
         val_loss = validate(model, val_loader, device, training_config, world_size)
         record = {
+            "config": config,
             "epoch": epoch + 1,
             "global_step": global_step,
             "train_loss": train_loss,
@@ -423,7 +438,7 @@ def main() -> None:
             logger.info("Early stopping after %d stale epochs", stale_epochs)
             break
 
-    if args.rollout and rank == 0:
+    if rank == 0:
         load_checkpoint(best_path, model, device=device)
         evaluation_config = config["evaluation"]
         split = evaluation_config.get("rollout_split", "test")
@@ -441,6 +456,12 @@ def main() -> None:
             key: sum(metric[key] for metric in metrics) / len(metrics) for key in metrics[0]
         }
         logger.info("rollout_metrics=%s", mean_metrics)
+        summary = {"config": config, "best_val_loss": best_val_loss,
+                   "best_checkpoint": str(best_path), "rollout_steps": data_steps - 1,
+                   "metrics": mean_metrics}
+        (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        logger.removeHandler(file_handler)
+        file_handler.close()
 
     if world_size > 1:
         dist.destroy_process_group()
