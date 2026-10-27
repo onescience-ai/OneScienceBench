@@ -1,5 +1,5 @@
 paths:
-  data: /public/home/yuxiaodong/onescience-re/examples/matchem/nequip/demo/reference_data/smoke.xyz
+  data: /public/share/sugonhpcapp01/onestore/onedatasets/matchem/NequIP/fcu.xyz
 model:
   name: NequIPGNNModel
   r_max: 4.0

@@ -192,28 +192,25 @@ def _module_attr(module: Any, names: tuple[str, ...]):
     return None, None
 
 def check_files(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = ["file:mattergen_denoiser.py","file:run_inference.py","file:mattergen_inference.yaml","file:portable_mattergen/__init__.py","file:portable_mattergen/gemnet/gemnet-dT.json","checkpoint_loading:gemnet_scaling_config_sha256"]
-    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
-    def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-    current_index = 0
-    try:
-        required_files = tuple(config.get("required_files", REQUIRED_FILES))
-        for relative in required_files:
-            ok = (CANDIDATE_DIR / relative).is_file()
-            update_check(current_index, ok, str(CANDIDATE_DIR / relative)); current_index += 1
-        if len(required_files) < 5:
-            for relative in REQUIRED_FILES[len(required_files):]:
-                update_check(current_index, (CANDIDATE_DIR / relative).is_file(), str(CANDIDATE_DIR / relative)); current_index += 1
-        gemnet_json = CANDIDATE_DIR / "portable_mattergen/gemnet/gemnet-dT.json"
-        gemnet_hash = _sha256(gemnet_json)
-        update_check(current_index, gemnet_hash == EXPECTED_GEMNET_CONFIG_SHA256, f"actual={gemnet_hash}"); current_index += 1
-    except Exception as e:
-        if current_index < len(CHECKPOINT_NAMES): update_check(current_index, False, traceback.format_exc())
+    params = config.get("params", config)
+    required_files = list(params.get("required_files", []))
+    phase = params.get("phase", "files")
+    CHECKPOINT_NAMES = [f"{phase}.{name}" for name in required_files] or ["files.config"]
+    checks = [(name, False, "因前置步骤失败而未执行") for name in CHECKPOINT_NAMES]
+    for index, relative in enumerate(required_files):
+        try:
+            path = CANDIDATE_DIR / relative
+            passed = path.is_file() and (path.stat().st_size > 0)
+            checks[index] = (CHECKPOINT_NAMES[index], passed, str(path))
+        except Exception as error:
+            checks[index] = (CHECKPOINT_NAMES[index], False, str(error))
+    if not required_files:
+        checks[0] = (CHECKPOINT_NAMES[0], False, "required_files 缺失或为空")
     return checks
 
 def check_checkpoint_file(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["checkpoint_loading:fixed_files_exist","checkpoint_loading:config_sha256","checkpoint_loading:checkpoint_sha256"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -230,7 +227,8 @@ def check_checkpoint_file(config: Dict, caller_globals=None, caller_locals=None)
     return checks
 
 def check_checkpoint_loading(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["checkpoint_loading:uses_torch_load","checkpoint_loading:uses_strict_state_loading","checkpoint_loading:checkpoint_envelope","checkpoint_loading:state_layout_exact","checkpoint_loading:strict_full_state_loaded","checkpoint_loading:model_class_is_local"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -265,32 +263,34 @@ def check_checkpoint_loading(config: Dict, caller_globals=None, caller_locals=No
     return checks
 
 def check_interface(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = ["checkpoint_loading:model_loader_functions","evaluation_interface:required_functions","evaluation_interface:function_signatures"]
+    params = config.get("params", config)
+    files = params.get("files", [])
+    required_interfaces = params.get("required_interfaces", [])
+    phase = params.get("phase", "interface")
+    CHECKPOINT_NAMES = [f"{phase}:{name}_load" for name in files] + list(required_interfaces)
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
-    def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-    current_index = 0
-    try:
-        context = _ctx(caller_globals, caller_locals)
-        model_module, run_module = load_implementation(CANDIDATE_DIR, "candidate")
-        model_config = model_module.load_config(CANDIDATE_DIR / "mattergen_inference.yaml")
-        context.update({"candidate_model_module": model_module,"candidate_run_module": run_module,"candidate_config": model_config})
-        required_model_functions = ("load_config","build_model","extract_model_state","load_checkpoint_payload","load_model")
-        missing_model = [name for name in required_model_functions if not callable(getattr(model_module, name, None))]
-        update_check(current_index, not missing_model, f"missing={missing_model}"); current_index += 1
-        required_run_functions = ("validate_inputs","evaluate","load_input_npz","save_output_npz","main")
-        missing_run = [name for name in required_run_functions if not callable(getattr(run_module, name, None))]
-        update_check(current_index, not missing_run, f"missing={missing_run}"); current_index += 1
-        if missing_run: return checks
-        evaluate_signature = inspect.signature(run_module.evaluate); load_model_signature = inspect.signature(model_module.load_model)
-        ok = all(name in evaluate_signature.parameters for name in ("model","batch","timesteps","device")) and all(name in load_model_signature.parameters for name in ("config","checkpoint_path","device"))
-        update_check(current_index, ok, f"evaluate={evaluate_signature} load_model={load_model_signature}"); current_index += 1
-    except Exception as e:
-        if current_index < len(CHECKPOINT_NAMES): update_check(current_index, False, traceback.format_exc())
+    modules = []
+    for index, file_name in enumerate(files):
+        try:
+            module = load_candidate_module(file_name)
+            modules.append(module)
+            checks[index] = (CHECKPOINT_NAMES[index], True, "模块加载成功")
+        except Exception as error:
+            checks[index] = (CHECKPOINT_NAMES[index], False, str(error))
+    for offset, name in enumerate(required_interfaces, start=len(files)):
+        found = False
+        for module in modules:
+            if "." in name:
+                class_name, member_name = name.split(".", 1)
+                found = found or callable(getattr(getattr(module, class_name, None), member_name, None))
+            else:
+                found = found or callable(getattr(module, name, None))
+        checks[offset] = (CHECKPOINT_NAMES[offset], found, "接口查找结果")
     return checks
 
 def check_model_structure(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["evaluation_interface:model_is_nn_module","evaluation_interface:model_class","evaluation_interface:forward_signature","evaluation_interface:top_level_components","evaluation_interface:top_level_order","evaluation_interface:gemnet_components","evaluation_interface:interaction_output_block_counts","evaluation_interface:embedding_shapes","evaluation_interface:atom_head_shape","evaluation_interface:parameter_count"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -341,7 +341,8 @@ def check_model_structure(config: Dict, caller_globals=None, caller_locals=None)
     return checks
 
 def check_config_content(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["evaluation_interface:model_configuration","evaluation_interface:fixed_checkpoint_paths"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -359,7 +360,8 @@ def check_config_content(config: Dict, caller_globals=None, caller_locals=None) 
     return checks
 
 def check_infer_structure(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["evaluation_interface:cli_contract","evaluation_interface:inference_mode_contract"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -381,7 +383,8 @@ def check_infer_structure(config: Dict, caller_globals=None, caller_locals=None)
     return checks
 
 def check_method_correctness(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["evaluation_interface:fixed_batch_contract","evaluation_interface:npz_input_contract"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -403,7 +406,8 @@ def check_method_correctness(config: Dict, caller_globals=None, caller_locals=No
     return checks
 
 def check_model_forward_executable(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["evaluation_interface:forward_call_contract","evaluation_interface:forward_output_shapes"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -428,7 +432,8 @@ def check_model_forward_executable(config: Dict, caller_globals=None, caller_loc
     return checks
 
 def check_infer_output_schema(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["evaluation_interface:forward_output_keys","evaluation_interface:forward_output_finite","evaluation_interface:npz_output_contract"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
@@ -452,7 +457,8 @@ def check_infer_output_schema(config: Dict, caller_globals=None, caller_locals=N
     return checks
 
 def check_evaluate_oracle(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
+    config = params
     CHECKPOINT_NAMES = ["metric:pos_oracle","metric:cell_oracle","metric:atomic_numbers_oracle"]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
     def update_check(index: int, passed: bool, msg: str): checks[index] = (CHECKPOINT_NAMES[index], passed, msg)

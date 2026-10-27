@@ -30,10 +30,10 @@
       "phase": "model_structure",
       "depends": [],
       "params": {
+        "phase": "model_structure",
         "required_files": [
           "mattergen_denoiser.py"
-        ],
-        "phase": "model_structure"
+        ]
       }
     },
     {
@@ -43,10 +43,10 @@
       "phase": "infer_script",
       "depends": [],
       "params": {
+        "phase": "infer_script",
         "required_files": [
           "run_inference.py"
-        ],
-        "phase": "infer_script"
+        ]
       }
     },
     {
@@ -56,10 +56,10 @@
       "phase": "task_artifacts",
       "depends": [],
       "params": {
+        "phase": "task_artifacts",
         "required_files": [
           "mattergen_inference.yaml"
-        ],
-        "phase": "task_artifacts"
+        ]
       }
     },
     {
@@ -69,10 +69,10 @@
       "phase": "model_structure",
       "depends": [],
       "params": {
+        "phase": "model_structure",
         "required_files": [
           "portable_mattergen/__init__.py"
-        ],
-        "phase": "model_structure"
+        ]
       }
     },
     {
@@ -82,10 +82,10 @@
       "phase": "model_structure",
       "depends": [],
       "params": {
+        "phase": "model_structure",
         "required_files": [
           "portable_mattergen/gemnet/gemnet-dT.json"
-        ],
-        "phase": "model_structure"
+        ]
       }
     },
     {
@@ -93,77 +93,52 @@
       "type": "checkpoint_file",
       "method": "check_checkpoint_file",
       "phase": "checkpoint_loading",
-      "depends": [
-        "33bd5fe84e6e46eb"
-      ],
-      "params": {
-        "config_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/config.yaml",
-        "checkpoint_path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "58e5e08503196e4f",
       "type": "checkpoint_file",
       "method": "check_checkpoint_file",
       "phase": "checkpoint_loading",
-      "depends": [
-        "7a946123180460ed"
-      ],
-      "params": {
-        "path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/config.yaml",
-        "sha256": "01648f40a8227b01b1dbc1090bf0f8229bb3241845ae9ac57af96b31e595bda7"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "0300c3020b7a599d",
       "type": "checkpoint_file",
       "method": "check_checkpoint_file",
       "phase": "checkpoint_loading",
-      "depends": [
-        "58e5e08503196e4f"
-      ],
-      "params": {
-        "path": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt",
-        "sha256": "81668ee12afc1ee1b037f362420730de3460bfd2d36e547585fdcb911a3dfdef"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "73675c1b34c9a3da",
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "0300c3020b7a599d"
-      ],
-      "params": {
-        "required_call": "torch.load"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "c364a7f9d36465d1",
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "73675c1b34c9a3da"
-      ],
-      "params": {
-        "strict": true
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "fc65c9270b1ca253",
       "type": "task_file",
       "method": "check_files",
       "phase": "task_artifacts",
-      "depends": [
-        "60a177de215a5f14"
-      ],
+      "depends": [],
       "params": {
+        "phase": "task_artifacts",
         "required_files": [
           "portable_mattergen/gemnet/gemnet-dT.json"
-        ],
-        "sha256": "867604ed6a605649241cd94d9604f25226fb1e362f332b7d1a9ae40d3f747e90"
+        ]
       }
     },
     {
@@ -171,21 +146,25 @@
       "type": "model_interface",
       "method": "check_interface",
       "phase": "model_structure",
-      "depends": [
-        "0d3a5dd92299975d"
-      ],
+      "depends": [],
       "params": {
         "files": [
-          "mattergen_denoiser.py"
+          "mattergen_denoiser.py",
+          "run_inference.py"
         ],
+        "phase": "model_interface",
         "required_interfaces": [
           "load_config",
           "build_model",
           "extract_model_state",
           "load_checkpoint_payload",
-          "load_model"
-        ],
-        "phase": "model_structure"
+          "load_model",
+          "validate_inputs",
+          "evaluate",
+          "load_input_npz",
+          "save_output_npz",
+          "main"
+        ]
       }
     },
     {
@@ -193,241 +172,131 @@
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "4e30188166018fc4"
-      ],
-      "params": {
-        "state_entry_count": 281,
-        "state_numel": 53737595,
-        "prefix": "diffusion_module.model."
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "f40f0475e1b5a41f",
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "f53dd3b8a2253188"
-      ],
-      "params": {
-        "checkpoint_key_layout": "candidate_state_dict_keys == stripped_checkpoint_state_dict_keys"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "8d4905328aced329",
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "f40f0475e1b5a41f"
-      ],
-      "params": {
-        "strict": true,
-        "all_state_values_equal": true
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "aabd599c6c048d25",
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "8d4905328aced329"
-      ],
-      "params": {
-        "model_source_must_be_relative_to_submission": true
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "fc15121e95617d72",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "aabd599c6c048d25"
-      ],
-      "params": {
-        "instanceof": "torch.nn.Module"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "ee08bbd179642cab",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "fc15121e95617d72"
-      ],
-      "params": {
-        "class_name": "GemNetTDenoiser"
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "9d596787b2309119",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "ee08bbd179642cab"
-      ],
-      "params": {
-        "forward_parameters_prefix": [
-          "batch",
-          "timesteps"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "91020d6bfcd9ece6",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "9d596787b2309119"
-      ],
-      "params": {
-        "required_modules": [
-          "noise_level_encoding",
-          "gemnet",
-          "property_embeddings",
-          "fc_atom"
-        ],
-        "property_embeddings_type": "ModuleDict",
-        "hidden_dim": 512
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "27287f117bb4a3c5",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "91020d6bfcd9ece6"
-      ],
-      "params": {
-        "required_order": [
-          "gemnet",
-          "noise_level_encoding",
-          "property_embeddings",
-          "fc_atom"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "1436d9b76e9ed336",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "27287f117bb4a3c5"
-      ],
-      "params": {
-        "required_gemnet_attributes": [
-          "radial_basis",
-          "cbf_basis3",
-          "mlp_rbf_lattice",
-          "mlp_rbf3",
-          "mlp_cbf3",
-          "mlp_rbf_h",
-          "mlp_rbf_out",
-          "atom_emb",
-          "atom_latent_emb",
-          "edge_emb",
-          "generate_interaction_graph"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "1b655d519f43e189",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "1436d9b76e9ed336"
-      ],
-      "params": {
-        "int_blocks": 4,
-        "out_blocks": 5,
-        "lattice_out_blocks": 5
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "2802a3acb572f648",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "1b655d519f43e189"
-      ],
-      "params": {
-        "atom_shape": [
-          4,
-          512
-        ],
-        "time_shape": [
-          2,
-          512
-        ],
-        "probe_atoms": [
-          1,
-          6,
-          14,
-          101
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "3671903ebf70dc57",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "2802a3acb572f648"
-      ],
-      "params": {
-        "input_shape": [
-          3,
-          512
-        ],
-        "expected_output_shape": [
-          3,
-          101
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "c4c7e93eb3fae1a8",
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "3671903ebf70dc57"
-      ],
-      "params": {
-        "expected_state_numel": 53737595
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "5d901122c9a213b8",
       "type": "infer_interface",
       "method": "check_interface",
       "phase": "infer_script",
-      "depends": [
-        "4e30188166018fc4"
-      ],
+      "depends": [],
       "params": {
         "files": [
           "run_inference.py"
         ],
+        "phase": "infer_interface",
         "required_interfaces": [
           "validate_inputs",
           "evaluate",
           "load_input_npz",
           "save_output_npz",
           "main"
-        ],
-        "phase": "infer_script"
+        ]
       }
     },
     {
@@ -435,20 +304,18 @@
       "type": "infer_interface",
       "method": "check_interface",
       "phase": "infer_script",
-      "depends": [
-        "5d901122c9a213b8"
-      ],
+      "depends": [],
       "params": {
-        "evaluate_parameters": [
-          "model",
-          "batch",
-          "timesteps",
-          "device"
+        "files": [
+          "mattergen_denoiser.py"
         ],
-        "load_model_parameters": [
-          "config",
-          "checkpoint_path",
-          "device"
+        "phase": "model_interface",
+        "required_interfaces": [
+          "load_config",
+          "build_model",
+          "extract_model_state",
+          "load_checkpoint_payload",
+          "load_model"
         ]
       }
     },
@@ -457,161 +324,49 @@
       "type": "infer_structure",
       "method": "check_infer_structure",
       "phase": "infer_script",
-      "depends": [
-        "69f0d30d7baf2b31"
-      ],
-      "params": {
-        "required_cli_flags": [
-          "--config",
-          "--checkpoint",
-          "--input",
-          "--output",
-          "--device"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "d7ff351cffcf97b6",
       "type": "infer_structure",
       "method": "check_infer_structure",
       "phase": "infer_script",
-      "depends": [
-        "5df23c15ccc60f70"
-      ],
-      "params": {
-        "required_calls": [
-          "eval",
-          "no_grad|inference_mode"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "f6380668e27a1cec",
       "type": "model_config_content",
       "method": "check_config_content",
       "phase": "model_structure",
-      "depends": [
-        "69f0d30d7baf2b31"
-      ],
-      "params": {
-        "config_name": "mattergen_inference.yaml",
-        "required_config_keys": [
-          {
-            "key": "model.hidden_dim",
-            "value": 512
-          },
-          {
-            "key": "model.denoise_atom_types",
-            "value": true
-          },
-          {
-            "key": "model.atom_type_diffusion",
-            "value": "mask"
-          },
-          {
-            "key": "model.gemnet.num_targets",
-            "value": 1
-          },
-          {
-            "key": "model.gemnet.cutoff",
-            "value": 7.0
-          },
-          {
-            "key": "model.gemnet.emb_size_atom",
-            "value": 512
-          },
-          {
-            "key": "model.gemnet.emb_size_edge",
-            "value": 512
-          },
-          {
-            "key": "model.gemnet.max_neighbors",
-            "value": 50
-          },
-          {
-            "key": "model.gemnet.max_cell_images_per_dim",
-            "value": 5
-          },
-          {
-            "key": "model.gemnet.num_blocks",
-            "value": 4
-          },
-          {
-            "key": "model.gemnet.regress_stress",
-            "value": true
-          },
-          {
-            "key": "model.gemnet.otf_graph",
-            "value": true
-          }
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "1b3674ab67651b52",
       "type": "infer_config_content",
       "method": "check_config_content",
       "phase": "infer_script",
-      "depends": [
-        "f6380668e27a1cec"
-      ],
-      "params": {
-        "config_name": "mattergen_inference.yaml",
-        "required_config_keys": [
-          {
-            "key": "checkpoint.path",
-            "value": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/checkpoints/last.ckpt"
-          },
-          {
-            "key": "checkpoint.config_path",
-            "value": "/public/share/sugonhpcapp01/onestore/onemodels/mattergen/mattergen_base/config.yaml"
-          }
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "cacefd19722baad7",
       "type": "infer_method_correctness",
       "method": "check_method_correctness",
       "phase": "infer_script",
-      "depends": [
-        "1b3674ab67651b52"
-      ],
-      "params": {
-        "batch_size": 2,
-        "pos_shape": [
-          7,
-          3
-        ],
-        "cell_shape": [
-          2,
-          3,
-          3
-        ],
-        "atomic_numbers_shape": [
-          7
-        ],
-        "num_atoms_shape": [
-          2
-        ],
-        "timesteps_shape": [
-          2
-        ],
-        "seed": 20260804
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "e96fab2dd789b60c",
       "type": "model_forward",
       "method": "check_model_forward_executable",
       "phase": "model_structure",
-      "depends": [
-        "cacefd19722baad7",
-        "fc15121e95617d72"
-      ],
+      "depends": [],
       "params": {
-        "model_call_required": true,
-        "inference_guard_required": true
+        "device": "cpu"
       }
     },
     {
@@ -619,42 +374,16 @@
       "type": "infer_output_schema",
       "method": "check_infer_output_schema",
       "phase": "infer_execution",
-      "depends": [
-        "e96fab2dd789b60c"
-      ],
-      "params": {
-        "output_keys": [
-          "pos",
-          "cell",
-          "atomic_numbers"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "90b17acb144661f2",
       "type": "model_forward",
       "method": "check_model_forward_executable",
       "phase": "model_structure",
-      "depends": [
-        "55860baaacc1c844"
-      ],
+      "depends": [],
       "params": {
-        "shapes": {
-          "pos": [
-            7,
-            3
-          ],
-          "cell": [
-            2,
-            3,
-            3
-          ],
-          "atomic_numbers": [
-            7,
-            101
-          ]
-        },
-        "floating": true,
         "device": "cpu"
       }
     },
@@ -663,115 +392,48 @@
       "type": "infer_output_schema",
       "method": "check_infer_output_schema",
       "phase": "infer_execution",
-      "depends": [
-        "90b17acb144661f2"
-      ],
-      "params": {
-        "check_nan_inf": true,
-        "outputs": [
-          "pos",
-          "cell",
-          "atomic_numbers"
-        ]
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "aefef21f842fffe5",
       "type": "infer_method_correctness",
       "method": "check_method_correctness",
       "phase": "infer_script",
-      "depends": [
-        "80e8beaaf917ecc6"
-      ],
-      "params": {
-        "format": "npz",
-        "input_keys": [
-          "pos",
-          "cell",
-          "atomic_numbers",
-          "num_atoms",
-          "timesteps"
-        ],
-        "exact_round_trip": true
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "aecd55f36c5c8e18",
       "type": "infer_output_schema",
       "method": "check_infer_output_schema",
       "phase": "infer_execution",
-      "depends": [
-        "aefef21f842fffe5"
-      ],
-      "params": {
-        "format": "npz",
-        "output_keys": [
-          "pos",
-          "cell",
-          "atomic_numbers"
-        ],
-        "finite": true,
-        "shapes": {
-          "pos": [
-            7,
-            3
-          ],
-          "cell": [
-            2,
-            3,
-            3
-          ],
-          "atomic_numbers": [
-            7,
-            101
-          ]
-        }
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "96349f43286fa001",
       "type": "infer_output_equivalence",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
-      "depends": [
-        "80e8beaaf917ecc6"
-      ],
-      "params": {
-        "output_key": "pos",
-        "comparison": "reference_allclose",
-        "rtol": 1e-06,
-        "atol": 1e-06
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "360ac6def04d38b0",
       "type": "infer_output_equivalence",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
-      "depends": [
-        "96349f43286fa001"
-      ],
-      "params": {
-        "output_key": "cell",
-        "comparison": "reference_allclose",
-        "rtol": 1e-06,
-        "atol": 1e-06
-      }
+      "depends": [],
+      "params": {}
     },
     {
       "id": "e94116869322965d",
       "type": "infer_output_equivalence",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
-      "depends": [
-        "360ac6def04d38b0"
-      ],
-      "params": {
-        "output_key": "atomic_numbers",
-        "comparison": "reference_allclose",
-        "rtol": 1e-06,
-        "atol": 1e-06
-      }
+      "depends": [],
+      "params": {}
     }
   ]
 }

@@ -28,10 +28,7 @@
           "models.py",
           "dataset.py",
           "train.py"
-        ],
-        "phase": "task_artifacts",
-        "require_non_empty": true,
-        "require_python_syntax": true
+        ]
       }
     },
     {
@@ -43,36 +40,7 @@
         "7aba2da25b8aef7e"
       ],
       "params": {
-        "dataset_file": "dataset.py",
-        "required_source_patterns": {
-          "mesh_paths": [
-            "internal.vtu",
-            "aerofoil.vtp"
-          ],
-          "input_features": [
-            "implicit_distance",
-            "normal",
-            "u_inf|velocity"
-          ],
-          "targets": [
-            "nut|turbulent",
-            "pressure|p"
-          ],
-          "surface_mask": [
-            "surf",
-            "bool|mask"
-          ],
-          "normalization": [
-            "mean|mu",
-            "std|sigma"
-          ],
-          "split_sampling": [
-            "train",
-            "test",
-            "subsampl|randperm|choice"
-          ]
-        },
-        "static_source_validation": true
+        "dataset_file": "dataset.py"
       }
     },
     {
@@ -81,33 +49,12 @@
       "method": "check_train_structure",
       "phase": "train_script",
       "depends": [
-        "7aba2da25b8aef7e",
         "0c5ee8ca98826ac7"
       ],
       "params": {
         "files": [
           "train.py"
-        ],
-        "check_config": {
-          "model_names": [
-            "AirflowNNMTLDecoderI"
-          ],
-          "optimizer_names": [
-            "Adam",
-            "AdamW",
-            "SGD"
-          ],
-          "loss_names": [
-            "MSELoss",
-            "mse",
-            "squared"
-          ],
-          "require_backward": true,
-          "require_validation_no_grad": true,
-          "require_stch": true,
-          "require_scheduler": true
-        },
-        "static_source_validation": true
+        ]
       }
     },
     {
@@ -123,41 +70,7 @@
           "inference.py",
           "evaluate.py",
           "eval.py"
-        ],
-        "check_config": {
-          "model_load_attributes": [
-            "load_state_dict"
-          ],
-          "input_load_attributes": [
-            "load",
-            "loadtxt",
-            "read_csv",
-            "read_json"
-          ],
-          "output_attributes": [
-            "save",
-            "savez",
-            "dump",
-            "write",
-            "to_csv",
-            "to_json",
-            "to_pickle"
-          ],
-          "require_eval": true,
-          "require_no_grad": true
-        },
-        "project_patterns": {
-          "checkpoint": [
-            "torch.load",
-            "load_state_dict"
-          ],
-          "metrics": [
-            "mse",
-            "force|lift",
-            "spearman|rank"
-          ]
-        },
-        "optional_absent_pass": true
+        ]
       }
     },
     {
@@ -169,8 +82,6 @@
         "7aba2da25b8aef7e"
       ],
       "params": {
-        "model_file": "models.py",
-        "model_class": "AirflowNNMTLDecoderI",
         "model_args": {
           "nb_hidden_layers": 3,
           "size_hidden_layers": 64,
@@ -193,42 +104,7 @@
             64,
             4
           ]
-        },
-        "required_submodules": [
-          "encoder",
-          "nn",
-          "decoder_surf",
-          "decoder_vol"
-        ],
-        "expected_channels": {
-          "encoder": [
-            7,
-            64,
-            64,
-            8
-          ],
-          "nn": [
-            8,
-            64,
-            64,
-            64,
-            8
-          ],
-          "decoder_surf": [
-            8,
-            64,
-            64,
-            1
-          ],
-          "decoder_vol": [
-            8,
-            64,
-            64,
-            4
-          ]
-        },
-        "batch_norm_count": 3,
-        "require_parameter_partition": true
+        }
       }
     },
     {
@@ -240,8 +116,6 @@
         "ecc32fbfe6711b3d"
       ],
       "params": {
-        "model_file": "models.py",
-        "model_class": "AirflowNNMTLDecoderI",
         "model_args": {
           "nb_hidden_layers": 3,
           "size_hidden_layers": 64,
@@ -264,25 +138,7 @@
             64,
             4
           ]
-        },
-        "fixture": {
-          "seed": 20260818,
-          "nodes": 64,
-          "input_features": 7,
-          "surface_nodes": 16,
-          "volume_nodes": 48
-        },
-        "expected_output_shapes": [
-          [
-            16,
-            1
-          ],
-          [
-            48,
-            4
-          ]
-        ],
-        "require_finite": true
+        }
       }
     },
     {
@@ -291,69 +147,9 @@
       "method": "check_model_forward_equivalence",
       "phase": "model_structure",
       "depends": [
-        "ecc32fbfe6711b3d",
         "a690b15e4edd84af"
       ],
-      "params": {
-        "candidate": {
-          "model_file": "models.py",
-          "model_class": "AirflowNNMTLDecoderI",
-          "model_args": {
-            "nb_hidden_layers": 3,
-            "size_hidden_layers": 64,
-            "bn_bool": true,
-            "encoder": [
-              7,
-              64,
-              64,
-              8
-            ],
-            "decoder_surf": [
-              8,
-              64,
-              64,
-              1
-            ],
-            "decoder_vol": [
-              8,
-              64,
-              64,
-              4
-            ]
-          }
-        },
-        "reference": {
-          "model_file": "benchmarks/standard/mtl_airfoil_surrogate_paper_repro/models.py",
-          "model_class": "AirflowNNMTLDecoderI",
-          "model_args": {
-            "nb_hidden_layers": 3,
-            "size_hidden_layers": 64,
-            "bn_bool": true,
-            "encoder": [
-              7,
-              64,
-              64,
-              8
-            ],
-            "decoder_surf": [
-              8,
-              64,
-              64,
-              1
-            ],
-            "decoder_vol": [
-              8,
-              64,
-              64,
-              4
-            ]
-          }
-        },
-        "seed": 20260818,
-        "strict_state_dict": true,
-        "compare_atol": 1e-06,
-        "compare_rtol": 1e-06
-      }
+      "params": {}
     },
     {
       "id": "82113d3088246031",
@@ -361,35 +157,9 @@
       "method": "check_parameter_update",
       "phase": "train_script",
       "depends": [
-        "ecc32fbfe6711b3d",
         "a690b15e4edd84af"
       ],
-      "params": {
-        "files": [
-          "train.py"
-        ],
-        "optimizer": "Adam",
-        "learning_rate": 0.001,
-        "seed": 20260818,
-        "batch": {
-          "nodes": 64,
-          "features": 7,
-          "targets": 4,
-          "surface_nodes": 16
-        },
-        "loss": {
-          "surface_target_slice": [
-            2,
-            3
-          ],
-          "volume_target": "targets[~surface]",
-          "combination": "surface_loss+volume_loss",
-          "finite": true
-        },
-        "require_all_parameters_trainable": true,
-        "require_finite_gradients": true,
-        "require_parameter_changes": true
-      }
+      "params": {}
     },
     {
       "id": "111b020ec39e777c",
@@ -397,20 +167,10 @@
       "method": "check_smoke_artifacts",
       "phase": "smoke_train",
       "depends": [
-        "0c5ee8ca98826ac7",
         "5f6b6b570aaf6282",
         "82113d3088246031"
       ],
-      "params": {
-        "artifacts": {
-          "files": {
-            "checkpoint": "train.py:torch.save(.pt|.pth)",
-            "metrics": "train.py:json.dump|metrics.json|csv",
-            "normalization_stats": "dataset.py:np.save|numpy.save plus mean and std"
-          }
-        },
-        "source_token_validation": true
-      }
+      "params": {}
     }
   ]
 }

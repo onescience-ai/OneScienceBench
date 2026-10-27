@@ -27,26 +27,9 @@
       "phase": "task_artifacts",
       "depends": [],
       "params": {
-        "candidate_filename": "evo2_inference.py",
-        "torch_manual_seed": 20260819,
-        "module_imports": {
-          "candidate": "evo2_inference_submission",
-          "reference": "evo2_inference_reference"
-        },
-        "temporary_work_directory": true,
-        "standard_assets": [
-          {
-            "path": "benchmarks/standard/evo2_inference/inference_config.json",
-            "format": "json_object",
-            "external_assets": {
-              "mount_required": true,
-              "required_keys": [
-                "weights",
-                "dataset"
-              ],
-              "required_string_prefix": "/public/share/"
-            }
-          }
+        "phase": "task_artifacts",
+        "required_files": [
+          "evo2_inference.py"
         ]
       }
     },
@@ -55,46 +38,24 @@
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "ac0b91a7de59affe"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "evo2_inference.py",
-        "reference_file": "benchmarks/standard/evo2_inference/evo2_inference.py",
+        "model_file": "evo2_inference.py",
         "model_class": "Evo2InferenceModel",
-        "constructor_args": {},
-        "reference_model_eval": true,
-        "candidate_model_eval": true,
-        "reference_state_dict": true,
-        "strict_state_dict": true,
-        "checkpoint_fixtures": [
-          {
-            "label": "raw",
-            "payload": "reference_model.state_dict"
-          },
-          {
-            "label": "wrapped",
-            "payload": {
-              "model_state_dict": "reference_model.state_dict"
-            }
-          }
-        ],
-        "load_contract": {
-          "preferred_callable": "load_checkpoint",
-          "exact_state_value_equality": true,
-          "fallback_cli": {
-            "prompt": "ACGT|",
-            "max_new_tokens": 4,
-            "temperature": 1.0,
-            "seed": 7,
-            "device": "cpu",
-            "output_required_keys": [
-              "prompt",
-              "generated_text"
-            ]
-          }
+        "model_args": {},
+        "checkpoint_file": "model.pt",
+        "strict": true,
+        "config_name": null,
+        "cli_args": {
+          "--prompt": "ACGT|",
+          "--max-new-tokens": 4,
+          "--temperature": 1.0,
+          "--top-k": 0,
+          "--top-p": 0.0,
+          "--seed": 7,
+          "--device": "cpu"
         },
-        "source_requires": "torch.load"
+        "timeout_seconds": 180
       }
     },
     {
@@ -102,150 +63,88 @@
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "8fd68d33e94e9e0f"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "evo2_inference.py",
+        "model_file": "evo2_inference.py",
         "model_class": "Evo2InferenceModel",
-        "default_model_contract": {
-          "token_embedding": {
-            "type": "torch.nn.Embedding",
-            "num_embeddings": 47,
-            "embedding_dim": 32
-          },
-          "mamba_layers": {
-            "type": "torch.nn.ModuleList",
-            "length": 2,
-            "element_class": "Evo2MambaBlock"
-          },
-          "final_norm": {
-            "type": "torch.nn.LayerNorm",
-            "normalized_shape": [
-              32
-            ]
-          },
-          "lm_head": {
-            "type": "torch.nn.Linear",
-            "in_features": 32,
-            "out_features": 47
-          }
-        },
-        "block_contract": {
-          "required_attributes": [
-            "norm",
-            "input_projection",
-            "depthwise_conv",
-            "ssm_projection",
-            "delta_projection",
-            "A_log",
-            "D",
-            "output_projection"
-          ],
-          "depthwise_conv": {
-            "type": "torch.nn.Conv1d",
-            "groups_equals_in_channels": true,
-            "in_channels": 32
-          },
-          "probes": [
-            {
-              "name": "input_projection",
-              "input_shape": [
-                2,
-                5,
-                32
-              ],
-              "output_shape": [
-                2,
-                5,
-                64
-              ]
-            },
-            {
-              "name": "depthwise_conv",
-              "input_shape": [
-                2,
-                32,
-                7
-              ],
-              "output_shape": [
-                2,
-                32,
-                4
-              ]
-            },
-            {
-              "name": "ssm_projection",
-              "input_shape": [
-                2,
-                5,
-                32
-              ],
-              "output_shape": [
-                2,
-                5,
-                96
-              ]
-            },
-            {
-              "name": "delta_projection",
-              "input_shape": [
-                2,
-                5,
-                32
-              ],
-              "output_shape": [
-                2,
-                5,
-                32
-              ]
-            },
-            {
-              "name": "output_projection",
-              "input_shape": [
-                2,
-                5,
-                32
-              ],
-              "output_shape": [
-                2,
-                5,
-                32
-              ]
-            },
-            {
-              "name": "norm",
-              "input_shape": [
-                2,
-                5,
-                32
-              ],
-              "output_shape": [
-                2,
-                5,
-                32
+        "model_args": {},
+        "config_name": null,
+        "rules": [
+          {
+            "id": "mamba_stack",
+            "type": "model_contract",
+            "params": {
+              "vocab_size": 47,
+              "hidden_size": 32,
+              "num_layers": 2,
+              "block_class": "Evo2MambaBlock",
+              "required_attributes": [
+                "token_embedding",
+                "final_norm",
+                "lm_head"
               ]
             }
-          ],
-          "parameter_shapes": {
-            "A_log": [
-              32
-            ],
-            "D": [
-              32
-            ]
+          },
+          {
+            "id": "selective_ssm_components",
+            "type": "block_contract",
+            "params": {
+              "block_class": "Evo2MambaBlock",
+              "count": 2,
+              "required_attributes": [
+                "norm",
+                "input_projection",
+                "depthwise_conv",
+                "ssm_projection",
+                "delta_projection",
+                "A_log",
+                "D",
+                "output_projection"
+              ]
+            }
+          },
+          {
+            "id": "block_projection_shapes",
+            "type": "projection_contract",
+            "params": {
+              "block_class": "Evo2MambaBlock",
+              "input_projection_width": 64,
+              "ssm_projection_width": 96
+            }
+          },
+          {
+            "id": "module_order",
+            "type": "named_components",
+            "params": {
+              "attributes": ["token_embedding", "final_norm", "lm_head"]
+            }
+          },
+          {
+            "id": "no_rnn_substitute",
+            "type": "causal_recurrence",
+            "params": {
+              "first_input": [
+                [
+                  0,
+                  1,
+                  2,
+                  3
+                ]
+              ],
+              "second_input": [
+                [
+                  0,
+                  1,
+                  2,
+                  4
+                ]
+              ],
+              "prefix_length": 3,
+              "vocab_size": 47,
+              "atol": 1e-06,
+              "rtol": 1e-06
+            }
           }
-        },
-        "top_level_child_prefix": [
-          "token_embedding",
-          "mamba_layers",
-          "final_norm",
-          "lm_head"
-        ],
-        "forbidden_module_types": [
-          "torch.nn.GRU",
-          "torch.nn.LSTM",
-          "torch.nn.RNN"
         ]
       }
     },
@@ -254,87 +153,63 @@
       "type": "model_forward",
       "method": "check_model_forward_executable",
       "phase": "model_structure",
-      "depends": [
-        "8fd68d33e94e9e0f",
-        "c777066bef258c69"
-      ],
+      "depends": [],
       "params": {
-        "model_source": "strict_checkpoint_loading_contract_check.candidate_model",
-        "execution_mode": "torch.inference_mode",
-        "input_ids": {
-          "values": [
-            [
-              0,
-              1,
-              2,
-              3,
-              4
-            ]
-          ],
-          "dtype": "torch.long"
-        },
-        "logit_contract": {
-          "tensor": true,
-          "shape": [
-            1,
-            5,
-            47
-          ],
-          "finite": true
-        },
-        "vocab_consistency": {
-          "token_embedding_num_embeddings": 47,
-          "lm_head_out_features": 47,
-          "must_equal": true
-        },
-        "causal_prefix": {
-          "first_input": [
-            [
-              0,
-              1,
-              2,
-              3
-            ]
-          ],
-          "second_input": [
-            [
-              0,
-              1,
-              2,
-              4
-            ]
-          ],
-          "compare_time_prefix": 3,
-          "atol": 1e-06,
-          "rtol": 1e-06
-        },
-        "batch_consistency": {
-          "input_ids": [
-            [
-              0,
-              1,
-              2,
-              3
+        "model_file": "evo2_inference.py",
+        "model_class": "Evo2InferenceModel",
+        "model_args": {},
+        "forward_args": {
+          "input_ids": {
+            "values": [
+              [
+                0,
+                1,
+                2,
+                3,
+                4
+              ]
             ],
-            [
-              0,
-              1,
-              2,
-              3
-            ]
-          ],
-          "output_shape": [
-            2,
-            4,
-            47
-          ],
-          "identical_row_indices": [
-            0,
-            1
-          ],
+            "dtype": "long"
+          }
+        },
+        "out_shape": [
+          1,
+          5,
+          47
+        ],
+        "pre_forward_hooks": [],
+        "causal_prefix": {
+          "first_args": {
+            "input_ids": {
+              "values": [
+                [
+                  0,
+                  1,
+                  2,
+                  3
+                ]
+              ],
+              "dtype": "long"
+            }
+          },
+          "second_args": {
+            "input_ids": {
+              "values": [
+                [
+                  0,
+                  1,
+                  2,
+                  4
+                ]
+              ],
+              "dtype": "long"
+            }
+          },
+          "prefix_length": 3,
           "atol": 1e-06,
           "rtol": 1e-06
-        }
+        },
+        "config_name": null
       }
     },
     {
@@ -342,13 +217,29 @@
       "type": "infer_execution",
       "method": "check_infer_execution",
       "phase": "infer_execution",
-      "depends": [
-        "ac0b91a7de59affe",
-        "8fd68d33e94e9e0f"
-      ],
+      "depends": [],
       "params": {
-        "script": "evo2_inference.py",
-        "forbidden_import_root": "onescience",
+        "run_file": "evo2_inference.py",
+        "infer_function": "main",
+        "pre_infer_hooks": [],
+        "infer_args": {
+          "prompt": "ACGT|",
+          "max_new_tokens": 4,
+          "temperature": 1.0,
+          "top_k": 0,
+          "top_p": 0.0,
+          "seed": 7
+        },
+        "output_path": "result.json",
+        "cli_args": {
+          "--prompt": "ACGT|",
+          "--max-new-tokens": 4,
+          "--temperature": 1.0,
+          "--top-k": 0,
+          "--top-p": 0.0,
+          "--seed": 7,
+          "--device": "cpu"
+        },
         "required_cli_flags": [
           "--prompt",
           "--ckpt-dir",
@@ -360,59 +251,13 @@
           "--output-file",
           "--device"
         ],
-        "required_model_methods": [
-          "Evo2InferenceModel.generate",
-          "Evo2InferenceModel.score_sequence"
-        ],
-        "source_requires": {
-          "eval_literal": ".eval()",
-          "any_inference_context_literals": [
-            "inference_mode",
-            "no_grad"
-          ]
-        },
-        "cli_smoke": {
-          "executable": "sys.executable",
-          "cwd": "script.parent",
-          "capture_output": true,
-          "text": true,
-          "timeout_seconds": 180,
-          "checkpoint_fixture": "strict_checkpoint_loading_contract_check.wrapped",
-          "args": {
-            "prompt": "ACGT|",
-            "max_new_tokens": 4,
-            "temperature": 1.0,
-            "seed": 7,
-            "device": "cpu"
-          },
-          "returncode": 0,
-          "json_contract": {
-            "prompt": "ACGT|",
-            "generated_text": {
-              "type": "str",
-              "starts_with": "ACGT|",
-              "length": 9
-            },
-            "mean_log_probability": {
-              "type": "float",
-              "finite": true
-            }
-          }
-        },
-        "determinism": {
-          "runs": 2,
-          "exact_json_object_equality": true
-        },
-        "invalid_generation_args": {
-          "args": {
-            "prompt": "ACGT|",
-            "max_new_tokens": -1,
-            "temperature": 1.0,
-            "seed": 7,
-            "device": "cpu"
-          },
-          "requires_nonzero_returncode": true
-        }
+        "required_methods": ["generate", "score_sequence"],
+        "checkpoint_file": "model.pt",
+        "output_fields": ["prompt", "generated_text", "mean_log_probability"],
+        "model_class": "Evo2InferenceModel",
+        "model_args": {},
+        "score_sequence": "ACGTACGTAC",
+        "timeout_seconds": 180
       }
     },
     {
@@ -420,58 +265,33 @@
       "type": "infer_output_equivalence",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
-      "depends": [
-        "8fd68d33e94e9e0f",
-        "6066d2994154a451"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "evo2_inference.py",
-        "reference_file": "benchmarks/standard/evo2_inference/evo2_inference.py",
-        "model_source": "strict_checkpoint_loading_contract_check",
-        "execution_mode": "torch.inference_mode",
-        "forward_oracle": {
-          "input_ids": [
-            [
-              0,
-              1,
-              2,
-              3,
-              4
-            ]
-          ],
-          "compare_candidate_output": "causal_forward_execution_contract_check.output",
-          "reference_output": "reference_model(input_ids)",
-          "metric": "mean_absolute_error",
-          "metric_name": "logits_mae",
-          "atol": 1e-06,
-          "rtol": 1e-06
+        "candidate": {
+          "run_file": "evo2_inference.py",
+          "model_class": "Evo2InferenceModel",
+          "model_args": {},
+          "forward_method": "forward",
+          "score_method": "score_sequence",
+          "generation_method": "generate"
         },
-        "score_oracle": {
+        "pre_infer_hooks": [],
+        "infer_args": {
           "sequence": "ACGTACGTAC",
-          "candidate": "model.score_sequence(sequence)",
-          "reference": "reference_model.score_sequence(sequence)",
-          "metric": "absolute_error",
-          "metric_name": "log_probability_mae",
-          "maximum_error": 1e-06,
-          "require_candidate_finite": true
+          "vocab": "ACGTN|;:_-abcdefghijklmnopqrstuvwxyz0123456789 "
         },
-        "generation_oracle": {
-          "prompt": "ACGT|",
-          "max_new_tokens": 4,
-          "temperature": 1.0,
-          "seed": 7,
-          "generated_text": {
-            "type": "str",
-            "starts_with": "ACGT|",
-            "length": 9
-          },
-          "score": "model.score_sequence(generated_text)",
-          "require_score_finite": true
+        "reference": {
+          "generation_args": {
+            "prompt": "ACGT|",
+            "max_new_tokens": 4,
+            "temperature": 1.0,
+            "top_k": 0,
+            "top_p": 0.0,
+            "seed": 7
+          }
         },
-        "seed_sensitivity": {
-          "second_seed": 8,
-          "requires_generated_text_different_from_seed_7": true
-        }
+        "atol": 1e-06,
+        "rtol": 1e-06
       }
     }
   ]

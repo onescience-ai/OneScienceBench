@@ -131,7 +131,6 @@
       "method": "check_model_structure",
       "phase": "model_structure",
       "depends": [
-        "8908cce75800e123",
         "8eb1372a9f42c87d"
       ],
       "params": {
@@ -206,8 +205,7 @@
       "method": "check_model_forward_executable",
       "phase": "model_structure",
       "depends": [
-        "e7142f0b494b5b35",
-        "8eb1372a9f42c87d"
+        "e7142f0b494b5b35"
       ],
       "params": {
         "model_file": "nowcastnet_domain_adaptation.py",

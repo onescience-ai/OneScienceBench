@@ -9,7 +9,10 @@
   "evaluation_execution_mode": "scnet",
   "evaluation_backend": "ssh",
   "evaluation_env": {
-    "conda_env": "onescience311"
+    "conda_env": "onescience311",
+    "modules": [
+      "sghpc-mpi-gcc/26.3"
+    ]
   },
   "checks": [
     {

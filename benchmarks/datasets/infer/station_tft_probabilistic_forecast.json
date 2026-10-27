@@ -22,12 +22,10 @@
       "phase": "model_structure",
       "depends": [],
       "params": {
-        "submission_directory": {
-          "environment_variable": "STATION_TFT_PROBABILISTIC_FORECAST_SUBMISSION_DIR",
-          "pythonpath_fallback": true
-        },
-        "required_file": "station_tft_probabilistic_forecast.py",
-        "assertion": "Path.is_file"
+        "phase": "model_structure",
+        "required_files": [
+          "station_tft_probabilistic_forecast.py"
+        ]
       }
     },
     {
@@ -35,38 +33,15 @@
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "1cc5adcd40af7281"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_tft_probabilistic_forecast.py",
-        "reference_file": "benchmarks/standard/station_tft_probabilistic_forecast/station_tft_probabilistic_forecast.py",
+        "checkpoint_file": "good.pt",
+        "config_name": "",
+        "malformed_checkpoint_file": "bad.pt",
+        "model_args": {},
         "model_class": "TFTProbabilisticForecastModel",
-        "constructor_args": {},
-        "checkpoint_fixtures": [
-          {
-            "filename": "good.pt",
-            "payload": {
-              "model_state_dict": "reference_model.state_dict()"
-            }
-          },
-          {
-            "filename": "bad.pt",
-            "payload": {}
-          }
-        ],
-        "loader": {
-          "module_function": "load_checkpoint",
-          "args": [
-            "checkpoint_path",
-            "cpu"
-          ]
-        },
-        "assertions": {
-          "state_dict_keys_equal": true,
-          "state_tensor_values_equal": true,
-          "malformed_checkpoint_must_raise": "any_exception"
-        }
+        "model_file": "station_tft_probabilistic_forecast.py",
+        "strict": true
       }
     },
     {
@@ -74,28 +49,57 @@
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "1cc5adcd40af7281"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_tft_probabilistic_forecast.py",
+        "config_name": "",
+        "model_args": {},
         "model_class": "TFTProbabilisticForecastModel",
-        "constructor_args": {},
-        "top_level_module_order": [
-          "variable_encoder",
-          "time_encoder",
-          "temporal_attention",
-          "quantile_head"
-        ],
-        "assertions": {
-          "temporal_attention.batch_first": true,
-          "quantile_head.out_features": 12,
-          "quantile_levels": [
-            0.1,
-            0.5,
-            0.9
-          ]
-        }
+        "model_file": "station_tft_probabilistic_forecast.py",
+        "rules": [
+          {
+            "id": "module_order",
+            "type": "required_modules",
+            "params": {
+              "names": [
+                "variable_encoder",
+                "time_encoder",
+                "temporal_attention",
+                "quantile_head"
+              ]
+            }
+          },
+          {
+            "id": "attention_batch_first",
+            "type": "attribute_equals",
+            "params": {
+              "target_path": "temporal_attention",
+              "attribute": "batch_first",
+              "value": true
+            }
+          },
+          {
+            "id": "quantile_head",
+            "type": "attribute_equals",
+            "params": {
+              "target_path": "quantile_head",
+              "attribute": "out_features",
+              "value": 12
+            }
+          },
+          {
+            "id": "quantile_levels",
+            "type": "attribute_equals",
+            "params": {
+              "target_path": "",
+              "attribute": "quantile_levels",
+              "value": [
+                0.1,
+                0.5,
+                0.9
+              ]
+            }
+          }
+        ]
       }
     },
     {
@@ -103,15 +107,13 @@
       "type": "model_interface",
       "method": "check_interface",
       "phase": "model_structure",
-      "depends": [
-        "1cc5adcd40af7281"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_tft_probabilistic_forecast.py",
-        "required_class_callables": [
-          "TFTProbabilisticForecastModel.predict"
+        "files": [
+          "station_tft_probabilistic_forecast.py"
         ],
-        "required_module_callables": [
+        "required_interfaces": [
+          "TFTProbabilisticForecastModel.predict",
           "load_checkpoint"
         ]
       }
@@ -121,14 +123,14 @@
       "type": "model_method_correctness",
       "method": "check_method_correctness",
       "phase": "model_structure",
-      "depends": [
-        "1cc5adcd40af7281",
-        "149234dc039a9ff3",
-        "c053b00f78a04728"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_tft_probabilistic_forecast.py",
-        "model_class": "TFTProbabilisticForecastModel",
+        "candidate": {
+          "file": "station_tft_probabilistic_forecast.py",
+          "class": "TFTProbabilisticForecastModel",
+          "args": {},
+          "method": "predict"
+        },
         "output_probe": {
           "method": "predict",
           "model_eval": true,
@@ -288,56 +290,48 @@
       "type": "infer_output_equivalence",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
-      "depends": [
-        "1cc5adcd40af7281",
-        "f02177e55f2e6382",
-        "0539eb0ddc01578f"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_tft_probabilistic_forecast.py",
-        "reference_file": "benchmarks/standard/station_tft_probabilistic_forecast/station_tft_probabilistic_forecast.py",
-        "model_class": "TFTProbabilisticForecastModel",
-        "constructor_args": {},
-        "model_eval": true,
-        "candidate_initialization": {
-          "state_dict_source": "reference_model.state_dict()",
-          "strict": true
+        "candidate": {
+          "file": "station_tft_probabilistic_forecast.py",
+          "class": "TFTProbabilisticForecastModel",
+          "args": {},
+          "method": "predict"
         },
-        "forecast_batch": {
-          "values": "torch.linspace(-1,1,96).reshape(2,12,4)",
-          "time_features": "torch.zeros(2,12,3)",
-          "observed_mask": {
-            "generator": "torch.ones",
-            "shape": [
-              2,
-              12,
-              4
-            ],
-            "dtype": "torch.bool"
+        "infer_args": {
+          "batch": {
+            "values": {
+              "generator": "torch.linspace",
+              "start": -1.0,
+              "end": 1.0,
+              "steps": 96,
+              "reshape": [
+                2,
+                12,
+                4
+              ]
+            },
+            "time_features": {
+              "generator": "torch.zeros",
+              "shape": [
+                2,
+                12,
+                3
+              ]
+            },
+            "observed_mask": {
+              "generator": "torch.ones",
+              "shape": [
+                2,
+                12,
+                4
+              ],
+              "dtype": "torch.bool"
+            }
           }
         },
-        "target": "torch.zeros_like(reference_output.point.detach())",
-        "quantile_levels": [
-          0.1,
-          0.5,
-          0.9
-        ],
-        "metrics": [
-          {
-            "name": "pinball_loss",
-            "candidate_quantiles": "candidate_output.quantiles.detach()",
-            "reference_quantiles": "reference_output.quantiles.detach()",
-            "formula": "mean(max(levels*(target.unsqueeze(-1)-quantiles),(levels-1)*(target.unsqueeze(-1)-quantiles)))",
-            "absolute_difference_maximum": 1e-06
-          },
-          {
-            "name": "mae",
-            "candidate_point": "candidate_output.point.detach()",
-            "reference_point": "reference_output.point.detach()",
-            "formula": "mean(abs(point-target))",
-            "absolute_difference_maximum": 1e-06
-          }
-        ]
+        "pre_infer_hooks": [],
+        "reference": null
       }
     }
   ]

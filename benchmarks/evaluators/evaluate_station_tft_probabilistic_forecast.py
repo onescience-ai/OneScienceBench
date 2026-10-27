@@ -71,73 +71,59 @@ def finite(x):
 
 
 def check_files(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """
-    Checkpoint implementation.
-    """
-    CHECKPOINT_NAMES = ["file:required"]
+    params = config.get("params", config)
+    required_files = params.get("required_files", [])
+    phase = params.get("phase", "files")
+    if isinstance(required_files, str):
+        required_files = [required_files]
+    if not required_files:
+        return [("files.config", False, "required_files is missing or empty")]
+    CHECKPOINT_NAMES = ["file:required"] if len(required_files) == 1 else [
+        f"{phase}.{name}" for name in required_files
+    ]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
-    try:
-        filename = "station_tft_probabilistic_forecast.py"
-        sub = CANDIDATE_DIR
-        ok = (sub / filename).is_file()
-        detail = str(sub / filename)
-        update_check(current_index, ok, detail)
-        current_index += 1
-    except Exception:
-        update_check(current_index, False, traceback.format_exc())
-
+    for index, relative in enumerate(required_files):
+        try:
+            path = (CANDIDATE_DIR / relative).resolve()
+            valid = path.is_file()
+            if valid and path.suffix.lower() not in {".pt", ".pth", ".bin"}:
+                valid = bool(path.read_text(encoding="utf-8").strip())
+            checks[index] = (CHECKPOINT_NAMES[index], valid, str(path))
+        except Exception:
+            checks[index] = (CHECKPOINT_NAMES[index], False, traceback.format_exc())
     return checks
 
 
 def check_checkpoint_loading(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """
-    Checkpoint implementation.
-    """
+    params = config.get("params", config)
     CHECKPOINT_NAMES = [
         "checkpoint_loading:state_dict_keys_equal",
         "checkpoint_loading:state_tensor_values_equal",
         "checkpoint_loading:malformed_checkpoint_must_raise",
     ]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
     current_index = 0
     try:
-        cls = "TFTProbabilisticForecastModel"
-        candidate_path = (CANDIDATE_DIR / "station_tft_probabilistic_forecast.py").resolve()
-        standard_path = (REFERENCE_DIR / "station_tft_probabilistic_forecast.py").resolve()
-        candidate = load_module("station_tft_probabilistic_forecast_candidate", candidate_path)
-        standard = load_module("station_tft_probabilistic_forecast_standard", standard_path)
+        model_file = params["model_file"]
+        model_class_name = params["model_class"]
+        candidate = load_module("station_tft_probabilistic_forecast_candidate", (CANDIDATE_DIR / model_file).resolve())
+        model_cls = getattr(candidate, model_class_name)
+        candidate_config = _load_candidate_config(params.get("config_name")) if params.get("config_name") else {}
+        context = {"config": candidate_config}
+        resolved_args = _resolve_args(params.get("model_args", {}), context)
+        source_model = model_cls(**resolved_args)
         with tempfile.TemporaryDirectory() as td:
-            good, bad = Path(td) / "good.pt", Path(td) / "bad.pt"
-            ref = getattr(standard, cls)()
+            good = Path(td) / Path(params.get("checkpoint_file", "good.pt")).name
+            bad = Path(td) / Path(params.get("malformed_checkpoint_file", "bad.pt")).name
             t = torch()
-            t.save({"model_state_dict": ref.state_dict()}, good)
+            source_state = source_model.state_dict()
+            t.save({"model_state_dict": source_state}, good)
             loaded = candidate.load_checkpoint(good, "cpu")
-            state_dict_keys_equal = tuple(loaded.state_dict()) == tuple(ref.state_dict())
-            state_tensor_values_equal = all(
-                t.equal(loaded.state_dict()[k], v) for k, v in ref.state_dict().items()
-            )
-            same = state_dict_keys_equal and state_tensor_values_equal
-            update_check(
-                current_index,
-                state_dict_keys_equal,
-                json.dumps({"state_dict_keys_equal": state_dict_keys_equal}, sort_keys=True),
-            )
-            current_index += 1
-            update_check(
-                current_index,
-                state_tensor_values_equal,
-                json.dumps({"state_tensor_values_equal": state_tensor_values_equal}, sort_keys=True),
-            )
-            current_index += 1
+            loaded_state = loaded.state_dict()
+            keys_ok = tuple(loaded_state.keys()) == tuple(source_state.keys())
+            checks[0] = (CHECKPOINT_NAMES[0], keys_ok, json.dumps({"keys_equal": keys_ok}, sort_keys=True))
+            values_ok = keys_ok and all(t.equal(loaded_state[key], value) for key, value in source_state.items())
+            checks[1] = (CHECKPOINT_NAMES[1], values_ok, json.dumps({"values_equal": values_ok}, sort_keys=True))
             t.save({}, bad)
             try:
                 candidate.load_checkpoint(bad, "cpu")
@@ -145,23 +131,14 @@ def check_checkpoint_loading(config: Dict, caller_globals=None, caller_locals=No
                 rejected = True
             else:
                 rejected = False
-            ok = same and rejected
-            update_check(
-                current_index,
-                rejected,
-                json.dumps({"malformed_rejected": rejected}, sort_keys=True),
-            )
-            current_index += 1
+            checks[2] = (CHECKPOINT_NAMES[2], rejected, json.dumps({"malformed_rejected": rejected, "strict": params.get("strict", True)}, sort_keys=True))
     except Exception:
-        update_check(current_index, False, traceback.format_exc())
-
+        checks[current_index] = (CHECKPOINT_NAMES[current_index], False, traceback.format_exc())
     return checks
 
 
 def check_model_structure(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """
-    Checkpoint implementation.
-    """
+    params = config.get("params", config)
     CHECKPOINT_NAMES = [
         "model_structure:module_order",
         "model_structure:attention_batch_first",
@@ -169,89 +146,66 @@ def check_model_structure(config: Dict, caller_globals=None, caller_locals=None)
         "model_structure:quantile_levels",
     ]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
     try:
-        cls = "TFTProbabilisticForecastModel"
-        candidate_path = (CANDIDATE_DIR / "station_tft_probabilistic_forecast.py").resolve()
-        candidate = load_module("station_tft_probabilistic_forecast_candidate", candidate_path)
-        model = getattr(candidate, cls)()
-        modules = list(getattr(model, "_modules", {}))
-        expected = ["variable_encoder", "time_encoder", "temporal_attention", "quantile_head"]
-        module_order_ok = modules == expected
-        update_check(
-            current_index,
-            module_order_ok,
-            json.dumps({"actual": modules, "expected": expected}, sort_keys=True),
-        )
-        current_index += 1
-        attention_batch_first_ok = model.temporal_attention.batch_first is True
-        update_check(
-            current_index,
-            attention_batch_first_ok,
-            json.dumps({"batch_first": model.temporal_attention.batch_first}, sort_keys=True),
-        )
-        current_index += 1
-        quantile_head_ok = model.quantile_head.out_features == 12
-        update_check(
-            current_index,
-            quantile_head_ok,
-            json.dumps({"out_features": model.quantile_head.out_features}, sort_keys=True),
-        )
-        current_index += 1
-        quantile_levels_ok = tuple(model.quantile_levels) == (0.1, 0.5, 0.9)
-        update_check(
-            current_index,
-            quantile_levels_ok,
-            json.dumps({"levels": model.quantile_levels}, sort_keys=True),
-        )
-        current_index += 1
+        candidate = load_module("station_tft_probabilistic_forecast_candidate", (CANDIDATE_DIR / params["model_file"]).resolve())
+        model_cls = getattr(candidate, params["model_class"])
+        candidate_config = _load_candidate_config(params.get("config_name")) if params.get("config_name") else {}
+        context = {"config": candidate_config, **candidate_config}
+        model = model_cls(**_resolve_args(params.get("model_args", {}), context)).eval()
     except Exception:
-        update_check(current_index, False, traceback.format_exc())
-
+        checks[0] = (CHECKPOINT_NAMES[0], False, traceback.format_exc())
+        return checks
+    rules = params.get("rules", [])
+    for index, rule in enumerate(rules[:len(CHECKPOINT_NAMES)]):
+        try:
+            rule_params = rule.get("params", {})
+            if rule.get("type") == "required_modules":
+                actual = set(dict(model.named_children()))
+                expected = set(rule_params.get("names", []))
+                passed = expected.issubset(actual)
+                message = json.dumps({"required": sorted(expected), "actual": sorted(actual)}, sort_keys=True)
+            else:
+                target = model
+                for part in rule_params.get("target_path", "").split(".") if rule_params.get("target_path", "") else []:
+                    target = target[int(part)] if part.isdigit() else getattr(target, part)
+                actual = getattr(target, rule_params["attribute"])
+                expected = rule_params.get("value")
+                passed = actual == expected
+                if isinstance(actual, tuple):
+                    passed = list(actual) == expected
+                message = json.dumps({"actual": actual, "expected": expected}, sort_keys=True, default=str)
+            checks[index] = (CHECKPOINT_NAMES[index], bool(passed), message)
+        except Exception:
+            checks[index] = (CHECKPOINT_NAMES[index], False, traceback.format_exc())
     return checks
 
 
 def check_interface(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """
-    Checkpoint implementation.
-    """
+    params = config.get("params", config)
+    interfaces = params.get("required_interfaces", [])
     CHECKPOINT_NAMES = [
-        "evaluation_interface:predict",
-        "evaluation_interface:module_load_checkpoint",
+        "evaluation_interface:predict" if "predict" in name else "evaluation_interface:module_load_checkpoint"
+        for name in interfaces
     ]
     checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
-    try:
-        cls = "TFTProbabilisticForecastModel"
-        candidate_path = (CANDIDATE_DIR / "station_tft_probabilistic_forecast.py").resolve()
-        candidate = load_module("station_tft_probabilistic_forecast_candidate", candidate_path)
-        obj = getattr(candidate, cls, None)
-        name = "predict"
-        callable_method = callable(getattr(obj, name, None))
-        update_check(
-            current_index,
-            callable_method,
-            json.dumps({"class": cls, "callable": callable_method}, sort_keys=True),
-        )
-        current_index += 1
-        callable_loader = callable(getattr(candidate, "load_checkpoint", None))
-        update_check(
-            current_index,
-            callable_loader,
-            json.dumps({"callable": callable_loader}, sort_keys=True),
-        )
-        current_index += 1
-    except Exception:
-        update_check(current_index, False, traceback.format_exc())
-
+    modules = []
+    for filename in params.get("files", []):
+        try:
+            modules.append(load_module("station_tft_probabilistic_forecast_interface", (CANDIDATE_DIR / filename).resolve()))
+        except Exception:
+            continue
+    for index, interface in enumerate(interfaces):
+        try:
+            found = False
+            for module in modules:
+                if "." in interface:
+                    class_name, method_name = interface.split(".", 1)
+                    found = found or callable(getattr(getattr(module, class_name, None), method_name, None))
+                else:
+                    found = found or callable(getattr(module, interface, None))
+            checks[index] = (CHECKPOINT_NAMES[index], found, f"{interface}: {found}")
+        except Exception:
+            checks[index] = (CHECKPOINT_NAMES[index], False, traceback.format_exc())
     return checks
 
 

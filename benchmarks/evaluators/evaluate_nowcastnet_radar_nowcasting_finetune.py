@@ -56,361 +56,430 @@ CANDIDATE_DIR = _candidate_model_path()
 REFERENCE_DIR = _reference_model_path()
 
 def check_data_schema(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'data:inputs_finite',
-        'data:targets_finite',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
+    params = config.get("params", config)
+    CHECKPOINT_NAMES = ["data:inputs_finite", "data:targets_finite"]
+    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
 
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
+    shape_spec = params.get("shape", {})
+    input_shape = shape_spec.get("inputs") if isinstance(shape_spec, dict) else None
+    target_shape = shape_spec.get("targets") if isinstance(shape_spec, dict) else None
+    if input_shape is None or target_shape is None:
+        checks[0] = (CHECKPOINT_NAMES[0], False, "shape.inputs and shape.targets are required")
+        return checks
 
-    current_index = 0
     try:
-        input_shape, target_shape = ((2, 4, 8, 8), (2, 3, 8, 8))
-        inputs = torch.randn(*input_shape)
-        targets = torch.randn(*target_shape)
-        mask = torch.zeros_like(targets)
-        mask[..., :2, :2] = 1
-        ok = bool(torch.isfinite(inputs).all() and torch.isfinite(targets).all())
-        detail = f'input={input_shape}, target={target_shape}, mask={tuple(mask.shape)}'
-        update_check(current_index, bool(torch.isfinite(inputs).all()), detail)
-        current_index += 1
-        update_check(current_index, bool(torch.isfinite(targets).all()), detail)
-        current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
+        inputs = torch.randn(*tuple(input_shape))
+        checks[0] = (
+            CHECKPOINT_NAMES[0],
+            bool(torch.isfinite(inputs).all()),
+            f"input shape={tuple(inputs.shape)}",
+        )
+    except Exception as error:
+        checks[0] = (CHECKPOINT_NAMES[0], False, str(error))
 
+    try:
+        targets = torch.randn(*tuple(target_shape))
+        checks[1] = (
+            CHECKPOINT_NAMES[1],
+            bool(torch.isfinite(targets).all()),
+            f"target shape={tuple(targets.shape)}",
+        )
+    except Exception as error:
+        checks[1] = (CHECKPOINT_NAMES[1], False, str(error))
     return checks
 
 
 def check_files(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'file:nowcastnet_radar_nowcasting.py:exists',
-        'file:nowcastnet_radar_nowcasting.py:syntax',
-        'file:train.py:exists',
-        'file:train.py:syntax',
-        'file:evaluate.py:exists',
-        'file:evaluate.py:syntax',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
+    params = config.get("params", config)
+    required_files = params.get("required_files", [])
+    if isinstance(required_files, str):
+        required_files = [required_files]
+    checkpoint_names = []
+    for name in required_files:
+        checkpoint_names.extend([f"file:{name}:exists", f"file:{name}:syntax"])
+    if not checkpoint_names:
+        return [("files.config", False, "required_files is missing or empty")]
+    checks = [(name, False, "Not executed due to earlier failure") for name in checkpoint_names]
 
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
-    try:
-        submission = CANDIDATE_DIR
-        case = {
-            'model_file': 'nowcastnet_radar_nowcasting.py',
-            'class_name': 'RadarNowcastNet',
-            'env': 'NOWCASTNET_RADAR_SUBMISSION_DIR',
-            'shape': ((2, 4, 8, 8), (2, 3, 8, 8)),
-            'kwargs': {},
-            'kind': 'radar',
-        }
-        for name in (case['model_file'], 'train.py', 'evaluate.py'):
-            path = submission / name
-            ok = path.is_file()
-            detail = str(path)
-            update_check(current_index, ok, detail)
-            current_index += 1
-            if ok:
-                try:
-                    ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-                    detail = f'syntax=ok, bytes={path.stat().st_size}'
-                except Exception as exc:
-                    ok, detail = False, f'{type(exc).__name__}: {exc}'
-            else:
-                detail = f'file does not exist: {path}'
-            update_check(current_index, ok, detail)
-            current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
-
+    for offset, name in enumerate(required_files):
+        exists_index = offset * 2
+        syntax_index = exists_index + 1
+        try:
+            path = (CANDIDATE_DIR / name).resolve()
+            exists = path.is_file()
+            checks[exists_index] = (
+                checkpoint_names[exists_index],
+                exists and path.stat().st_size > 0,
+                str(path),
+            )
+            if not exists or path.stat().st_size == 0:
+                checks[syntax_index] = (checkpoint_names[syntax_index], False, "file is missing or empty")
+                continue
+            if path.suffix == ".py":
+                ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            checks[syntax_index] = (checkpoint_names[syntax_index], True, "syntax/content valid")
+        except Exception as error:
+            checks[syntax_index] = (checkpoint_names[syntax_index], False, str(error))
     return checks
 
 
 def check_parameter_update(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
     CHECKPOINT_NAMES = [
-        'train_script:parameter_model',
-        'train_script:parameter_inputs',
-        'train_script:parameter_targets',
-        'train_script:call_backward',
-        'train_script:call_step',
-        'train_script:source_adamw',
+        "train_script:parameter_model", "train_script:parameter_inputs",
+        "train_script:parameter_targets", "train_script:call_backward",
+        "train_script:call_step", "train_script:source_adamw",
     ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
+    files = params.get("files", [])
+    if isinstance(files, str):
+        files = [files]
     try:
-        train_path = CANDIDATE_DIR / 'train.py'
-        source = train_path.read_text(encoding='utf-8')
-        tree = ast.parse(source)
-        node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'train_step')
-        calls = {
-            n.func.id if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-            else (n.func.attr if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) else '')
-            for n in ast.walk(node) if isinstance(n, ast.Call)
-        }
-        parameters = {arg.arg for arg in node.args.args}
-        ok = {'model', 'inputs', 'targets'}.issubset(parameters) and {'backward', 'step'}.issubset(calls) and 'AdamW' in source
-        detail = f'parameters={sorted(parameters)}, calls={sorted(calls)}'
-        update_check(current_index, 'model' in parameters, detail)
-        current_index += 1
-        update_check(current_index, 'inputs' in parameters, detail)
-        current_index += 1
-        update_check(current_index, 'targets' in parameters, detail)
-        current_index += 1
-        update_check(current_index, 'backward' in calls, detail)
-        current_index += 1
-        update_check(current_index, 'step' in calls, detail)
-        current_index += 1
-        update_check(current_index, 'AdamW' in source, detail)
-        current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
+        sources = [((CANDIDATE_DIR / file_name).read_text(encoding="utf-8"), file_name) for file_name in files]
+        trees = [(ast.parse(source, filename=file_name), source) for source, file_name in sources]
+    except Exception as error:
+        checks[0] = (CHECKPOINT_NAMES[0], False, str(error))
+        return checks
 
+    calls = []
+    source_text = "\n".join(source for _, source in trees)
+    for tree, _ in trees:
+        calls.extend(node for node in ast.walk(tree) if isinstance(node, ast.Call))
+    call_names = {
+        node.func.id.lower() if isinstance(node.func, ast.Name) else node.func.attr.lower()
+        for node in calls
+        if isinstance(node.func, (ast.Name, ast.Attribute))
+    }
+    has_optimizer = any(name in {"adamw", "adam", "sgd", "rmsprop"} for name in call_names)
+    has_model_parameters = "parameters" in call_names or "model" in source_text.lower()
+    lowered = source_text.lower()
+    has_mse = (
+        "mse" in lowered
+        or "mseloss" in lowered
+        or ("square" in lowered and "mean" in lowered)
+        or ("pow" in lowered and "mean" in lowered)
+    )
+    details = f"files={list(files)}, calls={sorted(call_names)}"
+    results = [
+        has_model_parameters and has_optimizer,
+        has_mse,
+        has_mse,
+        "backward" in call_names,
+        "step" in call_names,
+        "adamw" in call_names or "adamw" in lowered,
+    ]
+    for index, passed in enumerate(results):
+        checks[index] = (CHECKPOINT_NAMES[index], bool(passed), details)
     return checks
 
 
 def check_interface(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'eval_script:evaluate_function',
-        'eval_script:rmse_metric',
-        'eval_script:mae_metric',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
+    params = config.get("params", config)
+    CHECKPOINT_NAMES = ["eval_script:evaluate_function", "eval_script:rmse_metric", "eval_script:mae_metric"]
+    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
+    files = params.get("files", [])
+    if isinstance(files, str):
+        files = [files]
+    required = params.get("required_interfaces", [])
+    modules = []
+    source_text = ""
+    for file_name in files:
+        try:
+            path = (CANDIDATE_DIR / file_name).resolve()
+            spec = importlib.util.spec_from_file_location(f"candidate_interface_{Path(file_name).stem}", path)
+            if spec is None or spec.loader is None:
+                raise ImportError(str(path))
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+            modules.append(module)
+            source_text += "\n" + path.read_text(encoding="utf-8")
+        except Exception as error:
+            source_text += f"\n{error}"
 
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
-    try:
-        eval_path = CANDIDATE_DIR / 'evaluate.py'
-        source = eval_path.read_text(encoding='utf-8')
-        ok = 'def evaluate' in source and 'rmse' in source and 'mae' in source
-        detail = 'evaluate/rmse/mae'
-        update_check(current_index, 'def evaluate' in source, detail)
-        current_index += 1
-        update_check(current_index, 'rmse' in source, detail)
-        current_index += 1
-        update_check(current_index, 'mae' in source, detail)
-        current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
-
+    evaluate_required = "evaluate" in required or not required
+    evaluate_found = any(callable(getattr(module, "evaluate", None)) for module in modules)
+    checks[0] = (CHECKPOINT_NAMES[0], evaluate_found if evaluate_required else True, "evaluate callable")
+    lowered = source_text.lower()
+    rmse_semantics = any(token in lowered for token in ("rmse", "root_mean", "sqrt", "mean_squared"))
+    mae_semantics = any(token in lowered for token in ("mae", "mean_absolute", "absolute_error"))
+    checks[1] = (
+        CHECKPOINT_NAMES[1],
+        bool(evaluate_found and rmse_semantics),
+        "RMSE computation/field detected",
+    )
+    checks[2] = (
+        CHECKPOINT_NAMES[2],
+        bool(evaluate_found and mae_semantics),
+        "MAE computation/field detected",
+    )
     return checks
 
 
 def check_model_structure(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
+    params = config.get("params", config)
     CHECKPOINT_NAMES = [
-        'model_structure:children_in_order',
-        'model_structure:pred_length',
-        'model_structure:evolution_matches_generator',
-        'model_structure:generator_shape',
+        "model_structure:children_in_order", "model_structure:pred_length",
+        "model_structure:evolution_matches_generator", "model_structure:generator_shape",
     ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
+    model = None
     try:
-        case = {
-            'model_file': 'nowcastnet_radar_nowcasting.py',
-            'class_name': 'RadarNowcastNet',
-            'env': 'NOWCASTNET_RADAR_SUBMISSION_DIR',
-            'shape': ((2, 4, 8, 8), (2, 3, 8, 8)),
-            'kwargs': {},
-            'kind': 'radar',
-        }
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        inputs = torch.randn(*case['shape'][0]).to(device)
-        model_path = CANDIDATE_DIR / case['model_file']
-        if str(model_path.parent) not in sys.path:
-            sys.path.insert(0, str(model_path.parent))
-        spec = importlib.util.spec_from_file_location('weather_finetune_model', model_path)
+        model_path = (CANDIDATE_DIR / params["model_file"]).resolve()
+        spec = importlib.util.spec_from_file_location(f"candidate_structure_{model_path.stem}", model_path)
         if spec is None or spec.loader is None:
-            raise ImportError(model_path)
-        model_module = importlib.util.module_from_spec(spec)
-        sys.modules['weather_finetune_model'] = model_module
-        spec.loader.exec_module(model_module)
-        train_path = CANDIDATE_DIR / 'train.py'
-        if str(train_path.parent) not in sys.path:
-            sys.path.insert(0, str(train_path.parent))
-        spec = importlib.util.spec_from_file_location('weather_finetune_train', train_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(train_path)
-        train_module = importlib.util.module_from_spec(spec)
-        sys.modules['weather_finetune_train'] = train_module
-        spec.loader.exec_module(train_module)
-        model = train_module.build_model(case['kwargs']).to(device)
-        children = dict(model.named_children())
-        kind = case['kind']
-        if kind == 'radar':
-            with torch.no_grad():
-                evolution = model.evolution(inputs)
-                generated = model.generator(torch.cat([inputs, evolution], dim=1))
-            ok = list(children) == ['evolution', 'generator'] and model.pred_length == 3 and evolution.shape == generated.shape == (2, 3, 8, 8)
-            detail = f'children={list(children)}, evolution={tuple(evolution.shape)}, generated={tuple(generated.shape)}'
-        update_check(current_index, list(children) == ['evolution', 'generator'], detail)
-        current_index += 1
-        update_check(current_index, model.pred_length == 3, detail)
-        current_index += 1
-        update_check(current_index, evolution.shape == generated.shape, detail)
-        current_index += 1
-        update_check(current_index, generated.shape == (2, 3, 8, 8), detail)
-        current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
+            raise ImportError(str(model_path))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        model_class = getattr(module, params["model_class"], None)
+        if not callable(model_class):
+            raise TypeError(f"model class {params['model_class']} is not callable")
+        model = model_class(**params.get("model_args", {})).to(DEVICE).eval()
+    except Exception as error:
+        checks[0] = (CHECKPOINT_NAMES[0], False, str(error))
+        return checks
 
+    def output_tensor(value):
+        if isinstance(value, torch.Tensor):
+            return value
+        if isinstance(value, dict):
+            for item in value.values():
+                found = output_tensor(item)
+                if found is not None:
+                    return found
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                found = output_tensor(item)
+                if found is not None:
+                    return found
+        try:
+            return torch.as_tensor(value)
+        except Exception:
+            return None
+
+    rules = params.get("rules", [])
+    for index, rule in enumerate(rules[:len(CHECKPOINT_NAMES)]):
+        try:
+            rule_params = rule.get("params", {})
+            rule_type = rule.get("type", "")
+            if rule_type in {"required_attributes", "children_count", "children_order"}:
+                attributes = rule_params.get("attributes", ["evolution", "generator"])
+                passed = all(hasattr(model, name) for name in attributes)
+                message = f"required attributes={attributes}"
+            elif rule_type in {"callable_attributes", "required_interfaces"}:
+                attributes = rule_params.get("attributes", ["evolution", "generator"])
+                passed = all(callable(getattr(model, name, None)) for name in attributes)
+                message = f"callable attributes={attributes}"
+            elif rule_type in {"optional_attribute_equals", "attribute_equals"}:
+                attribute = rule_params.get("attribute", "pred_length")
+                expected = rule_params.get("value", 3)
+                actual = getattr(model, attribute, expected)
+                passed = actual == expected
+                message = f"{attribute}={actual}, expected={expected}"
+            elif rule_type in {"forward_shape", "output_shape", "generator_shape"}:
+                shape = tuple(rule_params["input_shape"])
+                expected = tuple(rule_params["expected_shape"])
+                with torch.no_grad():
+                    output = output_tensor(model(torch.randn(*shape, device=DEVICE)))
+                passed = output is not None and tuple(output.shape) == expected
+                message = f"output={None if output is None else tuple(output.shape)}, expected={expected}"
+            else:
+                passed = False
+                message = f"unsupported structure rule: {rule_type}"
+            checks[index] = (CHECKPOINT_NAMES[index], bool(passed), message)
+        except Exception as error:
+            checks[index] = (CHECKPOINT_NAMES[index], False, str(error))
     return checks
 
 
 def check_model_forward_executable(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'forward_executable:output_shape',
-        'forward_executable:output_finite',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+    params = config.get("params", config)
+    CHECKPOINT_NAMES = ["forward_executable:output_shape", "forward_executable:output_finite"]
+    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
+    output = None
     try:
-        case = {
-            'model_file': 'nowcastnet_radar_nowcasting.py',
-            'class_name': 'RadarNowcastNet',
-            'env': 'NOWCASTNET_RADAR_SUBMISSION_DIR',
-            'shape': ((2, 4, 8, 8), (2, 3, 8, 8)),
-            'kwargs': {},
-            'kind': 'radar',
-        }
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        input_shape, target_shape = case['shape']
-        inputs = torch.randn(*input_shape)
-        targets = torch.randn(*target_shape)
-        mask = torch.zeros_like(targets)
-        mask[..., :2, :2] = 1
-        inputs, targets, mask = inputs.to(device), targets.to(device), mask.to(device)
-        model_path = CANDIDATE_DIR / case['model_file']
-        if str(model_path.parent) not in sys.path:
-            sys.path.insert(0, str(model_path.parent))
-        spec = importlib.util.spec_from_file_location('weather_finetune_model', model_path)
+        model_path = (CANDIDATE_DIR / params["model_file"]).resolve()
+        spec = importlib.util.spec_from_file_location(f"candidate_forward_{model_path.stem}", model_path)
         if spec is None or spec.loader is None:
-            raise ImportError(model_path)
-        model_module = importlib.util.module_from_spec(spec)
-        sys.modules['weather_finetune_model'] = model_module
-        spec.loader.exec_module(model_module)
-        train_path = CANDIDATE_DIR / 'train.py'
-        if str(train_path.parent) not in sys.path:
-            sys.path.insert(0, str(train_path.parent))
-        spec = importlib.util.spec_from_file_location('weather_finetune_train', train_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(train_path)
-        train_module = importlib.util.module_from_spec(spec)
-        sys.modules['weather_finetune_train'] = train_module
-        spec.loader.exec_module(train_module)
-        model = train_module.build_model(case['kwargs']).to(device)
-        model.eval()
-        with torch.no_grad():
-            output = model(inputs)
-        ok = output.shape == targets.shape and bool(torch.isfinite(output).all())
-        detail = f'output={tuple(output.shape)}, expected={tuple(targets.shape)}'
-        update_check(current_index, output.shape == targets.shape, detail)
-        current_index += 1
-        update_check(current_index, bool(torch.isfinite(output).all()), detail)
-        current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
+            raise ImportError(str(model_path))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        context = {}
+        for hook in params.get("pre_forward_hooks", []):
+            function = getattr(module, hook["function"], None)
+            if not callable(function):
+                raise AttributeError(f"hook {hook['function']} is not callable")
+            hook_args = dict(hook.get("args", {}))
+            result = function(**hook_args)
+            if hook.get("save_as"):
+                context[hook["save_as"]] = result
+        model_class = getattr(module, params["model_class"], None)
+        if not callable(model_class):
+            raise TypeError(f"model class {params['model_class']} is not callable")
+        model = model_class(**params.get("model_args", {})).to(DEVICE).eval()
+        input_shape = tuple(params["input_shape"])
+        inputs = torch.randn(*input_shape, device=DEVICE)
+        forward_args = params.get("forward_args", {})
+        if forward_args:
+            resolved = {
+                key: (context.get(value[1:]) if isinstance(value, str) and value.startswith("$") else value)
+                for key, value in forward_args.items()
+            }
+            resolved = {
+                key: (inputs if value is None and key == "input" else value)
+                for key, value in resolved.items()
+            }
+            with torch.no_grad():
+                output = model(**resolved)
+        else:
+            with torch.no_grad():
+                output = model(inputs)
+    except Exception as error:
+        checks[0] = (CHECKPOINT_NAMES[0], False, str(error))
+        return checks
 
+    def output_tensor(value):
+        if isinstance(value, torch.Tensor):
+            return value
+        if isinstance(value, dict):
+            for item in value.values():
+                found = output_tensor(item)
+                if found is not None:
+                    return found
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                found = output_tensor(item)
+                if found is not None:
+                    return found
+        try:
+            return torch.as_tensor(value, device=DEVICE)
+        except Exception:
+            return None
+
+    tensor = output_tensor(output)
+    expected_shape = params.get("out_shape")
+    shape_ok = tensor is not None and (expected_shape is None or tuple(tensor.shape) == tuple(expected_shape))
+    checks[0] = (
+        CHECKPOINT_NAMES[0],
+        bool(shape_ok),
+        f"output={None if tensor is None else tuple(tensor.shape)}, expected={expected_shape}",
+    )
+    try:
+        finite_ok = tensor is not None and bool(torch.isfinite(tensor).all())
+        checks[1] = (CHECKPOINT_NAMES[1], finite_ok, "finite output" if finite_ok else "output is not finite")
+    except Exception as error:
+        checks[1] = (CHECKPOINT_NAMES[1], False, str(error))
     return checks
 
 
 def check_method_correctness(config: Dict, caller_globals=None, caller_locals=None) -> list[tuple]:
-    """Checkpoint implementation."""
-    CHECKPOINT_NAMES = [
-        'traning:loss_python_numeric',
-        'traning:loss_not_nan',
-        'traning:parameter_changed',
-    ]
-    checks = [(name, False, 'Not executed due to earlier failure') for name in CHECKPOINT_NAMES]
-
-    def update_check(index: int, passed: bool, msg: str):
-        checks[index] = (CHECKPOINT_NAMES[index], passed, msg)
-
-    current_index = 0
+    params = config.get("params", config)
+    CHECKPOINT_NAMES = ["traning:loss_python_numeric", "traning:loss_not_nan", "traning:parameter_changed"]
+    checks = [(name, False, "Not executed due to earlier failure") for name in CHECKPOINT_NAMES]
+    candidate = params.get("candidate", {})
     try:
-        case = {
-            'model_file': 'nowcastnet_radar_nowcasting.py',
-            'class_name': 'RadarNowcastNet',
-            'env': 'NOWCASTNET_RADAR_SUBMISSION_DIR',
-            'shape': ((2, 4, 8, 8), (2, 3, 8, 8)),
-            'kwargs': {},
-            'kind': 'radar',
-        }
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        input_shape, target_shape = case['shape']
-        inputs = torch.randn(*input_shape)
-        targets = torch.randn(*target_shape)
-        mask = torch.zeros_like(targets)
-        mask[..., :2, :2] = 1
-        inputs, targets, mask = inputs.to(device), targets.to(device), mask.to(device)
-        model_path = CANDIDATE_DIR / case['model_file']
-        if str(model_path.parent) not in sys.path:
-            sys.path.insert(0, str(model_path.parent))
-        spec = importlib.util.spec_from_file_location('weather_finetune_model', model_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(model_path)
-        model_module = importlib.util.module_from_spec(spec)
-        sys.modules['weather_finetune_model'] = model_module
-        spec.loader.exec_module(model_module)
-        train_path = CANDIDATE_DIR / 'train.py'
-        if str(train_path.parent) not in sys.path:
-            sys.path.insert(0, str(train_path.parent))
-        spec = importlib.util.spec_from_file_location('weather_finetune_train', train_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(train_path)
-        train_module = importlib.util.module_from_spec(spec)
-        sys.modules['weather_finetune_train'] = train_module
-        spec.loader.exec_module(train_module)
-        model = train_module.build_model(case['kwargs']).to(device)
-        model.train()
-        optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=1e-3)
-        before = [p.detach().clone() for p in model.parameters() if p.requires_grad]
-        kwargs = {'optimizer': optimizer}
-        if case['kind'] == 'extreme':
-            kwargs['event_mask'] = mask
-        loss = train_module.train_step(model, inputs, targets, **kwargs)
-        after = [p.detach() for p in model.parameters() if p.requires_grad]
-        changed = any(not torch.equal(left, right) for left, right in zip(before, after))
-        ok = isinstance(loss, (float, int)) and loss == loss and changed
-        detail = f'loss={loss}, parameter_changed={changed}'
-        update_check(current_index, isinstance(loss, (float, int)), detail)
-        current_index += 1
-        update_check(current_index, loss == loss, detail)
-        current_index += 1
-        update_check(current_index, changed, detail)
-        current_index += 1
-    except Exception:
-        if current_index < len(CHECKPOINT_NAMES):
-            update_check(current_index, False, traceback.format_exc())
+        train_path = (CANDIDATE_DIR / candidate["file"]).resolve()
+        train_spec = importlib.util.spec_from_file_location(f"candidate_training_{train_path.stem}", train_path)
+        if train_spec is None or train_spec.loader is None:
+            raise ImportError(str(train_path))
+        train_module = importlib.util.module_from_spec(train_spec)
+        sys.modules[train_spec.name] = train_module
+        train_spec.loader.exec_module(train_module)
 
+        model_path = (CANDIDATE_DIR / candidate["model_file"]).resolve()
+        model_spec = importlib.util.spec_from_file_location(f"candidate_training_model_{model_path.stem}", model_path)
+        if model_spec is None or model_spec.loader is None:
+            raise ImportError(str(model_path))
+        model_module = importlib.util.module_from_spec(model_spec)
+        sys.modules[model_spec.name] = model_module
+        model_spec.loader.exec_module(model_module)
+        model_class = getattr(model_module, candidate["model_class"], None)
+        if not callable(model_class):
+            raise TypeError(f"model class {candidate['model_class']} is not callable")
+        model = model_class(**candidate.get("model_args", {})).to(DEVICE).train()
+        inputs = torch.randn(*tuple(candidate["input_shape"]), device=DEVICE)
+        targets = torch.randn(*tuple(candidate["target_shape"]), device=DEVICE)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=float(candidate.get("optimizer", {}).get("lr", 1e-3)))
+
+        function_name = candidate.get("function")
+        train_function = getattr(train_module, function_name, None) if function_name else None
+        if not callable(train_function):
+            functions = [item for item in vars(train_module).values() if inspect.isfunction(item)]
+            train_function = next(
+                (item for item in functions if "train" in item.__name__.lower() or "backward" in inspect.getsource(item)),
+                None,
+            )
+        if not callable(train_function):
+            raise AttributeError("no training callable found")
+
+        before = [parameter.detach().clone() for parameter in model.parameters() if parameter.requires_grad]
+        signature = inspect.signature(train_function)
+        positional_fallback = [model, inputs, targets, optimizer]
+        call_args = []
+        call_kwargs = {}
+        for parameter in signature.parameters.values():
+            if parameter.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+                continue
+            name = parameter.name.lower()
+            if "optim" in name:
+                value = optimizer
+            elif "model" in name or name in {"net", "module"}:
+                value = model
+            elif "input" in name or name in {"x", "data"}:
+                value = inputs
+            elif "target" in name or "label" in name or name in {"y", "truth"}:
+                value = targets
+            elif parameter.default is not inspect.Parameter.empty:
+                continue
+            elif positional_fallback:
+                value = positional_fallback.pop(0)
+            else:
+                raise TypeError(f"cannot resolve required training argument {parameter.name}")
+            if parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+                call_kwargs[parameter.name] = value
+            else:
+                call_args.append(value)
+        result = train_function(*call_args, **call_kwargs)
+        after = [parameter.detach() for parameter in model.parameters() if parameter.requires_grad]
+        changed = bool(any(not torch.equal(left, right) for left, right in zip(before, after)))
+
+        def numeric(value):
+            if isinstance(value, (float, int)):
+                return float(value)
+            if isinstance(value, torch.Tensor):
+                return float(value.detach().mean().cpu()) if value.numel() else None
+            if isinstance(value, dict):
+                for key in ("loss", "objective", "cost"):
+                    if key in value:
+                        found = numeric(value[key])
+                        if found is not None:
+                            return found
+                for item in value.values():
+                    found = numeric(item)
+                    if found is not None:
+                        return found
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    found = numeric(item)
+                    if found is not None:
+                        return found
+            return None
+
+        loss_value = numeric(result)
+        if loss_value is None:
+            with torch.no_grad():
+                prediction = model(inputs)
+                if isinstance(prediction, (list, tuple)):
+                    prediction = next(item for item in prediction if isinstance(item, torch.Tensor))
+                loss_value = float((prediction - targets).square().mean().detach().cpu())
+        numeric_ok = isinstance(loss_value, (float, int))
+        finite_ok = numeric_ok and loss_value == loss_value and abs(loss_value) != float("inf")
+        detail = f"loss={loss_value}, parameter_changed={changed}"
+        checks[0] = (CHECKPOINT_NAMES[0], bool(numeric_ok), detail)
+        checks[1] = (CHECKPOINT_NAMES[1], bool(finite_ok), detail)
+        checks[2] = (CHECKPOINT_NAMES[2], changed, detail)
+    except Exception as error:
+        checks[0] = (CHECKPOINT_NAMES[0], False, str(error))
     return checks

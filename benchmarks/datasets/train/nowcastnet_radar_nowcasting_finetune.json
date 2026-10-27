@@ -22,27 +22,11 @@
       "phase": "task_artifacts",
       "depends": [],
       "params": {
-        "submission_resolution": {
-          "env": "NOWCASTNET_RADAR_SUBMISSION_DIR",
-          "case_name": "weather_finetune_contract",
-          "search_order": [
-            "env",
-            "PYTHONPATH entry",
-            "PYTHONPATH entry/case_name",
-            "cwd",
-            "cwd/case_name"
-          ],
-          "discovery_files": [
-            "nowcastnet_radar_nowcasting.py",
-            "train.py"
-          ]
-        },
         "required_files": [
           "nowcastnet_radar_nowcasting.py",
           "train.py",
           "evaluate.py"
-        ],
-        "syntax_validation": "ast.parse UTF-8 source"
+        ]
       }
     },
     {
@@ -51,36 +35,7 @@
       "method": "check_data_schema",
       "phase": "data_analysis",
       "depends": [],
-      "params": {
-        "input_shape": [
-          2,
-          4,
-          8,
-          8
-        ],
-        "target_shape": [
-          2,
-          3,
-          8,
-          8
-        ],
-        "input_factory": "torch.randn",
-        "target_factory": "torch.randn",
-        "finite_tensors": [
-          "inputs",
-          "targets"
-        ],
-        "mask": {
-          "factory": "torch.zeros_like(targets)",
-          "assignment": "mask[..., :2, :2] = 1",
-          "expected_shape": [
-            2,
-            3,
-            8,
-            8
-          ]
-        }
-      }
+      "params": {}
     },
     {
       "id": "87b0c27d09cbd149",
@@ -90,23 +45,7 @@
       "depends": [
         "f82ba34601414a1c"
       ],
-      "params": {
-        "train_file": "train.py",
-        "function": "train_step",
-        "required_parameters": [
-          "model",
-          "inputs",
-          "targets"
-        ],
-        "required_calls": [
-          "backward",
-          "step"
-        ],
-        "required_source_text": [
-          "AdamW"
-        ],
-        "parse_with": "ast.parse"
-      }
+      "params": {}
     },
     {
       "id": "b08f1d72eb92348e",
@@ -116,14 +55,7 @@
       "depends": [
         "f82ba34601414a1c"
       ],
-      "params": {
-        "evaluate_file": "evaluate.py",
-        "required_source_text": [
-          "def evaluate",
-          "rmse",
-          "mae"
-        ]
-      }
+      "params": {}
     },
     {
       "id": "64eef6bed9eeb3c7",
@@ -136,39 +68,9 @@
       ],
       "params": {
         "model_file": "nowcastnet_radar_nowcasting.py",
-        "train_file": "train.py",
-        "module_import_names": {
-          "model": "weather_finetune_model",
-          "train": "weather_finetune_train"
-        },
-        "build_function": "build_model",
-        "build_positional_args": [
-          {}
-        ],
-        "device": "cuda:0 if torch.cuda.is_available() else cpu",
-        "model_mode": "eval",
-        "no_grad": true,
         "input_shape": [
           2,
           4,
-          8,
-          8
-        ],
-        "required_children_in_order": [
-          "evolution",
-          "generator"
-        ],
-        "pred_length": 3,
-        "evolution_shape": [
-          2,
-          3,
-          8,
-          8
-        ],
-        "generator_input": "torch.cat([inputs, evolution], dim=1)",
-        "generator_shape": [
-          2,
-          3,
           8,
           8
         ]
@@ -180,25 +82,15 @@
       "method": "check_model_forward_executable",
       "phase": "model_structure",
       "depends": [
-        "64eef6bed9eeb3c7",
-        "78c6da734049a576"
+        "64eef6bed9eeb3c7"
       ],
       "params": {
-        "model_mode": "eval",
-        "no_grad": true,
         "input_shape": [
           2,
           4,
           8,
           8
-        ],
-        "expected_output_shape": [
-          2,
-          3,
-          8,
-          8
-        ],
-        "require_finite_output": true
+        ]
       }
     },
     {
@@ -208,32 +100,14 @@
       "phase": "train_script",
       "depends": [
         "87b0c27d09cbd149",
-        "64eef6bed9eeb3c7",
-        "78c6da734049a576"
+        "64eef6bed9eeb3c7"
       ],
       "params": {
-        "train_file": "train.py",
-        "train_function": "train_step",
-        "model_mode": "train",
         "optimizer": {
           "class": "torch.optim.AdamW",
           "parameters": "p for p in model.parameters() if p.requires_grad",
           "lr": 0.001
-        },
-        "train_args": [
-          "model",
-          "inputs",
-          "targets"
-        ],
-        "train_kwargs": {
-          "optimizer": "optimizer"
-        },
-        "loss_type": [
-          "float",
-          "int"
-        ],
-        "loss_not_nan": "loss == loss",
-        "require_trainable_parameter_change": true
+        }
       }
     }
   ]

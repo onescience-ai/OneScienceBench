@@ -198,7 +198,6 @@
       "method": "check_model_forward_equivalence",
       "phase": "model_structure",
       "depends": [
-        "a0bb0b1f294076e6",
         "9c44d2d506c3f473"
       ],
       "params": {

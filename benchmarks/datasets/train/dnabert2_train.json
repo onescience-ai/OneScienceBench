@@ -28,17 +28,10 @@
       "depends": [],
       "params": {
         "phase": "task_artifacts",
-        "submission_filename": "dnabert2_train.py",
-        "standard_config_path": "benchmarks/standard/dnabert2_train/train_config.json",
-        "external_assets": {
-          "mount_required": true,
-          "required_paths": [
-            "weights",
-            "dataset"
-          ]
-        },
-        "load_candidate_module": true,
-        "load_reference_module": true
+        "required_files": [
+          "dnabert2_train.py",
+          "standard:train_config.json"
+        ]
       }
     },
     {
@@ -46,9 +39,7 @@
       "type": "data_method_correctness",
       "method": "check_method_correctness",
       "phase": "data_analysis",
-      "depends": [
-        "c360ba04f04bb4f5"
-      ],
+      "depends": [],
       "params": {
         "candidate": {
           "file": "dnabert2_train.py",
@@ -93,14 +84,22 @@
                 ]
               },
               "expected": {
-                "tokens_shape": [
-                  2,
-                  5
-                ],
-                "mask_dtype": "torch.bool",
-                "labels": [
-                  0,
-                  1
+                "outputs": [
+                  {
+                    "shape": [
+                      2,
+                      5
+                    ]
+                  },
+                  {
+                    "dtype": "torch.bool"
+                  },
+                  {
+                    "value": [
+                      0,
+                      1
+                    ]
+                  }
                 ]
               }
             }
@@ -113,32 +112,34 @@
       "type": "train_structure",
       "method": "check_train_structure",
       "phase": "train_script",
-      "depends": [
-        "c360ba04f04bb4f5"
-      ],
+      "depends": [],
       "params": {
         "files": [
           "dnabert2_train.py"
         ],
-        "forbidden_imports": [
-          "onescience"
-        ],
-        "required_cli_flags": [
-          "--dataset-dir",
-          "--mock-data",
-          "--output-dir",
-          "--max-steps",
-          "--seed"
-        ],
-        "required_attribute_names": [
-          "AdamW",
-          "backward",
-          "clip_grad_norm_"
-        ],
-        "required_source_tokens": [
-          "metrics.jsonl",
-          "model_state_dict"
-        ]
+        "check_config": {
+          "forbidden_imports": [
+            "onescience"
+          ],
+          "required_cli_flags": [
+            "--dataset-dir",
+            "--mock-data",
+            "--output-dir",
+            "--max-steps",
+            "--seed",
+            "--device",
+            "--batch-size"
+          ],
+          "required_symbols": [
+            "AdamW",
+            "backward"
+          ],
+          "gradient_clip_symbol": "clip_grad_norm_",
+          "required_artifacts": [
+            "metrics.jsonl",
+            "model_state_dict"
+          ]
+        }
       }
     },
     {
@@ -146,37 +147,83 @@
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "c360ba04f04bb4f5"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "dnabert2_train.py",
-        "reference_file": "benchmarks/standard/dnabert2_train/dnabert2_train.py",
+        "model_file": "dnabert2_train.py",
         "model_class": "DNABert2Classifier",
-        "constructor_args": {
+        "model_args": {
           "vocab_size": 7,
           "hidden_size": 32,
           "num_heads": 4,
           "num_layers": 2,
           "num_labels": 2
         },
-        "strict_state_dict": true,
-        "required_components": [
-          "token_embedding",
-          "blocks",
-          "blocks.0.attention",
-          "blocks.0.attention.qkv",
-          "classifier"
-        ],
-        "compare_component_types": true,
-        "compare_state_dict_key_order": true,
-        "compare_top_level_child_order": true,
-        "require_constructor_parameters": [
-          "vocab_size",
-          "hidden_size",
-          "num_heads",
-          "num_layers",
-          "num_labels"
+        "rules": [
+          {
+            "id": "nn_module",
+            "type": "isinstance",
+            "params": {
+              "class_name": "torch.nn.Module"
+            }
+          },
+          {
+            "id": "required_components",
+            "type": "module_paths",
+            "params": {
+              "names": [
+                "token_embedding",
+                "blocks",
+                "blocks.0.attention",
+                "blocks.0.attention.qkv",
+                "classifier"
+              ]
+            }
+          },
+          {
+            "id": "state_dict_contract",
+            "type": "parameter_shapes",
+            "params": {
+              "modules": {
+                "token_embedding": {
+                  "num_embeddings": 7,
+                  "embedding_dim": 32
+                },
+                "blocks.0.attention.qkv": {
+                  "in_features": 32,
+                  "out_features": 96
+                },
+                "classifier": {
+                  "in_features": 32,
+                  "out_features": 2
+                }
+              }
+            }
+          },
+          {
+            "id": "module_order",
+            "type": "top_level_children",
+            "params": {
+              "names": [
+                "token_embedding",
+                "blocks",
+                "final_norm",
+                "classifier"
+              ]
+            }
+          },
+          {
+            "id": "constructor_contract",
+            "type": "constructor_defaults",
+            "params": {
+              "defaults": {
+                "vocab_size": 7,
+                "hidden_size": 32,
+                "num_heads": 4,
+                "num_layers": 2,
+                "num_labels": 2
+              }
+            }
+          }
         ]
       }
     },
@@ -185,13 +232,19 @@
       "type": "model_forward",
       "method": "check_model_forward_executable",
       "phase": "model_structure",
-      "depends": [
-        "8b4f421b1b92b5c4"
-      ],
+      "depends": [],
       "params": {
         "model_file": "dnabert2_train.py",
         "model_class": "DNABert2Classifier",
-        "fixture": {
+        "model_args": {
+          "vocab_size": 7,
+          "hidden_size": 32,
+          "num_heads": 4,
+          "num_layers": 2,
+          "num_labels": 2
+        },
+        "pre_forward_hooks": [],
+        "forward_args": {
           "tokens": [
             [
               6,
@@ -207,18 +260,15 @@
               2,
               1
             ]
-          ],
-          "attention_mask": "tokens.ne(0)"
+          ]
         },
-        "inference_mode": true,
-        "expected_type": "torch.Tensor",
-        "expected_shape": [
+        "forward_arg_types": {
+          "tokens": "long"
+        },
+        "out_shape": [
           2,
           2
-        ],
-        "require_finite": true,
-        "repeat_calls": 2,
-        "require_exact_repeat_equality": true
+        ]
       }
     },
     {
@@ -226,40 +276,71 @@
       "type": "model_forward_equivalence",
       "method": "check_model_forward_equivalence",
       "phase": "model_structure",
-      "depends": [
-        "6af6fb4b18f1cb8a"
-      ],
+      "depends": [],
       "params": {
         "candidate": {
           "model_file": "dnabert2_train.py",
-          "model_class": "DNABert2Classifier"
+          "model_class": "DNABert2Classifier",
+          "model_args": {
+            "vocab_size": 7,
+            "hidden_size": 32,
+            "num_heads": 4,
+            "num_layers": 2,
+            "num_labels": 2
+          },
+          "forward_args": {
+            "tokens": [
+              [
+                6,
+                1,
+                2,
+                3,
+                4
+              ],
+              [
+                6,
+                4,
+                3,
+                2,
+                1
+              ]
+            ]
+          }
         },
         "reference": {
-          "model_file": "benchmarks/standard/dnabert2_train/dnabert2_train.py",
-          "model_class": "DNABert2Classifier"
-        },
-        "fixture": {
-          "tokens": [
-            [
-              6,
-              1,
-              2,
-              3,
-              4
-            ],
-            [
-              6,
-              4,
-              3,
-              2,
-              1
+          "model_file": "dnabert2_train.py",
+          "model_class": "DNABert2Classifier",
+          "model_args": {
+            "vocab_size": 7,
+            "hidden_size": 32,
+            "num_heads": 4,
+            "num_layers": 2,
+            "num_labels": 2
+          },
+          "forward_args": {
+            "tokens": [
+              [
+                6,
+                1,
+                2,
+                3,
+                4
+              ],
+              [
+                6,
+                4,
+                3,
+                2,
+                1
+              ]
             ]
-          ],
-          "attention_mask": "tokens.ne(0)"
+          }
         },
-        "inference_mode": true,
         "compare_atol": 1e-06,
-        "compare_rtol": 1e-06
+        "init_seed": 17,
+        "forward_arg_types": {
+          "tokens": "long"
+        }
       }
     },
     {
@@ -267,34 +348,47 @@
       "type": "smoke_training",
       "method": "check_smoke_training",
       "phase": "smoke_train",
-      "depends": [
-        "4b6803f0b74eadb0",
-        "8b4f421b1b92b5c4"
-      ],
+      "depends": [],
       "params": {
         "run_file": "dnabert2_train.py",
-        "mock_run": {
-          "mock_data": true,
-          "output_subdir": "output",
-          "max_steps": 5,
-          "batch_size": 4,
-          "seed": 17,
-          "device": "cpu"
-        },
-        "checkpoint": "dnabert2_train.pt",
-        "csv_run": {
-          "dataset_file": "train.csv",
-          "content": "sequence,label\nACGTACGT,0\nTTGGCCAA,1\nACACACAC,0\nTGTGTGTG,1\n",
-          "output_subdir": "csv_output",
-          "max_steps": 1,
-          "batch_size": 2,
-          "seed": 17,
-          "device": "cpu"
-        },
-        "required_csv_outputs": [
-          "metrics.jsonl",
-          "dnabert2_train.pt"
-        ]
+        "smoke_config": {
+          "checkpoint_file": "dnabert2_train.pt",
+          "metrics_file": "metrics.jsonl",
+          "mock": {
+            "mode": "--mock-data",
+            "output_subdir": "output",
+            "max_steps": 5,
+            "batch_size": 4,
+            "seed": 17,
+            "device": "cpu"
+          },
+          "csv": {
+            "dataset_file": "train.csv",
+            "samples": [
+              [
+                "ACGTACGT",
+                0
+              ],
+              [
+                "TTGGCCAA",
+                1
+              ],
+              [
+                "ACACACAC",
+                0
+              ],
+              [
+                "TGTGTGTG",
+                1
+              ]
+            ],
+            "output_subdir": "csv_output",
+            "max_steps": 1,
+            "batch_size": 2,
+            "seed": 17,
+            "device": "cpu"
+          }
+        }
       }
     },
     {
@@ -302,38 +396,26 @@
       "type": "smoke_artifacts",
       "method": "check_smoke_artifacts",
       "phase": "smoke_train",
-      "depends": [
-        "5b9664e74d85a3df"
-      ],
+      "depends": [],
       "params": {
-        "artifacts": {
-          "files": [
-            "dnabert2_train.pt",
-            "metrics.jsonl"
-          ]
-        },
-        "checkpoint": {
-          "required_keys": [
-            "model_state_dict",
-            "optimizer_state_dict",
-            "step",
-            "config"
-          ],
-          "step": 5
-        },
-        "metrics": {
-          "file": "metrics.jsonl",
-          "row_count": 5,
-          "step_values": [
-            1,
-            2,
-            3,
-            4,
-            5
-          ],
-          "loss_field": "train_loss",
-          "require_finite": true
-        }
+        "checkpoint_file": "dnabert2_train.pt",
+        "metrics_file": "metrics.jsonl",
+        "required_checkpoint_keys": [
+          "model_state_dict",
+          "optimizer_state_dict",
+          "step",
+          "config"
+        ],
+        "expected_step": 5,
+        "expected_metric_rows": 5,
+        "expected_step_values": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "loss_field": "train_loss"
       }
     }
   ]

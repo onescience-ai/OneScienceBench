@@ -1487,17 +1487,7 @@ def _agent_command(
         command = ["opencode", "run", "--auto", "--format", "json"]
         base_model = str(base_model).strip()
         if base_model:
-            model = base_model
-            if "/" not in model:
-                run_config = profile.get("run_config") or {}
-                provider = (
-                    profile.get("opencode_provider")
-                    or run_config.get("opencode_provider")
-                    or os.environ.get("OPENCODE_PROVIDER")
-                    or "gateway"
-                )
-                model = f"{provider}/{model}"
-            command.extend(["-m", model])
+            command.extend(["-m", base_model])
         return command
     raise EvaluationError(
         f"unsupported agent_id {agent_id!r}; no CLI launcher is registered for it"

@@ -22,12 +22,13 @@
       "phase": "model_structure",
       "depends": [],
       "params": {
-        "submission_directory": {
-          "environment_variable": "STATION_PATCHTST_FORECAST_SUBMISSION_DIR",
-          "pythonpath_fallback": true
-        },
-        "required_file": "station_patchtst_forecast.py",
-        "assertion": "Path.is_file"
+        "phase": "model_structure",
+        "required_files": [
+          "station_patchtst_forecast.py"
+        ],
+        "exact_files": [
+          "station_patchtst_forecast.py"
+        ]
       }
     },
     {
@@ -35,38 +36,16 @@
       "type": "checkpoint_loading",
       "method": "check_checkpoint_loading",
       "phase": "checkpoint_loading",
-      "depends": [
-        "4bbe3af51ca36fb8"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_patchtst_forecast.py",
-        "reference_file": "benchmarks/standard/station_patchtst_forecast/station_patchtst_forecast.py",
+        "model_file": "station_patchtst_forecast.py",
         "model_class": "PatchTSTForecastModel",
-        "constructor_args": {},
-        "checkpoint_fixtures": [
-          {
-            "filename": "good.pt",
-            "payload": {
-              "model_state_dict": "reference_model.state_dict()"
-            }
-          },
-          {
-            "filename": "bad.pt",
-            "payload": {}
-          }
-        ],
-        "loader": {
-          "module_function": "load_checkpoint",
-          "args": [
-            "checkpoint_path",
-            "cpu"
-          ]
-        },
-        "assertions": {
-          "state_dict_keys_equal": true,
-          "state_tensor_values_equal": true,
-          "malformed_checkpoint_must_raise": "any_exception"
-        }
+        "config_name": null,
+        "model_args": {},
+        "checkpoint_file": "station_patchtst_forecast.pt",
+        "loader": "load_checkpoint",
+        "device": "cpu",
+        "strict": true
       }
     },
     {
@@ -74,23 +53,62 @@
       "type": "model_structure",
       "method": "check_model_structure",
       "phase": "model_structure",
-      "depends": [
-        "4bbe3af51ca36fb8"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_patchtst_forecast.py",
+        "model_file": "station_patchtst_forecast.py",
         "model_class": "PatchTSTForecastModel",
-        "constructor_args": {},
-        "top_level_module_order": [
-          "patch_projection",
-          "encoder",
-          "head"
-        ],
-        "assertions": {
-          "patch_projection.in_features": 4,
-          "head.out_features": 6,
-          "encoder.layers.length": 2
-        }
+        "model_args": {},
+        "device": "$device",
+        "rules": [
+          {
+            "id": "module_order",
+            "checkpoint_name": "model_structure:module_order",
+            "type": "required_attributes",
+            "params": {
+              "names": [
+                "patch_projection",
+                "encoder",
+                "head"
+              ]
+            }
+          },
+          {
+            "id": "patch_shape",
+            "checkpoint_name": "model_structure:patch_shape",
+            "type": "defaults_and_patch_projection",
+            "params": {
+              "projection": "patch_projection",
+              "projection_width": 4,
+              "values": {
+                "variables": 4,
+                "context_length": 12,
+                "patch_length": 4
+              }
+            }
+          },
+          {
+            "id": "forecast_head",
+            "checkpoint_name": "model_structure:forecast_head",
+            "type": "constructor_defaults",
+            "params": {
+              "values": {
+                "forecast_horizon": 6
+              }
+            }
+          },
+          {
+            "id": "encoder_layers",
+            "checkpoint_name": "model_structure:encoder_layers",
+            "type": "constructor_defaults_and_encoder",
+            "params": {
+              "values": {
+                "d_model": 16
+              },
+              "attribute": "encoder",
+              "encoder_type": "TransformerEncoder"
+            }
+          }
+        ]
       }
     },
     {
@@ -98,15 +116,14 @@
       "type": "model_interface",
       "method": "check_interface",
       "phase": "model_structure",
-      "depends": [
-        "4bbe3af51ca36fb8"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_patchtst_forecast.py",
-        "required_class_callables": [
-          "PatchTSTForecastModel.predict"
+        "files": [
+          "station_patchtst_forecast.py"
         ],
-        "required_module_callables": [
+        "phase": "evaluation_interface",
+        "required_interfaces": [
+          "PatchTSTForecastModel.predict",
           "load_checkpoint"
         ]
       }
@@ -116,66 +133,55 @@
       "type": "model_method_correctness",
       "method": "check_method_correctness",
       "phase": "model_structure",
-      "depends": [
-        "4bbe3af51ca36fb8",
-        "dfe58b44d0a096ae"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_patchtst_forecast.py",
-        "model_class": "PatchTSTForecastModel",
-        "output_probe": {
-          "method": "predict",
-          "model_eval": true,
-          "input": {
-            "generator": "torch.randn",
+        "candidate": {
+          "file": "station_patchtst_forecast.py",
+          "function": "PatchTSTForecastModel.predict",
+          "model_args": {},
+          "device": "$device",
+          "args": {
+            "values": {
+              "generator": "zeros",
+              "shape": [
+                3,
+                12,
+                4
+              ]
+            }
+          },
+          "expected": {
             "shape": [
               3,
-              12,
+              6,
               4
             ]
           },
-          "expected_shape": [
-            3,
-            6,
-            4
+          "patch_contract": {
+            "context_length": 12,
+            "patch_length": 4
+          },
+          "invalid_inputs": [
+            {
+              "shape": [
+                1,
+                11,
+                4
+              ],
+              "label": "wrong_context"
+            },
+            {
+              "shape": [
+                1,
+                12,
+                3
+              ],
+              "label": "wrong_variables"
+            }
           ],
-          "finite_diagnostic_only": true
-        },
-        "patch_contract": {
-          "context_length_mod_patch_length": 0,
-          "patch_projection.in_features_equals": "patch_length"
-        },
-        "invalid_inputs": [
-          {
-            "shape": [
-              1,
-              11,
-              4
-            ],
-            "expected_exception": "ValueError",
-            "label": "wrong_context"
-          },
-          {
-            "shape": [
-              1,
-              12,
-              3
-            ],
-            "expected_exception": "ValueError",
-            "label": "wrong_variables"
+          "input_mutation": {
+            "required": false
           }
-        ],
-        "input_immutability": {
-          "method": "predict",
-          "input": {
-            "generator": "torch.randn",
-            "shape": [
-              1,
-              12,
-              4
-            ]
-          },
-          "comparison": "torch.equal"
         }
       }
     },
@@ -184,36 +190,10 @@
       "type": "infer_output_equivalence",
       "method": "check_evaluate_oracle",
       "phase": "infer_metric",
-      "depends": [
-        "4bbe3af51ca36fb8",
-        "b721bd4be4be5a42"
-      ],
+      "depends": [],
       "params": {
-        "candidate_file": "station_patchtst_forecast.py",
-        "reference_file": "benchmarks/standard/station_patchtst_forecast/station_patchtst_forecast.py",
-        "model_class": "PatchTSTForecastModel",
-        "constructor_args": {},
-        "model_eval": true,
-        "candidate_initialization": {
-          "state_dict_source": "reference_model.state_dict()",
-          "strict": true
-        },
-        "forecast_probe": {
-          "method": "predict",
-          "input": "torch.linspace(-1,1,96).reshape(2,12,4)"
-        },
-        "metrics": [
-          {
-            "name": "forecast_rmse",
-            "formula": "sqrt(mean((candidate-reference)^2))",
-            "maximum": 1e-06
-          },
-          {
-            "name": "forecast_mae",
-            "formula": "mean(abs(candidate-reference))",
-            "maximum": 1e-06
-          }
-        ]
+        "candidate": null,
+        "reference": null
       }
     }
   ]
